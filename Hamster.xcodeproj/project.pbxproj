@@ -627,6 +627,11 @@
 		C03E8034296D4F4D0083E53A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				OTHER_LDFLAGS = (
+					"-Wl",
+					"-exported_symbol,_$s9Runestone12DefaultThemeCAA0C0A2aDP16highlightedRange012forFoundTextE07ofStyleAA011HighlightedE0CSgSo8_NSRangeV_So012UITextSearchghJ0VtFTW",
+				);
+
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -671,6 +676,11 @@
 		C03E8035296D4F4D0083E53A /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				OTHER_LDFLAGS = (
+					"-Wl",
+					"-exported_symbol,_$s9Runestone12DefaultThemeCAA0C0A2aDP16highlightedRange012forFoundTextE07ofStyleAA011HighlightedE0CSgSo8_NSRangeV_So012UITextSearchghJ0VtFTW",
+				);
+
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
