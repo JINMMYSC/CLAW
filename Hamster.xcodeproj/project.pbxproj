@@ -628,8 +628,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				OTHER_LDFLAGS = (
-					"-Wl",
-					"-exported_symbol,_$s9Runestone12DefaultThemeCAA0C0A2aDP16highlightedRange012forFoundTextE07ofStyleAA011HighlightedE0CSgSo8_NSRangeV_So012UITextSearchghJ0VtFTW",
+					"-Wl,-exported_symbol,_$s9Runestone12DefaultThemeCAA0C0A2aDP16highlightedRange012forFoundTextE07ofStyleAA011HighlightedE0CSgSo8_NSRangeV_So012UITextSearchghJ0VtFTW",
 				);
 
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
@@ -677,8 +676,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				OTHER_LDFLAGS = (
-					"-Wl",
-					"-exported_symbol,_$s9Runestone12DefaultThemeCAA0C0A2aDP16highlightedRange012forFoundTextE07ofStyleAA011HighlightedE0CSgSo8_NSRangeV_So012UITextSearchghJ0VtFTW",
+					"-Wl,-exported_symbol,_$s9Runestone12DefaultThemeCAA0C0A2aDP16highlightedRange012forFoundTextE07ofStyleAA011HighlightedE0CSgSo8_NSRangeV_So012UITextSearchghJ0VtFTW",
 				);
 
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
