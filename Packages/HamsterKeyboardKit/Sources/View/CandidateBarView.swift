@@ -30,8 +30,6 @@ public class CandidateBarView: NibLessView {
   private var keyboardContext: KeyboardContext
   private var rimeContext: RimeContext
   private var userInterfaceStyle: UIUserInterfaceStyle
-  /// 是否显示候选栏自带的收起/展开控制按钮（工具栏版本由外层控制）
-  private let showControlState: Bool
 
   /// 拼音Label
   lazy var phoneticLabel: UILabel = {
@@ -117,13 +115,12 @@ public class CandidateBarView: NibLessView {
     .standard(for: keyboardContext)
   }
 
-  init(style: CandidateBarStyle, actionHandler: KeyboardActionHandler, keyboardContext: KeyboardContext, rimeContext: RimeContext, showControlState: Bool = true) {
+  init(style: CandidateBarStyle, actionHandler: KeyboardActionHandler, keyboardContext: KeyboardContext, rimeContext: RimeContext) {
     self.style = style
     self.actionHandler = actionHandler
     self.keyboardContext = keyboardContext
     self.rimeContext = rimeContext
     self.userInterfaceStyle = keyboardContext.colorScheme
-    self.showControlState = showControlState
 
     super.init(frame: .zero)
 
@@ -144,9 +141,7 @@ public class CandidateBarView: NibLessView {
     }
     if keyboardContext.swipePaging {
       addSubview(candidatesArea)
-      if showControlState {
-        addSubview(controlStateView)
-      }
+      addSubview(controlStateView)
     } else {
       addSubview(candidatesPagingArea)
     }
@@ -166,18 +161,13 @@ public class CandidateBarView: NibLessView {
           candidatesView.topAnchor.constraint(equalTo: topAnchor),
           candidatesView.bottomAnchor.constraint(equalTo: bottomAnchor),
           candidatesView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: buttonInsets.left),
-          showControlState
-            ? candidatesView.trailingAnchor.constraint(equalTo: controlStateView.leadingAnchor)
-            : candidatesView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -buttonInsets.right),
+          candidatesView.trailingAnchor.constraint(equalTo: controlStateView.leadingAnchor),
+
+          controlStateView.heightAnchor.constraint(equalTo: controlStateView.widthAnchor, multiplier: 1.0),
+          controlStateView.topAnchor.constraint(equalTo: topAnchor),
+          controlStateView.trailingAnchor.constraint(equalTo: trailingAnchor),
+          controlStateView.heightAnchor.constraint(equalToConstant: controlStateHeight)
         ])
-        if showControlState {
-          NSLayoutConstraint.activate([
-            controlStateView.heightAnchor.constraint(equalTo: controlStateView.widthAnchor, multiplier: 1.0),
-            controlStateView.topAnchor.constraint(equalTo: topAnchor),
-            controlStateView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            controlStateView.heightAnchor.constraint(equalToConstant: controlStateHeight),
-          ])
-        }
       } else {
         NSLayoutConstraint.activate([
           candidatesView.topAnchor.constraint(equalTo: topAnchor),
@@ -197,18 +187,13 @@ public class CandidateBarView: NibLessView {
           candidatesView.topAnchor.constraint(equalTo: phoneticLabel.bottomAnchor),
           candidatesView.bottomAnchor.constraint(equalTo: bottomAnchor),
           candidatesView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: buttonInsets.left),
-          showControlState
-            ? candidatesView.trailingAnchor.constraint(equalTo: controlStateView.leadingAnchor)
-            : candidatesView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -buttonInsets.right),
+          candidatesView.trailingAnchor.constraint(equalTo: controlStateView.leadingAnchor),
+
+          controlStateView.heightAnchor.constraint(equalTo: controlStateView.widthAnchor, multiplier: 1.0),
+          controlStateView.topAnchor.constraint(equalTo: phoneticLabel.bottomAnchor),
+          controlStateView.trailingAnchor.constraint(equalTo: trailingAnchor),
+          controlStateView.heightAnchor.constraint(equalToConstant: controlStateHeight)
         ])
-        if showControlState {
-          NSLayoutConstraint.activate([
-            controlStateView.heightAnchor.constraint(equalTo: controlStateView.widthAnchor, multiplier: 1.0),
-            controlStateView.topAnchor.constraint(equalTo: phoneticLabel.bottomAnchor),
-            controlStateView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            controlStateView.heightAnchor.constraint(equalToConstant: controlStateHeight),
-          ])
-        }
       } else {
         NSLayoutConstraint.activate([
           phoneticLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: buttonInsets.left),

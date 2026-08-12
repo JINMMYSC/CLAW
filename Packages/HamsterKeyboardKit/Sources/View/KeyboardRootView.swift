@@ -53,9 +53,6 @@ class KeyboardRootView: NibLessView {
   /// 工具栏高度约束
   private var toolbarHeightConstraint: NSLayoutConstraint?
 
-  /// 已弹出的浮层面板（R 面板 / AI 建议面板），置于键盘之上
-  private var overlayPanels: [UIView] = []
-
   /// 候选文字视图状态
   private var candidateViewState: CandidateBarView.State
 
@@ -237,7 +234,6 @@ class KeyboardRootView: NibLessView {
     if keyboardContext.enableToolbar {
       addSubview(toolbarView)
       addSubview(primaryKeyboardView)
-      (toolbarView as? KeyboardToolbarView)?.rootView = self
     } else {
       addSubview(primaryKeyboardView)
     }
@@ -375,7 +371,6 @@ class KeyboardRootView: NibLessView {
 
           primaryKeyboardView = keyboardView
           addSubview(primaryKeyboardView)
-          raiseOverlayPanels()
 
           // 工具栏收缩时约束
           toolbarCollapseDynamicConstraints = createToolbarCollapseDynamicConstraints()
@@ -408,7 +403,6 @@ class KeyboardRootView: NibLessView {
       // 键盘显示
       toolbarHeightConstraint?.constant = keyboardContext.heightOfToolbar
       addSubview(primaryKeyboardView)
-      raiseOverlayPanels()
       NSLayoutConstraint.deactivate(toolbarExpandDynamicConstraints)
       NSLayoutConstraint.activate(toolbarCollapseDynamicConstraints)
     } else {
@@ -451,41 +445,5 @@ class KeyboardRootView: NibLessView {
     // 保存 cache
 //    tempKeyboardViewCache[keyboardType] = tempKeyboardView
     return tempKeyboardView
-  }
-
-  // MARK: - 浮层面板
-
-  /// 弹出浮层面板（置于键盘之上，锚定在触发按钮下方）
-  func presentOverlayPanel(_ panel: UIView, below anchor: UIView, width: CGFloat, height: CGFloat, leadingConstant: CGFloat? = nil, trailingConstant: CGFloat? = nil, topOffset: CGFloat = 4) {
-    overlayPanels.forEach { $0.removeFromSuperview() }
-    overlayPanels.removeAll()
-
-    panel.translatesAutoresizingMaskIntoConstraints = false
-    panel.alpha = 0
-    addSubview(panel)
-    overlayPanels.append(panel)
-
-    NSLayoutConstraint.activate([
-      panel.topAnchor.constraint(equalTo: anchor.bottomAnchor, constant: topOffset),
-      panel.widthAnchor.constraint(equalToConstant: width),
-      panel.heightAnchor.constraint(equalToConstant: height),
-    ])
-    if let trailingConstant {
-      panel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: trailingConstant).isActive = true
-    } else {
-      panel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: leadingConstant ?? 8).isActive = true
-    }
-    UIView.animate(withDuration: 0.18) { panel.alpha = 1 }
-  }
-
-  /// 关闭浮层面板
-  func dismissOverlayPanel(_ panel: UIView) {
-    panel.removeFromSuperview()
-    overlayPanels.removeAll { $0 === panel }
-  }
-
-  /// 键盘视图切换后把已打开的面板重新提到最上层
-  private func raiseOverlayPanels() {
-    overlayPanels.forEach { addSubview($0) }
   }
 }

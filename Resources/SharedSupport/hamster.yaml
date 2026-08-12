@@ -14,19 +14,19 @@ toolbar:
   # 是否开启工具栏
   enableToolbar: true
   # 显示键盘 icon 按钮
-  displayAppIconButton: true
+  displayAppIconButton: false
   # 显示键盘 dissmiss 按钮
-  displayKeyboardDismissButton: true
+  displayKeyboardDismissButton: false
   # 工具栏总高度
-  heightOfToolbar: 38
+  heightOfToolbar: 50
   # 拼写区高度(剩余高度由候选文字占用)
-  heightOfCodingArea: 8
+  heightOfCodingArea: 10
   # 拼写区字体大小
-  codingAreaFontSize: 8
+  codingAreaFontSize: 12
   # 候选文字索引字体大小
   candidateLabelFontSize: 12
   # 候选文字字体大小
-  candidateWordFontSize: 16
+  candidateWordFontSize: 18
   # 候选文字备注信息字体大小。
   # 对应 rime 候选字的 comment 信息
   candidateCommentFontSize: 12
