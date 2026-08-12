@@ -187,6 +187,12 @@ class GuruAIPanel: UIView {
 
   /// 面板期望高度（最多 5 条建议）
   static var preferredHeight: CGFloat {
-    8 + 20 + 8 + 5 * 34 + 4 * 6 + 10
+    let titleTop: CGFloat = 8
+    let titleHeight: CGFloat = 20
+    let gap: CGFloat = 8
+    let rowHeight: CGFloat = 34
+    let rowSpacing: CGFloat = 6
+    let bottomPadding: CGFloat = 10
+    return titleTop + titleHeight + gap + rowHeight * 5 + rowSpacing * 4 + bottomPadding
   }
 }
