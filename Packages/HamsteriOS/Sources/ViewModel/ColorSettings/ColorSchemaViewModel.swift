@@ -9,9 +9,8 @@ import Combine
 import HamsterKeyboardKit
 import UIKit
 
+/// 键盘配色 ViewModel：3 选 1（系统默认 / 日光熔金 / 昼熔月汐）
 class KeyboardColorViewModel {
-  // MARK: properties
-
   public var enableColorSchema: Bool {
     get {
       HamsterConfigurationStore.shared.configuration.keyboard?.enableColorSchema ?? false
@@ -42,47 +41,37 @@ class KeyboardColorViewModel {
     }
   }
 
-  public var keyboardColorList: [HamsterKeyboardColor] = []
+  /// 日光熔金（浅色：solarized_light）
+  static let lightSchemaName = "solarized_light"
+  /// 昼熔月汐（深色：solarized_dark）
+  static let darkSchemaName = "solarized_dark"
 
-  public func reloadKeyboardColorList(style: UIUserInterfaceStyle) {
-    self.keyboardColorList = style == .light ? keyboardColorListForLight : keyboardColorListForDark
-  }
-
-  public var keyboardColorListForLight: [HamsterKeyboardColor] {
-    if let colorSchemas = HamsterConfigurationStore.shared.configuration.keyboard?.colorSchemas, !colorSchemas.isEmpty {
-      return colorSchemas
-        .sorted()
-        .compactMap {
-          HamsterKeyboardColor(colorSchema: $0, userInterfaceStyle: .dark)
-        }
+  /// 当前选项：0=系统默认, 1=日光熔金, 2=昼熔月汐
+  public var selectedIndex: Int {
+    get {
+      guard enableColorSchema else { return 0 }
+      let light = useColorSchemaForLight
+      let dark = useColorSchemaForDark
+      if light == Self.darkSchemaName || (light.isEmpty && dark == Self.darkSchemaName) { return 2 }
+      if light == Self.lightSchemaName || (light.isEmpty && dark == Self.lightSchemaName) { return 1 }
+      return 0
     }
-    return []
-  }
-
-  public var keyboardColorListForDark: [HamsterKeyboardColor] {
-    if let colorSchemas = HamsterConfigurationStore.shared.configuration.keyboard?.colorSchemas, !colorSchemas.isEmpty {
-      return colorSchemas
-        .sorted()
-        .compactMap {
-          HamsterKeyboardColor(colorSchema: $0, userInterfaceStyle: .dark)
-        }
-    }
-    return []
-  }
-
-  public var segmentActionSubject = CurrentValueSubject<UIUserInterfaceStyle, Never>(.light)
-  public var segmentActionPublished: AnyPublisher<UIUserInterfaceStyle, Never> {
-    segmentActionSubject.eraseToAnyPublisher()
-  }
-
-  @objc func segmentChangeAction(sender: UISegmentedControl) {
-    switch sender.selectedSegmentIndex {
-    case 0:
-      segmentActionSubject.send(.light)
-    case 1:
-      segmentActionSubject.send(.dark)
-    default:
-      return
+    set {
+      switch newValue {
+      case 0:
+        // 系统默认：关闭配色
+        enableColorSchema = false
+      case 1:
+        enableColorSchema = true
+        useColorSchemaForLight = Self.lightSchemaName
+        useColorSchemaForDark = Self.lightSchemaName
+      case 2:
+        enableColorSchema = true
+        useColorSchemaForLight = Self.darkSchemaName
+        useColorSchemaForDark = Self.darkSchemaName
+      default:
+        break
+      }
     }
   }
 }
