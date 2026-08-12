@@ -66,6 +66,12 @@ class GURUViewModel: ObservableObject {
     clipboardEnabled = enabled
   }
 
+  /// 手动记录当前剪贴板内容（用户在剪贴板页点「立即记录」时调用，避免键盘自动读取触发 iOS 粘贴提示）
+  func recordClipboardNow() {
+    clipboardService.checkAndRecord()
+    reloadClipboard()
+  }
+
   func loadPreview(for date: Date) {
     previewDate = date
     previewEntries = service.entries(for: date)

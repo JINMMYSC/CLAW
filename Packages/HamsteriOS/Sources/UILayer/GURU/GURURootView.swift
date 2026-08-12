@@ -305,6 +305,9 @@ struct GURURootView: View {
         Label("剪贴板监听", systemImage: "clipboard")
       }
       if viewModel.clipboardEnabled {
+        Button { viewModel.recordClipboardNow() } label: {
+          Label("立即记录剪贴板", systemImage: "arrow.down.doc")
+        }
         HStack {
           Label("已记录", systemImage: "doc.on.clipboard")
           Spacer()
@@ -321,7 +324,7 @@ struct GURURootView: View {
     } header: {
       Text("剪贴板")
     } footer: {
-      Text("开启后，每次使用ClawTalk输入法时将自动记录剪贴板新增内容（文字、图片、Emoji），含时间戳与类型标注。")
+      Text("为避免 iOS 粘贴提示打扰输入，键盘不再自动读取剪贴板；开启后可在本页点「立即记录」保存当前剪贴板内容（文字、图片、Emoji），含时间戳与类型标注。")
         .font(.caption)
     }
   }
