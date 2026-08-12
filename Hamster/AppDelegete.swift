@@ -12,8 +12,7 @@ import UserNotifications
 class AppDelegate: UIResponder, UIApplicationDelegate {
   func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
     UNUserNotificationCenter.current().delegate = self
-    // ClawTalk theme: force Inter typography + red/black/white appearance
-    UIFont.clawApplyGlobalFont()
+    // ClawTalk theme: system fonts + red/black/white appearance
     ClawTalkTheme.applyGlobalAppearance()
     return true
   }

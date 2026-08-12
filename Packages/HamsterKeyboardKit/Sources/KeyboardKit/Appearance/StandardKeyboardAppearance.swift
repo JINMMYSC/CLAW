@@ -647,7 +647,7 @@ extension KeyboardAction {
     if isSystemAction || isSymbolOfDarkAction || isCharacterOfDarkAction || isCleanSpellingArea {
       // 中文九宫格：系统键与键盘背景同色
       if context.keyboardType.isChineseNineGrid, !context.hasDarkColorScheme {
-        return UIColor(red: 224 / 255, green: 224 / 255, blue: 228 / 255, alpha: 1)
+        return UIColor(red: 209 / 255, green: 212 / 255, blue: 217 / 255, alpha: 1)
       }
       return HamsterUIColor.shared.standardDarkButtonBackground(for: context)
     }
@@ -660,13 +660,13 @@ extension KeyboardAction {
   func buttonBackgroundColorForPressedState(for context: KeyboardContext) -> UIColor {
     // 数字九宫格分类符号按键颜色调整
     if isClassifySymbolicOfLight {
-      return context.hasDarkColorScheme ? HamsterUIColor.shared.standardButtonBackground(for: context) : .white
+      return context.hasDarkColorScheme ? HamsterUIColor.shared.standardButtonBackground(for: context) : UIColor(red: 174 / 255, green: 174 / 255, blue: 178 / 255, alpha: 1)
     }
 
     if isSystemAction || isSymbolOfDarkAction || isCharacterOfDarkAction || isCleanSpellingArea {
-      return context.hasDarkColorScheme ? HamsterUIColor.shared.standardButtonBackground(for: context) : .white
+      return context.hasDarkColorScheme ? HamsterUIColor.shared.standardButtonBackground(for: context) : UIColor(red: 174 / 255, green: 174 / 255, blue: 178 / 255, alpha: 1)
     }
-    if isPrimaryAction { return context.hasDarkColorScheme ? HamsterUIColor.shared.standardDarkButtonBackground(for: context) : .white }
+    if isPrimaryAction { return context.hasDarkColorScheme ? HamsterUIColor.shared.standardDarkButtonBackground(for: context) : UIColor(red: 174 / 255, green: 174 / 255, blue: 178 / 255, alpha: 1) }
     if isUppercasedShiftAction { return HamsterUIColor.shared.standardDarkButtonBackground(for: context) }
     return HamsterUIColor.shared.standardDarkButtonBackground(for: context)
   }

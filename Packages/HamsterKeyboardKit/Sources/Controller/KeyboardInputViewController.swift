@@ -617,7 +617,41 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
 
   open func openUrl(_ url: URL?) {
     guard let url else { return }
-    extensionContext?.open(url, completionHandler: nil)
+    extensionContext?.open(url, completionHandler: { [weak self] success in
+      DispatchQueue.main.async {
+        guard let self = self else { return }
+        if success {
+          UISelectionFeedbackGenerator().selectionChanged()
+        } else {
+          UINotificationFeedbackGenerator().notificationOccurred(.error)
+          self.showOpenUrlFailureHint()
+        }
+      }
+    })
+  }
+
+  /// Inline hint shown when opening the main app fails (keyboard cannot show alerts; use text + haptic).
+  private func showOpenUrlFailureHint() {
+    let tag = 87231
+    view.viewWithTag(tag)?.removeFromSuperview()
+    let label = UILabel()
+    label.tag = tag
+    label.text = "未找到输入法主程序"
+    label.font = .systemFont(ofSize: 12, weight: .medium)
+    label.textColor = .white
+    label.backgroundColor = UIColor.black.withAlphaComponent(0.75)
+    label.textAlignment = .center
+    label.layer.cornerRadius = 6
+    label.layer.masksToBounds = true
+    view.addSubview(label)
+    label.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      label.topAnchor.constraint(equalTo: view.topAnchor, constant: 40),
+    ])
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+      label.removeFromSuperview()
+    }
   }
 
   open func resetInputEngine() {

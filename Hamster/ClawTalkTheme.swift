@@ -4,7 +4,6 @@
 //
 
 import UIKit
-import ObjectiveC.runtime
 
 /// ClawTalk brand palette & typography, ported from the ClawTalk iOS app.
 enum ClawTalkTheme {
@@ -82,49 +81,5 @@ enum ClawTalkTheme {
     tabAppearance.backgroundColor = void
     UITabBar.appearance().standardAppearance = tabAppearance
     UITabBar.appearance().tintColor = accent
-  }
-}
-
-// MARK: - Force all system fonts to Inter (hard swap)
-extension UIFont {
-  private static var clawFontSwizzled = false
-
-  /// Swaps UIFont.systemFont factory methods so the whole app renders with Inter.
-  /// Chinese glyphs fall back to PingFang automatically via CoreText.
-  static func clawApplyGlobalFont() {
-    guard !clawFontSwizzled else { return }
-    clawFontSwizzled = true
-    let cls: AnyClass = UIFont.self
-    let pairs: [(Selector, Selector)] = [
-      (#selector(UIFont.systemFont(ofSize:)), #selector(UIFont.clawSystemFont(ofSize:))),
-      (#selector(UIFont.systemFont(ofSize:weight:)), #selector(UIFont.clawSystemFont(ofSize:weight:))),
-      (#selector(UIFont.boldSystemFont(ofSize:)), #selector(UIFont.clawBoldSystemFont(ofSize:))),
-      (#selector(UIFont.italicSystemFont(ofSize:)), #selector(UIFont.clawItalicSystemFont(ofSize:))),
-    ]
-    for (original, swizzled) in pairs {
-      guard
-        let m1 = class_getClassMethod(cls, original),
-        let m2 = class_getClassMethod(cls, swizzled)
-      else { continue }
-      method_exchangeImplementations(m1, m2)
-    }
-  }
-
-  @objc static func clawSystemFont(ofSize size: CGFloat) -> UIFont {
-    ClawTalkTheme.bodyFont(size: size) 
-  }
-
-  @objc static func clawSystemFont(ofSize size: CGFloat, weight: UIFont.Weight) -> UIFont {
-    ClawTalkTheme.bodyFont(size: size, weight: weight)
-  }
-
-  @objc static func clawBoldSystemFont(ofSize size: CGFloat) -> UIFont {
-    ClawTalkTheme.bodyFont(size: size, weight: .bold)
-  }
-
-  @objc static func clawItalicSystemFont(ofSize size: CGFloat) -> UIFont {
-    let base = ClawTalkTheme.bodyFont(size: size)
-    let descriptor = base.fontDescriptor.withSymbolicTraits(.traitItalic) ?? base.fontDescriptor
-    return UIFont(descriptor: descriptor, size: size)
   }
 }
