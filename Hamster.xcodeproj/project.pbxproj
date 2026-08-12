@@ -82,12 +82,12 @@
 
 /* Begin PBXFileReference section */
 		C177FD1E2CD7CB2582BB02C3 /* ClawTalkTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClawTalkTheme.swift; sourceTree = "<group>"; };
-		C0CCA766049083D10CF786F5 /* Inter[opsz,wght].ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Inter[opsz,wght].ttf"; path = "Assets/Fonts/Inter[opsz,wght].ttf"; sourceTree = "<group>"; };
-		C007BC00ACB713B54DD287F1 /* Inter-Italic[opsz,wght].ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Inter-Italic[opsz,wght].ttf"; path = "Assets/Fonts/Inter-Italic[opsz,wght].ttf"; sourceTree = "<group>"; };
-		C0A96E853D3A74CBF4570107 /* RedHatDisplay[wght].ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "RedHatDisplay[wght].ttf"; path = "Assets/Fonts/RedHatDisplay[wght].ttf"; sourceTree = "<group>"; };
-		C0B3F3EF9F77DAE83DF6F1D8 /* JetBrainsMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "JetBrainsMono-Regular.ttf"; path = "Assets/Fonts/JetBrainsMono-Regular.ttf"; sourceTree = "<group>"; };
-		C0FAC3C75C512AA1A343C8A6 /* JetBrainsMono-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "JetBrainsMono-Medium.ttf"; path = "Assets/Fonts/JetBrainsMono-Medium.ttf"; sourceTree = "<group>"; };
-		C0A71DE0B6C19476BDB7E044 /* JetBrainsMono-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "JetBrainsMono-SemiBold.ttf"; path = "Assets/Fonts/JetBrainsMono-SemiBold.ttf"; sourceTree = "<group>"; };
+		C0CCA766049083D10CF786F5 /* Inter[opsz,wght].ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Inter[opsz,wght].ttf"; path = "Inter[opsz,wght].ttf"; sourceTree = "<group>"; };
+		C007BC00ACB713B54DD287F1 /* Inter-Italic[opsz,wght].ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Inter-Italic[opsz,wght].ttf"; path = "Inter-Italic[opsz,wght].ttf"; sourceTree = "<group>"; };
+		C0A96E853D3A74CBF4570107 /* RedHatDisplay[wght].ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "RedHatDisplay[wght].ttf"; path = "RedHatDisplay[wght].ttf"; sourceTree = "<group>"; };
+		C0B3F3EF9F77DAE83DF6F1D8 /* JetBrainsMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "JetBrainsMono-Regular.ttf"; path = "JetBrainsMono-Regular.ttf"; sourceTree = "<group>"; };
+		C0FAC3C75C512AA1A343C8A6 /* JetBrainsMono-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "JetBrainsMono-Medium.ttf"; path = "JetBrainsMono-Medium.ttf"; sourceTree = "<group>"; };
+		C0A71DE0B6C19476BDB7E044 /* JetBrainsMono-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "JetBrainsMono-SemiBold.ttf"; path = "JetBrainsMono-SemiBold.ttf"; sourceTree = "<group>"; };
 		C000CA9D296EA72600EC5323 /* HamsterKeyboardInputViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HamsterKeyboardInputViewController.swift; sourceTree = "<group>"; };
 		C00749622ABAD48C00C5CD0A /* HamsterFileServer */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = HamsterFileServer; path = Packages/HamsterFileServer; sourceTree = "<group>"; };
 		C00C26BF2B069D6900E92F89 /* libyaml-cpp.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = "libyaml-cpp.xcframework"; sourceTree = "<group>"; };
