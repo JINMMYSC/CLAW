@@ -165,8 +165,7 @@ class GuruAIPanel: UIView {
   }
 
   private func parseSuggestions(_ text: String) -> [String] {
-    let separators = CharacterSet(charactersIn: "、，。；：
-,")
+    let separators = CharacterSet(charactersIn: "、，。；：\n,")
     let parts = text.components(separatedBy: separators)
     return parts
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
