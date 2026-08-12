@@ -27,7 +27,7 @@ class SpaceContentView: NibLessView {
   /// loading text for space button (custom)
   private var spaceButtonStableText: String? {
     if keyboardContext.keyboardType.isAlphabetic { return "space" }
-    if keyboardContext.keyboardType.isChinese { return "\u7A7A\u683C" }
+    if keyboardContext.keyboardType.isChinese { return "空格" }
     return nil
   }
   /// 是否首次加载空格
