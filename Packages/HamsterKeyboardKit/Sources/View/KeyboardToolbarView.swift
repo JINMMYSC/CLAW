@@ -16,6 +16,8 @@ class KeyboardToolbarView: NibLessView {
   private let actionHandler: KeyboardActionHandler
   private let keyboardContext: KeyboardContext
   private var rimeContext: RimeContext
+  /// 所属键盘根视图（用于在其上弹浮层面板）
+  weak var rootView: KeyboardRootView?
   private var style: CandidateBarStyle
   private var userInterfaceStyle: UIUserInterfaceStyle
   private var oldBounds: CGRect = .zero
@@ -171,17 +173,6 @@ class KeyboardToolbarView: NibLessView {
       setupAppearance()
       candidateBarView.setStyle(self.style)
     }
-  }
-
-  /// 面板超出自身 bounds 时也能命中点击
-  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-    if isMorePanelOpen, morePanel.superview != nil, morePanel.frame.contains(point) {
-      return morePanel.hitTest(convert(point, to: morePanel), with: event)
-    }
-    if isAIPanelOpen, aiPanel.superview != nil, aiPanel.frame.contains(point) {
-      return aiPanel.hitTest(convert(point, to: aiPanel), with: event)
-    }
-    return super.hitTest(point, with: event)
   }
 
   override func constructViewHierarchy() {
@@ -357,23 +348,13 @@ class KeyboardToolbarView: NibLessView {
   private func openMorePanel() {
     closeAIPanel()
     isMorePanelOpen = true
-    morePanel.alpha = 0
-    addSubview(morePanel)
-    NSLayoutConstraint.activate([
-      morePanel.topAnchor.constraint(equalTo: bottomAnchor, constant: 4),
-      morePanel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-      morePanel.widthAnchor.constraint(equalToConstant: 224),
-      morePanel.heightAnchor.constraint(equalToConstant: GuruMorePanel.preferredHeight),
-    ])
-    UIView.animate(withDuration: 0.18) {
-      self.morePanel.alpha = 1
-    }
+    rootView?.presentOverlayPanel(morePanel, below: moreButton, width: 224, height: GuruMorePanel.preferredHeight, leadingConstant: 8, topOffset: 4)
   }
 
   private func closeMorePanel() {
     guard isMorePanelOpen else { return }
     isMorePanelOpen = false
-    morePanel.removeFromSuperview()
+    rootView?.dismissOverlayPanel(morePanel)
   }
 
   private func toggleAIPanel() {
@@ -387,24 +368,14 @@ class KeyboardToolbarView: NibLessView {
   private func openAIPanel() {
     closeMorePanel()
     isAIPanelOpen = true
-    aiPanel.alpha = 0
-    addSubview(aiPanel)
-    NSLayoutConstraint.activate([
-      aiPanel.topAnchor.constraint(equalTo: bottomAnchor, constant: 4),
-      aiPanel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-      aiPanel.widthAnchor.constraint(equalToConstant: 250),
-      aiPanel.heightAnchor.constraint(equalToConstant: GuruAIPanel.preferredHeight),
-    ])
-    UIView.animate(withDuration: 0.18) {
-      self.aiPanel.alpha = 1
-    }
+    rootView?.presentOverlayPanel(aiPanel, below: guruButton, width: 250, height: GuruAIPanel.preferredHeight, trailingConstant: -8, topOffset: 4)
     requestAISuggestions()
   }
 
   private func closeAIPanel() {
     guard isAIPanelOpen else { return }
     isAIPanelOpen = false
-    aiPanel.removeFromSuperview()
+    rootView?.dismissOverlayPanel(aiPanel)
   }
 
   private func requestAISuggestions() {
