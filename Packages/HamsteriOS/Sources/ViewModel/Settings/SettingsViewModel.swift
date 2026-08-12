@@ -262,34 +262,57 @@ extension SettingsViewModel {
     // 判断应用是否首次运行
     guard UserDefaults.standard.isFirstRunning else { return }
 
-    // 判断是否首次运行
-    await ProgressHUD.animate("初次启动，需要编译输入方案，请耐心等待……", interaction: false)
+    // 已部署标记：上次部署成功过就直接快速启动，不再全量编译（避免主程序黑屏）
+    let alreadyDeployed = UserDefaults.hamster.bool(forKey: "guru_rime_deployed")
 
-    // 首次启动始化输入方案目录
+    // 部署中提示（后台执行，主程序不再卡死）
+    await ProgressHUD.animate(
+      alreadyDeployed ? "正在准备输入方案……" : "初次启动，正在编译输入方案，请稍候……",
+      interaction: false
+    )
+
+    // 标记部署中
+    UserDefaults.hamster.set(true, forKey: "guru_rime_deploy_in_progress")
+
     do {
-      try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
-      try FileManager.initSandboxBackupDirectory(override: true)
+      // 首次启动初始化输入方案目录 + 部署 RIME（全部放到后台线程，避免阻塞主界面导致黑屏）
+      let configuration: HamsterConfiguration = try await withCheckedThrowingContinuation { continuation in
+        DispatchQueue.global(qos: .userInitiated).async {
+          do {
+            var config = HamsterAppDependencyContainer.shared.configuration
+            if !alreadyDeployed {
+              try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
+              try FileManager.initSandboxBackupDirectory(override: true)
+            }
+            try self.rimeViewModel.rimeContext.deployment(configuration: &config, forceFullCheck: !alreadyDeployed)
+            UserDefaults.hamster.set(true, forKey: "guru_rime_deployed")
+            UserDefaults.hamster.set(false, forKey: "guru_rime_deploy_in_progress")
+            continuation.resume(returning: config)
+          } catch {
+            UserDefaults.hamster.set(false, forKey: "guru_rime_deploy_in_progress")
+            continuation.resume(throwing: error)
+          }
+        }
+      }
+
+      // 咕噜极简九宫格：默认使用 t9（中文九键）方案
+      let rimeSchema = RimeSchema(schemaId: "t9", schemaName: "中文九键")
+      self.rimeViewModel.rimeContext.selectSchemas = [rimeSchema]
+      self.rimeViewModel.rimeContext.currentSchema = rimeSchema
+
+      // 修改应用首次运行标志
+      UserDefaults.standard.isFirstRunning = false
+
+      HamsterAppDependencyContainer.shared.configuration = configuration
+
+      await ProgressHUD.success(alreadyDeployed ? "已就绪" : "部署完成", interaction: false, delay: 1.5)
     } catch {
+      // 失败也要清除部署中标记，避免卡死，下次启动重试
+      UserDefaults.hamster.set(false, forKey: "guru_rime_deploy_in_progress")
       Logger.statistics.error("rime init file directory error: \(error.localizedDescription)")
+      await ProgressHUD.failed("导入数据异常", interaction: false, delay: 2)
       throw error
     }
-
-    var configuration = HamsterAppDependencyContainer.shared.configuration
-
-    // 部署 RIME
-    try rimeViewModel.rimeContext.deployment(configuration: &configuration)
-
-    // 咕噜极简九宫格：默认使用 t9（中文九键）方案
-    let rimeSchema = RimeSchema(schemaId: "t9", schemaName: "中文九键")
-    rimeViewModel.rimeContext.selectSchemas = [rimeSchema]
-    rimeViewModel.rimeContext.currentSchema = rimeSchema
-
-    // 修改应用首次运行标志
-    UserDefaults.standard.isFirstRunning = false
-
-    HamsterAppDependencyContainer.shared.configuration = configuration
-
-    await ProgressHUD.success("部署完成", interaction: false, delay: 1.5)
   }
 
   /// 仓1.0迁移配置参数

@@ -8,6 +8,7 @@ public enum AIProvider: String, Codable, CaseIterable {
   case kimi        = "Kimi"
   case minimax     = "MiniMax"
   case glm         = "GLM"
+  case deepseek    = "DeepSeek"
 
   public var baseURL: String {
     switch self {
@@ -17,6 +18,7 @@ public enum AIProvider: String, Codable, CaseIterable {
     case .kimi:       return "https://api.moonshot.cn/v1"
     case .minimax:    return "https://api.minimax.chat/v1"
     case .glm:        return "https://open.bigmodel.cn/api/paas/v4"
+    case .deepseek:   return "https://api.deepseek.com/v1"
     }
   }
 
@@ -28,6 +30,7 @@ public enum AIProvider: String, Codable, CaseIterable {
     case .kimi:       return "moonshot-v1-8k"
     case .minimax:    return "abab6.5s-chat"
     case .glm:        return "glm-4-flash"
+    case .deepseek:   return "deepseek-chat"
     }
   }
 

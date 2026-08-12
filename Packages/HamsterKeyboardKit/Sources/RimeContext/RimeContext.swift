@@ -230,7 +230,7 @@ public extension RimeContext {
 
   /// RIME 部署
   /// 注意：仅可用于主 App 调用
-  func deployment(configuration: inout HamsterConfiguration) throws {
+  func deployment(configuration: inout HamsterConfiguration, forceFullCheck: Bool = true) throws {
     // 如果开启 iCloud，则先将 iCloud 下文件增量复制到 Sandbox
     if let enableAppleCloud = configuration.general?.enableAppleCloud, enableAppleCloud == true {
       let regex = configuration.general?.regexOnCopyFile ?? []
@@ -262,7 +262,7 @@ public extension RimeContext {
       Rime.shared.start(Rime.createTraits(
         sharedSupportDir: FileManager.sandboxSharedSupportDirectory.path,
         userDataDir: FileManager.sandboxUserDataDirectory.path
-      ), maintenance: true, fullCheck: true)
+      ), maintenance: true, fullCheck: forceFullCheck)
     }
     // 此 API 根据用户配置的 scheme_list 参数获取列表，当方案不提供 schema_list 参数时，获取为空
     var schemas = Rime.shared.getSchemas().sorted()
@@ -289,7 +289,7 @@ public extension RimeContext {
           Rime.shared.start(Rime.createTraits(
             sharedSupportDir: FileManager.sandboxSharedSupportDirectory.path,
             userDataDir: FileManager.sandboxUserDataDirectory.path
-          ), maintenance: true, fullCheck: true)
+          ), maintenance: true, fullCheck: forceFullCheck)
         }
       }
     }

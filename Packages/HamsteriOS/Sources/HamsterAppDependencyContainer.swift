@@ -120,7 +120,10 @@ open class HamsterAppDependencyContainer {
     if UserDefaults.standard.isFirstRunning {
       do {
         // 首次运行解压 zip 文件（包含应用内置输入方案及配置文件）
-        try FileManager.initSandboxSharedSupportDirectory(override: true)
+        // 若上次已解压过（部署重试情况）则不再删除重解压，避免每次启动卡黑屏
+        let sharedSupportYaml = FileManager.sandboxSharedSupportDirectory.appendingPathComponent("hamster.yaml")
+        let alreadyExtracted = FileManager.default.fileExists(atPath: sharedSupportYaml.path)
+        try FileManager.initSandboxSharedSupportDirectory(override: !alreadyExtracted)
 
         // 读取 SharedSupport/hamster.yaml, 生成默认应用配置
         let hamsterConfiguration = try HamsterConfigurationRepositories.shared.loadFromYAML(FileManager.hamsterConfigFileOnSandboxSharedSupport)
