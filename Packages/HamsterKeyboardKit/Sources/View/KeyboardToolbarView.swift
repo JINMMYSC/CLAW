@@ -61,7 +61,7 @@ class KeyboardToolbarView: NibLessView {
   lazy var emojiButton: UIButton = {
     let button = UIButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
-    button.setImage(UIImage(systemName: "face.smiling.inverse"), for: .normal)
+    button.setImage(UIImage(systemName: "face.smiling"), for: .normal)
     button.setPreferredSymbolConfiguration(.init(font: .systemFont(ofSize: 18), scale: .default), forImageIn: .normal)
     button.tintColor = style.toolbarButtonFrontColor
     button.backgroundColor = style.toolbarButtonBackgroundColor
@@ -225,6 +225,10 @@ class KeyboardToolbarView: NibLessView {
 
   override func setupAppearance() {
     self.style = appearance.candidateBarStyle
+    // 候选栏/工具栏条：贴近苹果原版浅灰底
+    backgroundColor = UIColor { traits in
+      traits.userInterfaceStyle == .dark ? .clear : UIColor(red: 226 / 255, green: 227 / 255, blue: 231 / 255, alpha: 1)
+    }
     if keyboardContext.displayAppIconButton {
       iconButton.tintColor = style.toolbarButtonFrontColor
     }

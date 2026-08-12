@@ -415,38 +415,47 @@ swipe:
           swipe:
             - direction: up
               action: character(1)
+              display: false
         - action: chineseNineGrid(ABC)
           swipe:
             - direction: up
               action: character(2)
+              display: false
         - action: chineseNineGrid(DEF)
           swipe:
             - direction: up
               action: character(3)
+              display: false
         - action: chineseNineGrid(GHI)
           swipe:
             - direction: up
               action: character(4)
+              display: false
         - action: chineseNineGrid(JKL)
           swipe:
             - direction: up
               action: character(5)
+              display: false
         - action: chineseNineGrid(MNO)
           swipe:
             - direction: up
               action: character(6)
+              display: false
         - action: chineseNineGrid(PQRS)
           swipe:
             - direction: up
               action: character(7)
+              display: false
         - action: chineseNineGrid(TUV)
           swipe:
             - direction: up
               action: character(8)
+              display: false
         - action: chineseNineGrid(WXYZ)
           swipe:
             - direction: up
               action: character(9)
+              display: false
 # 自定义键盘布局
 # 布局文档说明文档：https://github.com/imfuxiao/Hamster/wiki/%E8%87%AA%E5%AE%9A%E4%B9%89%E9%94%AE%E7%9B%98%E5%B8%83%E5%B1%80
 keyboards:

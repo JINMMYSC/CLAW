@@ -63,6 +63,11 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
     var style = KeyboardBackgroundStyle.standard
     style.backgroundColor = UIColor.white.withAlphaComponent(0.001)
 
+    // 中文九宫格：贴近苹果原版白底
+    if keyboardContext.keyboardType.isChineseNineGrid, !keyboardContext.hasDarkColorScheme {
+      style.backgroundColor = .white
+    }
+
     // 开启键盘配色
     if let hamsterColor = hamsterColor() {
       style.backgroundColor = hamsterColor.backColor
@@ -468,7 +473,7 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
     if let override = buttonFontSizePadOverride(for: action) { return override }
     if let override = buttonFontSizeActionOverride(for: action) { return override }
     if case .chineseNineGrid = action {
-      return 12
+      return 15
     }
     if action == .returnLastKeyboard || action == .cleanSpellingArea {
       return 16
@@ -494,7 +499,7 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
     if let override = buttonFontSizePadOverride(for: action) { return override }
     if let override = buttonFontSizeActionOverride(for: action) { return override }
     if case .chineseNineGrid = key.action {
-      return 12
+      return 15
     }
     if action == .returnLastKeyboard || action == .cleanSpellingArea {
       return 16
@@ -640,6 +645,10 @@ extension KeyboardAction {
     }
     if isUppercasedShiftAction { return buttonBackgroundColorForPressedState(for: context) }
     if isSystemAction || isSymbolOfDarkAction || isCharacterOfDarkAction || isCleanSpellingArea {
+      // 中文九宫格：贴近苹果原版白底
+      if context.keyboardType.isChineseNineGrid, !context.hasDarkColorScheme {
+        return .white
+      }
       return HamsterUIColor.shared.standardDarkButtonBackground(for: context)
     }
     if isPrimaryAction { return UIColor.systemBlue }
