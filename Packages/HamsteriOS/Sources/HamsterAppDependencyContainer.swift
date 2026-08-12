@@ -24,7 +24,7 @@ open class HamsterAppDependencyContainer {
 
   public lazy var settingsViewModel: SettingsViewModel = {
     let vm = SettingsViewModel(
-      mainViewModel: mainViewModel,
+      navigate: { [weak self] subView in self?.mainViewModel.subViewSubject.send(subView) },
       rimeViewModel: rimeViewModel,
       backupViewModel: backupViewModel
     )
@@ -371,7 +371,7 @@ extension HamsterAppDependencyContainer: SubViewControllerFactory {
 
   func makeInputMethodSettingsViewController() -> InputMethodSettingsViewController {
     return InputMethodSettingsViewController(
-      mainViewModel: mainViewModel,
+      onNavigate: { [weak self] subView in self?.mainViewModel.subViewSubject.send(subView) },
       enableColorSchema: { [weak self] in
         self?.settingsViewModel.enableColorSchema ?? false
       }

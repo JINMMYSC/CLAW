@@ -17,21 +17,21 @@ public class KeyboardFeedbackViewModel {
 
   public var enableKeySounds: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableKeySounds ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableKeySounds ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableKeySounds = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.enableKeySounds = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableKeySounds = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.enableKeySounds = newValue
     }
   }
 
   public var enableHapticFeedback: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableHapticFeedback ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableHapticFeedback ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableHapticFeedback = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.enableHapticFeedback = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableHapticFeedback = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.enableHapticFeedback = newValue
     }
   }
 
@@ -42,11 +42,11 @@ public class KeyboardFeedbackViewModel {
 
   public var hapticFeedbackIntensity: Int {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.hapticFeedbackIntensity ?? 2
+      HamsterConfigurationStore.shared.configuration.keyboard?.hapticFeedbackIntensity ?? 2
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.hapticFeedbackIntensity = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.hapticFeedbackIntensity = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.hapticFeedbackIntensity = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.hapticFeedbackIntensity = newValue
     }
   }
 

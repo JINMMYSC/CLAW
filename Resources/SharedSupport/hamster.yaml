@@ -644,7 +644,7 @@ keyboards:
           - action: space
             width: available
             label:
-              loadingText: "咕噜输入法"
+              loadingText: "ClawTalk输入法"
               text: "空格"
           - action: character(,)
             label: "，"
@@ -811,7 +811,7 @@ keyboards:
           - action: space
             width: available
             label:
-              loadingText: "咕噜输入法"
+              loadingText: "ClawTalk输入法"
               text: "空格"
           - action: character(，)
             label: "，"

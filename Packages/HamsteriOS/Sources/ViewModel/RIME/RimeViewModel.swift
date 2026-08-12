@@ -41,11 +41,11 @@ public class RimeViewModel {
   // 简繁切换键值
   public var keyValueOfSwitchSimplifiedAndTraditional: String {
     get {
-      HamsterAppDependencyContainer.shared.configuration.rime?.keyValueOfSwitchSimplifiedAndTraditional ?? ""
+      HamsterConfigurationStore.shared.configuration.rime?.keyValueOfSwitchSimplifiedAndTraditional ?? ""
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.rime?.keyValueOfSwitchSimplifiedAndTraditional = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.rime?.keyValueOfSwitchSimplifiedAndTraditional = newValue
+      HamsterConfigurationStore.shared.configuration.rime?.keyValueOfSwitchSimplifiedAndTraditional = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.rime?.keyValueOfSwitchSimplifiedAndTraditional = newValue
     }
   }
 
@@ -53,11 +53,11 @@ public class RimeViewModel {
   // 非造词用户保持默认值 true
   public var overrideDictFiles: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.rime?.overrideDictFiles ?? true
+      HamsterConfigurationStore.shared.configuration.rime?.overrideDictFiles ?? true
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.rime?.overrideDictFiles = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.rime?.overrideDictFiles = newValue
+      HamsterConfigurationStore.shared.configuration.rime?.overrideDictFiles = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.rime?.overrideDictFiles = newValue
     }
   }
 
@@ -230,11 +230,11 @@ public extension RimeViewModel {
   func rimeDeploy() async {
     let (fileHandle, filePath) = rimeLogger()
     await ProgressHUD.animate("RIME部署中, 请稍候……", AnimationType.circleRotateChase, interaction: false)
-    var hamsterConfiguration = HamsterAppDependencyContainer.shared.configuration
+    var hamsterConfiguration = HamsterConfigurationStore.shared.configuration
     do {
       try rimeContext.deployment(configuration: &hamsterConfiguration)
       await checkRimeLogger(filePath)
-      HamsterAppDependencyContainer.shared.configuration = hamsterConfiguration
+      HamsterConfigurationStore.shared.configuration = hamsterConfiguration
       await ProgressHUD.success("部署成功", interaction: false, delay: 1.5)
     } catch {
       // try? FileHandle.standardError.write(contentsOf: error.localizedDescription.data(using: .utf8) ?? Data())
@@ -250,7 +250,7 @@ public extension RimeViewModel {
     do {
       await ProgressHUD.animate("RIME同步中, 请稍候……", interaction: false)
 
-      let hamsterConfiguration = HamsterAppDependencyContainer.shared.configuration
+      let hamsterConfiguration = HamsterConfigurationStore.shared.configuration
 
       // 先打开iCloud地址，防止Crash
       _ = URL.iCloudDocumentURL
@@ -287,7 +287,7 @@ public extension RimeViewModel {
       try rimeContext.restRime()
 
       // 重置应用配置
-      HamsterAppDependencyContainer.shared.resetHamsterConfiguration()
+      HamsterConfigurationRepositories.shared.resetConfiguration()
 
       // 重新读取 Hamster.yaml 生成 configuration
       let hamsterConfiguration = try HamsterConfigurationRepositories.shared.loadFromYAML(FileManager.hamsterConfigFileOnSandboxSharedSupport)
@@ -303,9 +303,9 @@ public extension RimeViewModel {
         path: FileManager.sandboxUserDataDirectory.appendingPathComponent("/build/hamster.plist")
       )
 
-      HamsterAppDependencyContainer.shared.configuration = hamsterConfiguration
+      HamsterConfigurationStore.shared.configuration = hamsterConfiguration
 
-      HamsterAppDependencyContainer.shared.applicationConfiguration = HamsterConfiguration(
+      HamsterConfigurationStore.shared.applicationConfiguration = HamsterConfiguration(
         general: GeneralConfiguration(),
         toolbar: KeyboardToolbarConfiguration(),
         keyboard: KeyboardConfiguration(),

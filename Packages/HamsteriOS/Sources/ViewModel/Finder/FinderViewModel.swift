@@ -24,7 +24,7 @@ public class FinderViewModel: ObservableObject {
   // MARK: properties
 
   private var configuration: HamsterConfiguration {
-    HamsterAppDependencyContainer.shared.configuration
+    HamsterConfigurationStore.shared.configuration
   }
 
   public var segmentActionSubject = CurrentValueSubject<FinderSegmentAction, Never>(.settings)
@@ -53,11 +53,11 @@ public class FinderViewModel: ObservableObject {
 
   public var textEditorLineWrappingEnabled: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.general?.textEditorLineWrappingEnabled ?? true
+      HamsterConfigurationStore.shared.configuration.general?.textEditorLineWrappingEnabled ?? true
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.general?.textEditorLineWrappingEnabled = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.general?.textEditorLineWrappingEnabled = newValue
+      HamsterConfigurationStore.shared.configuration.general?.textEditorLineWrappingEnabled = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.general?.textEditorLineWrappingEnabled = newValue
     }
   }
 

@@ -1,4 +1,4 @@
-# GuruIM / 咕噜输入法
+# GuruIM / ClawTalk输入法
 
 > **GuruIM captures all your input history — keystrokes, clipboard, and context — and lets you export it to any LLM, on your terms. Feed yourself to AI, willingly.**
 >
@@ -418,7 +418,7 @@ GuruIM 提供两种使用模式，你可以根据需求灵活选择或组合使�
 #### 🧠 Now Guru 智能助手
 
 <p align="center">
-  <img src="docs/images/what-is-guruim.png" width="280" alt="咕噜输入法是什么？"/>
+  <img src="docs/images/what-is-guruim.png" width="280" alt="ClawTalk输入法是什么？"/>
 </p>
 
 | 功能 | 说明 |

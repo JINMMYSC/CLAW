@@ -38,474 +38,474 @@ public class KeyboardSettingsViewModel: ObservableObject, Hashable, Identifiable
 
   public var displayButtonBubbles: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.displayButtonBubbles ?? true
+      HamsterConfigurationStore.shared.configuration.keyboard?.displayButtonBubbles ?? true
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.displayButtonBubbles = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.displayButtonBubbles = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.displayButtonBubbles = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.displayButtonBubbles = newValue
     }
   }
 
   public var upSwipeOnLeft: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.upSwipeOnLeft ?? true
+      HamsterConfigurationStore.shared.configuration.keyboard?.upSwipeOnLeft ?? true
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.upSwipeOnLeft = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.upSwipeOnLeft = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.upSwipeOnLeft = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.upSwipeOnLeft = newValue
     }
   }
 
   public var enableBackspaceSwipeUpDeleteLine: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableBackspaceSwipeUpDeleteLine ?? true
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableBackspaceSwipeUpDeleteLine ?? true
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableBackspaceSwipeUpDeleteLine = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.enableBackspaceSwipeUpDeleteLine = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableBackspaceSwipeUpDeleteLine = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.enableBackspaceSwipeUpDeleteLine = newValue
     }
   }
 
   public var disableSwipeLabel: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.disableSwipeLabel ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.disableSwipeLabel ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.disableSwipeLabel = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.disableSwipeLabel = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.disableSwipeLabel = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.disableSwipeLabel = newValue
     }
   }
 
   public var swipeLabelUpAndDownIrregularLayout: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.swipeLabelUpAndDownIrregularLayout ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.swipeLabelUpAndDownIrregularLayout ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.swipeLabelUpAndDownIrregularLayout = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.swipeLabelUpAndDownIrregularLayout = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.swipeLabelUpAndDownIrregularLayout = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.swipeLabelUpAndDownIrregularLayout = newValue
     }
   }
 
   public var swipeLabelUpAndDownLayout: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.swipeLabelUpAndDownLayout ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.swipeLabelUpAndDownLayout ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.swipeLabelUpAndDownLayout = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.swipeLabelUpAndDownLayout = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.swipeLabelUpAndDownLayout = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.swipeLabelUpAndDownLayout = newValue
     }
   }
 
   public var enableEmbeddedInputMode: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableEmbeddedInputMode ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableEmbeddedInputMode ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableEmbeddedInputMode = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.enableEmbeddedInputMode = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableEmbeddedInputMode = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.enableEmbeddedInputMode = newValue
     }
   }
 
   public var lockShiftState: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.lockShiftState ?? true
+      HamsterConfigurationStore.shared.configuration.keyboard?.lockShiftState ?? true
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.lockShiftState = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.lockShiftState = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.lockShiftState = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.lockShiftState = newValue
     }
   }
 
   public var displaySpaceLeftButton: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.displaySpaceLeftButton ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.displaySpaceLeftButton ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.displaySpaceLeftButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.displaySpaceLeftButton = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.displaySpaceLeftButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.displaySpaceLeftButton = newValue
     }
   }
 
   public var spaceLeftButtonProcessByRIME: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.spaceLeftButtonProcessByRIME ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.spaceLeftButtonProcessByRIME ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.spaceLeftButtonProcessByRIME = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.spaceLeftButtonProcessByRIME = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.spaceLeftButtonProcessByRIME = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.spaceLeftButtonProcessByRIME = newValue
     }
   }
 
   public var keyValueOfSpaceLeftButton: String {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.keyValueOfSpaceLeftButton ?? ""
+      HamsterConfigurationStore.shared.configuration.keyboard?.keyValueOfSpaceLeftButton ?? ""
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.keyValueOfSpaceLeftButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.keyValueOfSpaceLeftButton = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.keyValueOfSpaceLeftButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.keyValueOfSpaceLeftButton = newValue
     }
   }
 
   public var displaySpaceRightButton: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.displaySpaceRightButton ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.displaySpaceRightButton ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.displaySpaceRightButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.displaySpaceRightButton = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.displaySpaceRightButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.displaySpaceRightButton = newValue
     }
   }
 
   public var spaceRightButtonProcessByRIME: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.spaceRightButtonProcessByRIME ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.spaceRightButtonProcessByRIME ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.spaceRightButtonProcessByRIME = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.spaceRightButtonProcessByRIME = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.spaceRightButtonProcessByRIME = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.spaceRightButtonProcessByRIME = newValue
     }
   }
 
   public var keyValueOfSpaceRightButton: String {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.keyValueOfSpaceRightButton ?? ""
+      HamsterConfigurationStore.shared.configuration.keyboard?.keyValueOfSpaceRightButton ?? ""
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.keyValueOfSpaceRightButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.keyValueOfSpaceRightButton = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.keyValueOfSpaceRightButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.keyValueOfSpaceRightButton = newValue
     }
   }
 
   public var displayChineseEnglishSwitchButton: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.displayChineseEnglishSwitchButton ?? true
+      HamsterConfigurationStore.shared.configuration.keyboard?.displayChineseEnglishSwitchButton ?? true
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.displayChineseEnglishSwitchButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.displayChineseEnglishSwitchButton = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.displayChineseEnglishSwitchButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.displayChineseEnglishSwitchButton = newValue
     }
   }
 
   public var chineseEnglishSwitchButtonIsOnLeftOfSpaceButton: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.chineseEnglishSwitchButtonIsOnLeftOfSpaceButton ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.chineseEnglishSwitchButtonIsOnLeftOfSpaceButton ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.chineseEnglishSwitchButtonIsOnLeftOfSpaceButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.chineseEnglishSwitchButtonIsOnLeftOfSpaceButton = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.chineseEnglishSwitchButtonIsOnLeftOfSpaceButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.chineseEnglishSwitchButtonIsOnLeftOfSpaceButton = newValue
     }
   }
 
   public var enableToolbar: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.enableToolbar ?? true
+      HamsterConfigurationStore.shared.configuration.toolbar?.enableToolbar ?? true
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.enableToolbar = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.toolbar?.enableToolbar = newValue
+      HamsterConfigurationStore.shared.configuration.toolbar?.enableToolbar = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.toolbar?.enableToolbar = newValue
     }
   }
 
   public var showUppercasedCharacterOnChineseKeyboard: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.showUppercasedCharacterOnChineseKeyboard ?? true
+      HamsterConfigurationStore.shared.configuration.keyboard?.showUppercasedCharacterOnChineseKeyboard ?? true
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.showUppercasedCharacterOnChineseKeyboard = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.showUppercasedCharacterOnChineseKeyboard = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.showUppercasedCharacterOnChineseKeyboard = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.showUppercasedCharacterOnChineseKeyboard = newValue
     }
   }
 
   public var enableButtonUnderBorder: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableButtonUnderBorder ?? true
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableButtonUnderBorder ?? true
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableButtonUnderBorder = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.enableButtonUnderBorder = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableButtonUnderBorder = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.enableButtonUnderBorder = newValue
     }
   }
 
   public var displaySemicolonButton: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.displaySemicolonButton ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.displaySemicolonButton ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.displaySemicolonButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.displaySemicolonButton = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.displaySemicolonButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.displaySemicolonButton = newValue
     }
   }
 
   public var displayClassifySymbolButton: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.displayClassifySymbolButton ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.displayClassifySymbolButton ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.displayClassifySymbolButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.displayClassifySymbolButton = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.displayClassifySymbolButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.displayClassifySymbolButton = newValue
     }
   }
 
   public var enableNineGridOfNumericKeyboard: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableNineGridOfNumericKeyboard ?? true
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableNineGridOfNumericKeyboard ?? true
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableNineGridOfNumericKeyboard = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.enableNineGridOfNumericKeyboard = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableNineGridOfNumericKeyboard = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.enableNineGridOfNumericKeyboard = newValue
     }
   }
 
   public var numberKeyProcessByRimeOnNineGridOfNumericKeyboard: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.numberKeyProcessByRimeOnNineGridOfNumericKeyboard ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.numberKeyProcessByRimeOnNineGridOfNumericKeyboard ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.numberKeyProcessByRimeOnNineGridOfNumericKeyboard = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.numberKeyProcessByRimeOnNineGridOfNumericKeyboard = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.numberKeyProcessByRimeOnNineGridOfNumericKeyboard = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.numberKeyProcessByRimeOnNineGridOfNumericKeyboard = newValue
     }
   }
 
   public var leftSymbolProcessByRimeOnNineGridOfNumericKeyboard: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.leftSymbolProcessByRimeOnNineGridOfNumericKeyboard ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.leftSymbolProcessByRimeOnNineGridOfNumericKeyboard ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.leftSymbolProcessByRimeOnNineGridOfNumericKeyboard = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.leftSymbolProcessByRimeOnNineGridOfNumericKeyboard = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.leftSymbolProcessByRimeOnNineGridOfNumericKeyboard = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.leftSymbolProcessByRimeOnNineGridOfNumericKeyboard = newValue
     }
   }
 
   public var rightSymbolProcessByRimeOnNineGridOfNumericKeyboard: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.rightSymbolProcessByRimeOnNineGridOfNumericKeyboard ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.rightSymbolProcessByRimeOnNineGridOfNumericKeyboard ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.rightSymbolProcessByRimeOnNineGridOfNumericKeyboard = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.rightSymbolProcessByRimeOnNineGridOfNumericKeyboard = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.rightSymbolProcessByRimeOnNineGridOfNumericKeyboard = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.rightSymbolProcessByRimeOnNineGridOfNumericKeyboard = newValue
     }
   }
 
   public var enableSymbolKeyboard: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableSymbolKeyboard ?? true
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableSymbolKeyboard ?? true
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableSymbolKeyboard = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.enableSymbolKeyboard = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableSymbolKeyboard = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.enableSymbolKeyboard = newValue
     }
   }
 
   public var candidateLabelFontSize: Int {
     get {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.candidateLabelFontSize ?? 12
+      HamsterConfigurationStore.shared.configuration.toolbar?.candidateLabelFontSize ?? 12
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.candidateLabelFontSize = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.toolbar?.candidateLabelFontSize = newValue
+      HamsterConfigurationStore.shared.configuration.toolbar?.candidateLabelFontSize = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.toolbar?.candidateLabelFontSize = newValue
     }
   }
 
   public var candidateWordFontSize: Int {
     get {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.candidateWordFontSize ?? 20
+      HamsterConfigurationStore.shared.configuration.toolbar?.candidateWordFontSize ?? 20
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.candidateWordFontSize = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.toolbar?.candidateWordFontSize = newValue
+      HamsterConfigurationStore.shared.configuration.toolbar?.candidateWordFontSize = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.toolbar?.candidateWordFontSize = newValue
     }
   }
 
   public var heightOfToolbar: Int {
     get {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.heightOfToolbar ?? 50
+      HamsterConfigurationStore.shared.configuration.toolbar?.heightOfToolbar ?? 50
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.heightOfToolbar = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.toolbar?.heightOfToolbar = newValue
+      HamsterConfigurationStore.shared.configuration.toolbar?.heightOfToolbar = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.toolbar?.heightOfToolbar = newValue
     }
   }
 
   public var heightOfCodingArea: Int {
     get {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.heightOfCodingArea ?? 10
+      HamsterConfigurationStore.shared.configuration.toolbar?.heightOfCodingArea ?? 10
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.heightOfCodingArea = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.toolbar?.heightOfCodingArea = newValue
+      HamsterConfigurationStore.shared.configuration.toolbar?.heightOfCodingArea = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.toolbar?.heightOfCodingArea = newValue
     }
   }
 
   public var codingAreaFontSize: Int {
     get {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.codingAreaFontSize ?? 12
+      HamsterConfigurationStore.shared.configuration.toolbar?.codingAreaFontSize ?? 12
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.codingAreaFontSize = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.toolbar?.codingAreaFontSize = newValue
+      HamsterConfigurationStore.shared.configuration.toolbar?.codingAreaFontSize = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.toolbar?.codingAreaFontSize = newValue
     }
   }
 
   public var candidateCommentFontSize: Int {
     get {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.candidateCommentFontSize ?? 12
+      HamsterConfigurationStore.shared.configuration.toolbar?.candidateCommentFontSize ?? 12
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.candidateCommentFontSize = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.toolbar?.candidateCommentFontSize = newValue
+      HamsterConfigurationStore.shared.configuration.toolbar?.candidateCommentFontSize = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.toolbar?.candidateCommentFontSize = newValue
     }
   }
 
   public var displayAppIconButton: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.displayAppIconButton ?? false
+      HamsterConfigurationStore.shared.configuration.toolbar?.displayAppIconButton ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.displayAppIconButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.toolbar?.displayAppIconButton = newValue
+      HamsterConfigurationStore.shared.configuration.toolbar?.displayAppIconButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.toolbar?.displayAppIconButton = newValue
     }
   }
 
   public var displayKeyboardDismissButton: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.displayKeyboardDismissButton ?? false
+      HamsterConfigurationStore.shared.configuration.toolbar?.displayKeyboardDismissButton ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.displayKeyboardDismissButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.toolbar?.displayKeyboardDismissButton = newValue
+      HamsterConfigurationStore.shared.configuration.toolbar?.displayKeyboardDismissButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.toolbar?.displayKeyboardDismissButton = newValue
     }
   }
 
   public var displayIndexOfCandidateWord: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.displayIndexOfCandidateWord ?? false
+      HamsterConfigurationStore.shared.configuration.toolbar?.displayIndexOfCandidateWord ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.displayIndexOfCandidateWord = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.toolbar?.displayIndexOfCandidateWord = newValue
+      HamsterConfigurationStore.shared.configuration.toolbar?.displayIndexOfCandidateWord = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.toolbar?.displayIndexOfCandidateWord = newValue
     }
   }
 
   public var displayCommentOfCandidateWord: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.displayCommentOfCandidateWord ?? false
+      HamsterConfigurationStore.shared.configuration.toolbar?.displayCommentOfCandidateWord ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.displayCommentOfCandidateWord = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.toolbar?.displayCommentOfCandidateWord = newValue
+      HamsterConfigurationStore.shared.configuration.toolbar?.displayCommentOfCandidateWord = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.toolbar?.displayCommentOfCandidateWord = newValue
     }
   }
 
   public var swipePaging: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.swipePaging ?? true
+      HamsterConfigurationStore.shared.configuration.toolbar?.swipePaging ?? true
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.toolbar?.swipePaging = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.toolbar?.swipePaging = newValue
+      HamsterConfigurationStore.shared.configuration.toolbar?.swipePaging = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.toolbar?.swipePaging = newValue
     }
   }
 
   public var spaceDragSensitivity: Int {
     get {
-      HamsterAppDependencyContainer.shared.configuration.swipe?.spaceDragSensitivity ?? 5
+      HamsterConfigurationStore.shared.configuration.swipe?.spaceDragSensitivity ?? 5
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.swipe?.spaceDragSensitivity = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.swipe?.spaceDragSensitivity = newValue
+      HamsterConfigurationStore.shared.configuration.swipe?.spaceDragSensitivity = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.swipe?.spaceDragSensitivity = newValue
     }
   }
 
   public var maximumNumberOfCandidateWords: Int {
     get {
-      HamsterAppDependencyContainer.shared.configuration.rime?.maximumNumberOfCandidateWords ?? 100
+      HamsterConfigurationStore.shared.configuration.rime?.maximumNumberOfCandidateWords ?? 100
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.rime?.maximumNumberOfCandidateWords = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.rime?.maximumNumberOfCandidateWords = newValue
+      HamsterConfigurationStore.shared.configuration.rime?.maximumNumberOfCandidateWords = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.rime?.maximumNumberOfCandidateWords = newValue
     }
   }
 
   public var symbolsOfGridOfNumericKeyboard: [String] {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.symbolsOfGridOfNumericKeyboard ?? []
+      HamsterConfigurationStore.shared.configuration.keyboard?.symbolsOfGridOfNumericKeyboard ?? []
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.symbolsOfGridOfNumericKeyboard = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.symbolsOfGridOfNumericKeyboard = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.symbolsOfGridOfNumericKeyboard = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.symbolsOfGridOfNumericKeyboard = newValue
     }
   }
 
   public var pairsOfSymbols: [String] {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.pairsOfSymbols ?? []
+      HamsterConfigurationStore.shared.configuration.keyboard?.pairsOfSymbols ?? []
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.pairsOfSymbols = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.pairsOfSymbols = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.pairsOfSymbols = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.pairsOfSymbols = newValue
     }
   }
 
   public var symbolsOfCursorBack: [String] {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.symbolsOfCursorBack ?? []
+      HamsterConfigurationStore.shared.configuration.keyboard?.symbolsOfCursorBack ?? []
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.symbolsOfCursorBack = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.symbolsOfCursorBack = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.symbolsOfCursorBack = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.symbolsOfCursorBack = newValue
     }
   }
 
   public var symbolsOfReturnToMainKeyboard: [String] {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.symbolsOfReturnToMainKeyboard ?? []
+      HamsterConfigurationStore.shared.configuration.keyboard?.symbolsOfReturnToMainKeyboard ?? []
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.symbolsOfReturnToMainKeyboard = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.symbolsOfReturnToMainKeyboard = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.symbolsOfReturnToMainKeyboard = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.symbolsOfReturnToMainKeyboard = newValue
     }
   }
 
   public var symbolsOfChineseNineGridKeyboard: [String] {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.symbolsOfChineseNineGridKeyboard ?? []
+      HamsterConfigurationStore.shared.configuration.keyboard?.symbolsOfChineseNineGridKeyboard ?? []
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.symbolsOfChineseNineGridKeyboard = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.symbolsOfChineseNineGridKeyboard = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.symbolsOfChineseNineGridKeyboard = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.symbolsOfChineseNineGridKeyboard = newValue
     }
   }
 
   // 是否启用空格加载文本
   public var enableLoadingTextForSpaceButton: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableLoadingTextForSpaceButton ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableLoadingTextForSpaceButton ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableLoadingTextForSpaceButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.enableLoadingTextForSpaceButton = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableLoadingTextForSpaceButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.enableLoadingTextForSpaceButton = newValue
     }
   }
 
   // 空格按钮加载文本
   public var loadingTextForSpaceButton: String {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.loadingTextForSpaceButton ?? ""
+      HamsterConfigurationStore.shared.configuration.keyboard?.loadingTextForSpaceButton ?? ""
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.loadingTextForSpaceButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.loadingTextForSpaceButton = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.loadingTextForSpaceButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.loadingTextForSpaceButton = newValue
     }
   }
 
   // 空格按钮长显文本
   public var labelTextForSpaceButton: String {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.labelTextForSpaceButton ?? ""
+      HamsterConfigurationStore.shared.configuration.keyboard?.labelTextForSpaceButton ?? ""
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.labelTextForSpaceButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.labelTextForSpaceButton = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.labelTextForSpaceButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.labelTextForSpaceButton = newValue
     }
   }
 
@@ -513,11 +513,11 @@ public class KeyboardSettingsViewModel: ObservableObject, Hashable, Identifiable
   // 当开启此选项后，labelForSpaceButton 设置的值无效
   public var showCurrentInputSchemaNameForSpaceButton: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.showCurrentInputSchemaNameForSpaceButton ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.showCurrentInputSchemaNameForSpaceButton ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.showCurrentInputSchemaNameForSpaceButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.showCurrentInputSchemaNameForSpaceButton = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.showCurrentInputSchemaNameForSpaceButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.showCurrentInputSchemaNameForSpaceButton = newValue
     }
   }
 
@@ -525,33 +525,33 @@ public class KeyboardSettingsViewModel: ObservableObject, Hashable, Identifiable
   // 当开启此选项后， loadingTextForSpaceButton 设置的值无效
   public var showCurrentInputSchemaNameOnLoadingTextForSpaceButton: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.showCurrentInputSchemaNameOnLoadingTextForSpaceButton ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.showCurrentInputSchemaNameOnLoadingTextForSpaceButton ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.showCurrentInputSchemaNameOnLoadingTextForSpaceButton = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.showCurrentInputSchemaNameOnLoadingTextForSpaceButton = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.showCurrentInputSchemaNameOnLoadingTextForSpaceButton = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.showCurrentInputSchemaNameOnLoadingTextForSpaceButton = newValue
     }
   }
 
   /// 中文标准键盘默认划动选项
   public var chineseStanderSystemKeyboardSwipeList: [Key] {
     get {
-      HamsterAppDependencyContainer.shared.configuration.swipe?.keyboardSwipe?
+      HamsterConfigurationStore.shared.configuration.swipe?.keyboardSwipe?
         .first(where: { $0.keyboardType?.isChinesePrimaryKeyboard ?? false })?
         .keys ?? []
     }
     set {
-      if let index = HamsterAppDependencyContainer.shared.configuration.swipe?.keyboardSwipe?.firstIndex(where: { $0.keyboardType?.isChinesePrimaryKeyboard ?? false }) {
-        HamsterAppDependencyContainer.shared.configuration.swipe?.keyboardSwipe![index] = .init(keyboardType: .chinese(.lowercased), keys: newValue)
-        HamsterAppDependencyContainer.shared.applicationConfiguration.swipe?.keyboardSwipe = HamsterAppDependencyContainer.shared.configuration.swipe?.keyboardSwipe
+      if let index = HamsterConfigurationStore.shared.configuration.swipe?.keyboardSwipe?.firstIndex(where: { $0.keyboardType?.isChinesePrimaryKeyboard ?? false }) {
+        HamsterConfigurationStore.shared.configuration.swipe?.keyboardSwipe![index] = .init(keyboardType: .chinese(.lowercased), keys: newValue)
+        HamsterConfigurationStore.shared.applicationConfiguration.swipe?.keyboardSwipe = HamsterConfigurationStore.shared.configuration.swipe?.keyboardSwipe
       } else {
-        if var keyboardSwipe = HamsterAppDependencyContainer.shared.configuration.swipe?.keyboardSwipe {
+        if var keyboardSwipe = HamsterConfigurationStore.shared.configuration.swipe?.keyboardSwipe {
           keyboardSwipe.append(.init(keyboardType: .chinese(.lowercased), keys: newValue))
-          HamsterAppDependencyContainer.shared.configuration.swipe?.keyboardSwipe = keyboardSwipe
-          HamsterAppDependencyContainer.shared.applicationConfiguration.swipe?.keyboardSwipe = keyboardSwipe
+          HamsterConfigurationStore.shared.configuration.swipe?.keyboardSwipe = keyboardSwipe
+          HamsterConfigurationStore.shared.applicationConfiguration.swipe?.keyboardSwipe = keyboardSwipe
         } else {
-          HamsterAppDependencyContainer.shared.configuration.swipe?.keyboardSwipe = [.init(keyboardType: .chinese(.lowercased), keys: newValue)]
-          HamsterAppDependencyContainer.shared.applicationConfiguration.swipe?.keyboardSwipe = [.init(keyboardType: .chinese(.lowercased), keys: newValue)]
+          HamsterConfigurationStore.shared.configuration.swipe?.keyboardSwipe = [.init(keyboardType: .chinese(.lowercased), keys: newValue)]
+          HamsterConfigurationStore.shared.applicationConfiguration.swipe?.keyboardSwipe = [.init(keyboardType: .chinese(.lowercased), keys: newValue)]
         }
       }
     }
@@ -560,19 +560,19 @@ public class KeyboardSettingsViewModel: ObservableObject, Hashable, Identifiable
   /// 选择键盘类型
   public var useKeyboardType: KeyboardType? {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.useKeyboardType?.keyboardType
+      HamsterConfigurationStore.shared.configuration.keyboard?.useKeyboardType?.keyboardType
     }
     set {
       guard let keyboardType = newValue else { return }
       if case .custom(let named, _) = keyboardType {
         if !named.isEmpty {
-          HamsterAppDependencyContainer.shared.configuration.keyboard?.useKeyboardType = keyboardType.yamlString
-          HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.useKeyboardType = keyboardType.yamlString
+          HamsterConfigurationStore.shared.configuration.keyboard?.useKeyboardType = keyboardType.yamlString
+          HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.useKeyboardType = keyboardType.yamlString
         }
         return
       }
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.useKeyboardType = keyboardType.yamlString
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.useKeyboardType = keyboardType.yamlString
+      HamsterConfigurationStore.shared.configuration.keyboard?.useKeyboardType = keyboardType.yamlString
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.useKeyboardType = keyboardType.yamlString
     }
   }
 
@@ -585,7 +585,7 @@ public class KeyboardSettingsViewModel: ObservableObject, Hashable, Identifiable
       .chinese(.lowercased),
       .chineseNineGrid
     ]
-    return list + (HamsterAppDependencyContainer.shared.configuration.keyboards ?? []).map { $0.type }
+    return list + (HamsterConfigurationStore.shared.configuration.keyboards ?? []).map { $0.type }
   }
 
   // MARK: - combine
@@ -1081,7 +1081,7 @@ public class KeyboardSettingsViewModel: ObservableObject, Hashable, Identifiable
       type: .button,
       buttonAction: { [unowned self] in
         Task {
-          guard let defaultConfiguration = HamsterAppDependencyContainer.shared.defaultConfiguration else {
+          guard let defaultConfiguration = HamsterConfigurationStore.shared.defaultConfiguration else {
             throw "获取系统默认配置失败"
           }
           if let defaultSymbolsOfGridOfNumericKeyboard = defaultConfiguration.keyboard?.symbolsOfGridOfNumericKeyboard {
@@ -1334,7 +1334,7 @@ extension KeyboardSettingsViewModel {
 
       // 内置键盘
       // 注意：.filter 会过滤掉与导入键盘名称相同的键盘
-      let originalKeyboards = (HamsterAppDependencyContainer.shared.configuration.keyboards ?? [])
+      let originalKeyboards = (HamsterConfigurationStore.shared.configuration.keyboards ?? [])
         .filter {
           for importKeyboard in keyboards.keyboards {
             if importKeyboard.type == $0.type {
@@ -1344,8 +1344,8 @@ extension KeyboardSettingsViewModel {
           return true
         }
 
-      HamsterAppDependencyContainer.shared.configuration.keyboards = originalKeyboards + keyboards.keyboards
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboards = originalKeyboards + keyboards.keyboards
+      HamsterConfigurationStore.shared.configuration.keyboards = originalKeyboards + keyboards.keyboards
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboards = originalKeyboards + keyboards.keyboards
 
       await ProgressHUD.success("导入成功", interaction: false, delay: 1.5)
       reloadRootViewSubject.send(true)
@@ -1358,11 +1358,11 @@ extension KeyboardSettingsViewModel {
 
   /// 删除自定义键盘布局
   func deleteCustomizeKeyboardLayout(_ keyboardType: KeyboardType) {
-    var keyboards = HamsterAppDependencyContainer.shared.configuration.keyboards ?? []
+    var keyboards = HamsterConfigurationStore.shared.configuration.keyboards ?? []
     if let index = keyboards.firstIndex(where: { $0.type == keyboardType }) {
       keyboards.remove(at: index)
-      HamsterAppDependencyContainer.shared.configuration.keyboards = keyboards
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboards = keyboards
+      HamsterConfigurationStore.shared.configuration.keyboards = keyboards
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboards = keyboards
       ProgressHUD.success("删除成功", interaction: false, delay: 1.5)
       reloadRootViewSubject.send(true)
     } else {
@@ -1639,7 +1639,7 @@ extension KeyboardSettingsViewModel {
   }
 
   func saveKeySwipe(_ key: Key, keyboardType: KeyboardType) {
-    if var keyboardSwipe = HamsterAppDependencyContainer.shared.configuration.swipe?.keyboardSwipe,
+    if var keyboardSwipe = HamsterConfigurationStore.shared.configuration.swipe?.keyboardSwipe,
        var keyboard = keyboardSwipe.first(where: { $0.keyboardType == keyboardType })
     {
       if let keyIndex = keyboard.keys?.firstIndex(where: { $0.action == key.action }) {
@@ -1650,13 +1650,13 @@ extension KeyboardSettingsViewModel {
 
       keyboardSwipe.removeAll(where: { $0.keyboardType == keyboardType })
       keyboardSwipe.append(keyboard)
-      HamsterAppDependencyContainer.shared.configuration.swipe?.keyboardSwipe = keyboardSwipe
-      HamsterAppDependencyContainer.shared.applicationConfiguration.swipe?.keyboardSwipe = keyboardSwipe
+      HamsterConfigurationStore.shared.configuration.swipe?.keyboardSwipe = keyboardSwipe
+      HamsterConfigurationStore.shared.applicationConfiguration.swipe?.keyboardSwipe = keyboardSwipe
     }
   }
 
   func deleteKeySwipe(_ key: Key, swipe: KeySwipe, keyboardType: KeyboardType) {
-    if var keyboardSwipe = HamsterAppDependencyContainer.shared.configuration.swipe?.keyboardSwipe,
+    if var keyboardSwipe = HamsterConfigurationStore.shared.configuration.swipe?.keyboardSwipe,
        var keyboard = keyboardSwipe.first(where: { $0.keyboardType == keyboardType })
     {
       if let keyIndex = keyboard.keys?.firstIndex(where: { $0.action == key.action }) {
@@ -1667,14 +1667,14 @@ extension KeyboardSettingsViewModel {
 
       keyboardSwipe.removeAll(where: { $0.keyboardType == keyboardType })
       keyboardSwipe.append(keyboard)
-      HamsterAppDependencyContainer.shared.configuration.swipe?.keyboardSwipe = keyboardSwipe
-      HamsterAppDependencyContainer.shared.applicationConfiguration.swipe?.keyboardSwipe = keyboardSwipe
+      HamsterConfigurationStore.shared.configuration.swipe?.keyboardSwipe = keyboardSwipe
+      HamsterConfigurationStore.shared.applicationConfiguration.swipe?.keyboardSwipe = keyboardSwipe
     }
   }
 
   /// 判断划动的 Key 是否存在
   func swipeKeyExists(_ key: Key, keyboardType: KeyboardType) -> Bool {
-    if let keyboardSwipe = HamsterAppDependencyContainer.shared.configuration.swipe?.keyboardSwipe,
+    if let keyboardSwipe = HamsterConfigurationStore.shared.configuration.swipe?.keyboardSwipe,
        let keyboard = keyboardSwipe.first(where: { $0.keyboardType == keyboardType })
     {
       return keyboard.keys?.contains(where: { $0.action == key.action }) ?? false

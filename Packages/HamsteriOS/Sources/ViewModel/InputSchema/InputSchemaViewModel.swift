@@ -290,12 +290,12 @@ extension InputSchemaViewModel {
       try FileManager.createDirectory(override: false, dst: FileManager.sandboxUserDataDirectory)
       try await FileManager.default.unzip(fileURL, dst: FileManager.sandboxUserDataDirectory)
 
-      var hamsterConfiguration = HamsterAppDependencyContainer.shared.configuration
+      var hamsterConfiguration = HamsterConfigurationStore.shared.configuration
 
       await ProgressHUD.animate("方案部署中……", interaction: false)
       try rimeContext.deployment(configuration: &hamsterConfiguration)
 
-      HamsterAppDependencyContainer.shared.configuration = hamsterConfiguration
+      HamsterConfigurationStore.shared.configuration = hamsterConfiguration
 
       // 发布
       reloadTableStateSubject.send(true)

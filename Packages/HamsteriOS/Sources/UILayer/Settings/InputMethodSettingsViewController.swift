@@ -3,7 +3,7 @@ import UIKit
 
 /// 输入法设置汇总页 — 包含原有 Hamster 输入法相关的全部设置项
 public class InputMethodSettingsViewController: NibLessViewController {
-  private let mainViewModel: MainViewModel
+  private let onNavigate: (SettingsSubView) -> Void
   private let enableColorSchema: () -> Bool
 
   private lazy var tableView: UITableView = {
@@ -17,8 +17,8 @@ public class InputMethodSettingsViewController: NibLessViewController {
 
   private lazy var sections: [SettingSectionModel] = buildSections()
 
-  init(mainViewModel: MainViewModel, enableColorSchema: @escaping () -> Bool) {
-    self.mainViewModel = mainViewModel
+  init(onNavigate: @escaping (SettingsSubView) -> Void, enableColorSchema: @escaping () -> Bool) {
+    self.onNavigate = onNavigate
     self.enableColorSchema = enableColorSchema
     super.init()
   }
@@ -43,19 +43,19 @@ public class InputMethodSettingsViewController: NibLessViewController {
           icon: UIImage(systemName: "highlighter")!.withTintColor(.yellow),
           text: "输入方案设置",
           accessoryType: .disclosureIndicator,
-          navigationAction: { [unowned self] in mainViewModel.subViewSubject.send(.inputSchema) }
+          navigationAction: { [unowned self] in onNavigate(.inputSchema) }
         ),
         .init(
           icon: UIImage(systemName: "wifi")!,
           text: "Wi-Fi上传方案",
           accessoryType: .disclosureIndicator,
-          navigationAction: { [unowned self] in mainViewModel.subViewSubject.send(.uploadInputSchema) }
+          navigationAction: { [unowned self] in onNavigate(.uploadInputSchema) }
         ),
         .init(
           icon: UIImage(systemName: "folder")!,
           text: "文件管理",
           accessoryType: .disclosureIndicator,
-          navigationAction: { [unowned self] in mainViewModel.subViewSubject.send(.finder) }
+          navigationAction: { [unowned self] in onNavigate(.finder) }
         ),
       ]),
       SettingSectionModel(title: "键盘相关", items: [
@@ -63,20 +63,20 @@ public class InputMethodSettingsViewController: NibLessViewController {
           icon: UIImage(systemName: "keyboard")!,
           text: "键盘设置",
           accessoryType: .disclosureIndicator,
-          navigationAction: { [unowned self] in mainViewModel.subViewSubject.send(.keyboardSettings) }
+          navigationAction: { [unowned self] in onNavigate(.keyboardSettings) }
         ),
         .init(
           icon: UIImage(systemName: "paintpalette")!,
           text: "键盘配色",
           accessoryType: .disclosureIndicator,
           navigationLinkLabel: { [unowned self] in enableColorSchema() ? "启用" : "禁用" },
-          navigationAction: { [unowned self] in mainViewModel.subViewSubject.send(.colorSchema) }
+          navigationAction: { [unowned self] in onNavigate(.colorSchema) }
         ),
         .init(
           icon: UIImage(systemName: "speaker.wave.3")!,
           text: "按键音与震动",
           accessoryType: .disclosureIndicator,
-          navigationAction: { [unowned self] in mainViewModel.subViewSubject.send(.feedback) }
+          navigationAction: { [unowned self] in onNavigate(.feedback) }
         ),
       ]),
       SettingSectionModel(title: "云同步", items: [
@@ -84,7 +84,7 @@ public class InputMethodSettingsViewController: NibLessViewController {
           icon: UIImage(systemName: "icloud")!,
           text: "iCloud 同步",
           accessoryType: .disclosureIndicator,
-          navigationAction: { [unowned self] in mainViewModel.subViewSubject.send(.iCloud) }
+          navigationAction: { [unowned self] in onNavigate(.iCloud) }
         ),
       ]),
       SettingSectionModel(title: "备份", items: [
@@ -92,7 +92,7 @@ public class InputMethodSettingsViewController: NibLessViewController {
           icon: UIImage(systemName: "externaldrive.badge.timemachine")!,
           text: "软件备份",
           accessoryType: .disclosureIndicator,
-          navigationAction: { [unowned self] in mainViewModel.subViewSubject.send(.backup) }
+          navigationAction: { [unowned self] in onNavigate(.backup) }
         ),
       ]),
       SettingSectionModel(title: "RIME", items: [
@@ -100,7 +100,7 @@ public class InputMethodSettingsViewController: NibLessViewController {
           icon: UIImage(systemName: "r.square")!,
           text: "RIME",
           accessoryType: .disclosureIndicator,
-          navigationAction: { [unowned self] in mainViewModel.subViewSubject.send(.rime) }
+          navigationAction: { [unowned self] in onNavigate(.rime) }
         ),
       ]),
     ]

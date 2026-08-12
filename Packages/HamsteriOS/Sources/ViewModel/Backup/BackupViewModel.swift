@@ -73,7 +73,7 @@ public class BackupViewModel {
       let appConfiguration = FileManager.tempUserDataDirectory.appendingPathComponent("hamster.app.yaml")
       if FileManager.default.fileExists(atPath: appConfiguration.path) {
         let appConfig = try HamsterConfigurationRepositories.shared.loadFromYAML(appConfiguration)
-        HamsterAppDependencyContainer.shared.applicationConfiguration = appConfig
+        HamsterConfigurationStore.shared.applicationConfiguration = appConfig
         try FileManager.default.removeItem(at: appConfiguration)
       }
 

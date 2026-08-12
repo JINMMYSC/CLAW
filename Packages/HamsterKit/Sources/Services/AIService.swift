@@ -192,7 +192,7 @@ public class AIService {
     req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
     if provider == .openrouter {
-      req.setValue("Guru iOS", forHTTPHeaderField: "X-Title")
+      req.setValue("ClawTalk iOS", forHTTPHeaderField: "X-Title")
     }
     let model = selectedModel
     let body: [String: Any] = [

@@ -8,6 +8,7 @@
 import Combine
 import Foundation
 import HamsterKit
+import HamsterKeyboardKit
 import OSLog
 import ProgressHUD
 import UIKit
@@ -39,11 +40,11 @@ public class AppleCloudViewModel: ObservableObject {
 
   public var regexOnCopyFile: String {
     get {
-      HamsterAppDependencyContainer.shared.configuration.general?.regexOnCopyFile?.joined(separator: ",") ?? ""
+      HamsterConfigurationStore.shared.configuration.general?.regexOnCopyFile?.joined(separator: ",") ?? ""
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.general?.regexOnCopyFile = (newValue.split(separator: ",").map { String($0) })
-      HamsterAppDependencyContainer.shared.applicationConfiguration.general?.regexOnCopyFile = (newValue.split(separator: ",").map { String($0) })
+      HamsterConfigurationStore.shared.configuration.general?.regexOnCopyFile = (newValue.split(separator: ",").map { String($0) })
+      HamsterConfigurationStore.shared.applicationConfiguration.general?.regexOnCopyFile = (newValue.split(separator: ",").map { String($0) })
     }
   }
 

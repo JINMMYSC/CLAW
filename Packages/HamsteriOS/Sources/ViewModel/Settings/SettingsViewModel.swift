@@ -14,43 +14,43 @@ import UIKit
 
 public class SettingsViewModel: ObservableObject {
   private var cancelable = Set<AnyCancellable>()
-  private unowned let mainViewModel: MainViewModel
+  private let navigate: (SettingsSubView) -> Void
   private let rimeViewModel: RimeViewModel
   private let backupViewModel: BackupViewModel
 
-  init(mainViewModel: MainViewModel, rimeViewModel: RimeViewModel, backupViewModel: BackupViewModel) {
-    self.mainViewModel = mainViewModel
+  init(navigate: @escaping (SettingsSubView) -> Void, rimeViewModel: RimeViewModel, backupViewModel: BackupViewModel) {
+    self.navigate = navigate
     self.rimeViewModel = rimeViewModel
     self.backupViewModel = backupViewModel
   }
 
   public var enableColorSchema: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableColorSchema ?? false
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableColorSchema ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.keyboard?.enableColorSchema = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.keyboard?.enableColorSchema = newValue
+      HamsterConfigurationStore.shared.configuration.keyboard?.enableColorSchema = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.enableColorSchema = newValue
     }
   }
 
   public var enableAppleCloud: Bool {
     get {
-      HamsterAppDependencyContainer.shared.configuration.general?.enableAppleCloud ?? false
+      HamsterConfigurationStore.shared.configuration.general?.enableAppleCloud ?? false
     }
     set {
-      HamsterAppDependencyContainer.shared.configuration.general?.enableAppleCloud = newValue
-      HamsterAppDependencyContainer.shared.applicationConfiguration.general?.enableAppleCloud = newValue
+      HamsterConfigurationStore.shared.configuration.general?.enableAppleCloud = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.general?.enableAppleCloud = newValue
     }
   }
 
-  func navigateToGuru() { mainViewModel.subViewSubject.send(.guru) }
-  func navigateToICloud() { mainViewModel.subViewSubject.send(.iCloud) }
-  func navigateToAutoInsight() { mainViewModel.subViewSubject.send(.autoInsight) }
-  func navigateToSmartFreq() { mainViewModel.subViewSubject.send(.smartFreq) }
-  func navigateToInputMethodSettings() { mainViewModel.subViewSubject.send(.inputMethodSettings) }
-  func navigateToGoogleDrive() { mainViewModel.subViewSubject.send(.googleDrive) }
-  func navigateToDebugLog() { mainViewModel.subViewSubject.send(.debugLog) }
+  func navigateToGuru() { navigate(.guru) }
+  func navigateToICloud() { navigate(.iCloud) }
+  func navigateToAutoInsight() { navigate(.autoInsight) }
+  func navigateToSmartFreq() { navigate(.smartFreq) }
+  func navigateToInputMethodSettings() { navigate(.inputMethodSettings) }
+  func navigateToGoogleDrive() { navigate(.googleDrive) }
+  func navigateToDebugLog() { navigate(.debugLog) }
 
   var tableReloadSubject = PassthroughSubject<Bool, Never>()
   var tableReloadPublished: AnyPublisher<Bool, Never> {
@@ -117,7 +117,7 @@ public class SettingsViewModel: ObservableObject {
           text: "输入方案设置",
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
-            self.mainViewModel.subViewSubject.send(.inputSchema)
+            self.navigate(.inputSchema)
           }
         ),
         .init(
@@ -125,7 +125,7 @@ public class SettingsViewModel: ObservableObject {
           text: "Wi-Fi上传方案",
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
-            self.mainViewModel.subViewSubject.send(.uploadInputSchema)
+            self.navigate(.uploadInputSchema)
           }
         ),
         .init(
@@ -133,7 +133,7 @@ public class SettingsViewModel: ObservableObject {
           text: "文件管理",
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
-            self.mainViewModel.subViewSubject.send(.finder)
+            self.navigate(.finder)
           }
         ),
       ]),
@@ -143,7 +143,7 @@ public class SettingsViewModel: ObservableObject {
           text: "键盘设置",
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
-            self.mainViewModel.subViewSubject.send(.keyboardSettings)
+            self.navigate(.keyboardSettings)
           }
         ),
         .init(
@@ -152,7 +152,7 @@ public class SettingsViewModel: ObservableObject {
           accessoryType: .disclosureIndicator,
           navigationLinkLabel: { [unowned self] in self.enableColorSchema ? "启用" : "禁用" },
           navigationAction: { [unowned self] in
-            self.mainViewModel.subViewSubject.send(.colorSchema)
+            self.navigate(.colorSchema)
           }
         ),
         .init(
@@ -160,7 +160,7 @@ public class SettingsViewModel: ObservableObject {
           text: "按键音与震动",
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
-            self.mainViewModel.subViewSubject.send(.feedback)
+            self.navigate(.feedback)
           }
         ),
       ]),
@@ -170,7 +170,7 @@ public class SettingsViewModel: ObservableObject {
           text: "iCloud 同步",
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
-            self.mainViewModel.subViewSubject.send(.iCloud)
+            self.navigate(.iCloud)
           }
         ),
         .init(
@@ -178,7 +178,7 @@ public class SettingsViewModel: ObservableObject {
           text: "软件备份",
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
-            self.mainViewModel.subViewSubject.send(.backup)
+            self.navigate(.backup)
           }
         ),
       ]),
@@ -188,7 +188,7 @@ public class SettingsViewModel: ObservableObject {
           text: "RIME",
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
-            self.mainViewModel.subViewSubject.send(.rime)
+            self.navigate(.rime)
           }
         ),
       ]),
@@ -198,7 +198,7 @@ public class SettingsViewModel: ObservableObject {
           text: "关于",
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
-            self.mainViewModel.subViewSubject.send(.about)
+            self.navigate(.about)
           }
         ),
       ]),
@@ -208,7 +208,7 @@ public class SettingsViewModel: ObservableObject {
           text: "Google Drive 同步",
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
-            self.mainViewModel.subViewSubject.send(.googleDrive)
+            self.navigate(.googleDrive)
           }
         ),
       ]),
@@ -218,7 +218,7 @@ public class SettingsViewModel: ObservableObject {
           text: "调试日志",
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
-            self.mainViewModel.subViewSubject.send(.debugLog)
+            self.navigate(.debugLog)
           }
         ),
       ]),
@@ -234,13 +234,13 @@ extension SettingsViewModel {
     if let v1FirstRunning = UserDefaults.hamster._firstRunningForV1, v1FirstRunning == false {
       await ProgressHUD.animate("迁移 1.0 配置中……", interaction: false)
 
-      var appConfig = HamsterAppDependencyContainer.shared.applicationConfiguration
+      var appConfig = HamsterConfigurationStore.shared.applicationConfiguration
 
       // 读取 1.0 配置参数
       _setupConfigurationForV1Update(configuration: &appConfig)
 
       // merge 1.0 配置参数
-      var configuration = HamsterAppDependencyContainer.shared.configuration
+      var configuration = HamsterConfigurationStore.shared.configuration
       configuration = try configuration.merge(with: appConfig, uniquingKeysWith: { _, appConfig in appConfig })
 
       // 部署 RIME
@@ -252,8 +252,8 @@ extension SettingsViewModel {
       /// 删除 V1 标识
       UserDefaults.hamster._removeFirstRunningForV1()
 
-      HamsterAppDependencyContainer.shared.configuration = configuration
-      HamsterAppDependencyContainer.shared.applicationConfiguration = appConfig
+      HamsterConfigurationStore.shared.configuration = configuration
+      HamsterConfigurationStore.shared.applicationConfiguration = appConfig
 
       await ProgressHUD.success("迁移完成", interaction: false, delay: 1.5)
       return
@@ -279,7 +279,7 @@ extension SettingsViewModel {
       let configuration: HamsterConfiguration = try await withCheckedThrowingContinuation { continuation in
         DispatchQueue.global(qos: .userInitiated).async {
           do {
-            var config = HamsterAppDependencyContainer.shared.configuration
+            var config = HamsterConfigurationStore.shared.configuration
             if !alreadyDeployed {
               try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
               try FileManager.initSandboxBackupDirectory(override: true)
@@ -303,7 +303,7 @@ extension SettingsViewModel {
       // 修改应用首次运行标志
       UserDefaults.standard.isFirstRunning = false
 
-      HamsterAppDependencyContainer.shared.configuration = configuration
+      HamsterConfigurationStore.shared.configuration = configuration
 
       await ProgressHUD.success(alreadyDeployed ? "已就绪" : "部署完成", interaction: false, delay: 1.5)
     } catch {

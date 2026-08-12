@@ -295,7 +295,7 @@ class KeyboardToolbarView: NibLessView {
 
   @objc func openHamsterAppTouchUpAction() {
     unpressButton(iconButton)
-    actionHandler.handle(.release, on: .url(URL(string: "hamster://app.lgm.7517/main"), id: "openHamster"))
+    actionHandler.handle(.release, on: .url(URL(string: HamsterConstants.appURLForMain), id: "openHamster"))
   }
 
   @objc func guruButtonTouchDownAction() {
@@ -304,7 +304,7 @@ class KeyboardToolbarView: NibLessView {
 
   @objc func guruButtonTouchUpAction() {
     unpressButton(guruButton)
-    actionHandler.handle(.release, on: .url(URL(string: "hamster://app.lgm.7517/guru"), id: "openGuru"))
+    actionHandler.handle(.release, on: .url(URL(string: HamsterConstants.appURLForGuru), id: "openGuru"))
   }
 
   @objc func emojiButtonTouchDownAction() {
