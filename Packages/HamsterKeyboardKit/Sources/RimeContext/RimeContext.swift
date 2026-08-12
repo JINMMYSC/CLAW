@@ -205,6 +205,16 @@ public extension RimeContext {
       userDataDir: hasFullAccess ? FileManager.appGroupUserDataDirectoryURL.path : FileManager.sandboxUserDataDirectory.path
     ))
 
+    // 咕噜极简九宫格：默认使用 t9（中文九键），未就绪时回退雾凇全拼/简化全拼
+    let preferredSchema = schemas.first(where: { $0.schemaId == "t9" })
+      ?? schemas.first(where: { $0.schemaId == "rime_ice" })
+      ?? schemas.first(where: { $0.schemaId == "luna_pinyin_simp" })
+    if let preferredSchema {
+      self.currentSchema = preferredSchema
+      self.latestSchema = nil
+      self.selectSchemas = [preferredSchema]
+    }
+
     // 设置初始输入方案
     setupRimeInputSchema()
 

@@ -279,8 +279,8 @@ extension SettingsViewModel {
     // 部署 RIME
     try rimeViewModel.rimeContext.deployment(configuration: &configuration)
 
-    // TODO: 内置雾凇方案，将默认选择方案改为雾凇拼音
-    let rimeSchema = RimeSchema(schemaId: "rime_ice", schemaName: "雾凇拼音")
+    // 咕噜极简九宫格：默认使用 t9（中文九键）方案
+    let rimeSchema = RimeSchema(schemaId: "t9", schemaName: "中文九键")
     rimeViewModel.rimeContext.selectSchemas = [rimeSchema]
     rimeViewModel.rimeContext.currentSchema = rimeSchema
 
