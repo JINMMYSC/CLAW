@@ -628,12 +628,8 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
   }
 
   open func openUrl(_ url: URL?) {
-    let selector = sel_registerName("openURL:")
-    var responder = self as UIResponder?
-    while let r = responder, !r.responds(to: selector) {
-      responder = r.next
-    }
-    _ = responder?.perform(selector, with: url)
+    guard let url else { return }
+    extensionContext?.open(url, completionHandler: nil)
   }
 
   open func resetInputEngine() {

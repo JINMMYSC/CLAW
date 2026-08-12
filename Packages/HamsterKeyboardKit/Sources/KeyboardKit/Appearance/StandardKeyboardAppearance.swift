@@ -467,6 +467,9 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
     }
     if let override = buttonFontSizePadOverride(for: action) { return override }
     if let override = buttonFontSizeActionOverride(for: action) { return override }
+    if case .chineseNineGrid = action {
+      return 12
+    }
     if action == .returnLastKeyboard || action == .cleanSpellingArea {
       return 16
     }
@@ -490,6 +493,9 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
 
     if let override = buttonFontSizePadOverride(for: action) { return override }
     if let override = buttonFontSizeActionOverride(for: action) { return override }
+    if case .chineseNineGrid = key.action {
+      return 12
+    }
     if action == .returnLastKeyboard || action == .cleanSpellingArea {
       return 16
     }
@@ -545,6 +551,7 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
     case .backspace: return .regular
     case .character(let char): return char.isLowercased ? .light : nil
     case .symbol(let symbol): return symbol.char.isLowercased ? .light : nil
+    case .chineseNineGrid: return .regular
     // default: return buttonImage(for: action) != nil ? .light : nil
     default: return nil
     }
@@ -556,6 +563,7 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
     case .backspace: return .regular
     case .character(let char): return char.isLowercased ? .light : nil
     case .symbol(let symbol): return symbol.char.isLowercased ? .light : nil
+    case .chineseNineGrid: return .regular
     // default: return buttonImage(for: action) != nil ? .light : nil
     default: return nil
     }

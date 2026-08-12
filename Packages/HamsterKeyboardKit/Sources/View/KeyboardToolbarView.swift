@@ -34,7 +34,6 @@ class KeyboardToolbarView: NibLessView {
     button.setImage(UIImage(systemName: "r.circle"), for: .normal)
     button.setPreferredSymbolConfiguration(.init(font: .systemFont(ofSize: 18), scale: .default), forImageIn: .normal)
     button.tintColor = style.toolbarButtonFrontColor
-    button.backgroundColor = style.toolbarButtonBackgroundColor
     button.addTarget(self, action: #selector(openHamsterAppTouchDownAction), for: .touchDown)
     button.addTarget(self, action: #selector(openHamsterAppTouchUpAction), for: .touchUpInside)
     button.addTarget(self, action: #selector(touchCancel), for: .touchCancel)
@@ -62,7 +61,7 @@ class KeyboardToolbarView: NibLessView {
   lazy var emojiButton: UIButton = {
     let button = UIButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
-    button.setImage(UIImage(systemName: "face.smiling"), for: .normal)
+    button.setImage(UIImage(systemName: "face.smiling.inverse"), for: .normal)
     button.setPreferredSymbolConfiguration(.init(font: .systemFont(ofSize: 18), scale: .default), forImageIn: .normal)
     button.tintColor = style.toolbarButtonFrontColor
     button.backgroundColor = style.toolbarButtonBackgroundColor
@@ -282,11 +281,9 @@ class KeyboardToolbarView: NibLessView {
   }
 
   @objc func openHamsterAppTouchDownAction() {
-    iconButton.backgroundColor = style.toolbarButtonPressedBackgroundColor
   }
 
   @objc func openHamsterAppTouchUpAction() {
-    iconButton.backgroundColor = style.toolbarButtonPressedBackgroundColor
     actionHandler.handle(.release, on: .url(URL(string: "hamster://app.lgm.7517/main"), id: "openHamster"))
   }
 

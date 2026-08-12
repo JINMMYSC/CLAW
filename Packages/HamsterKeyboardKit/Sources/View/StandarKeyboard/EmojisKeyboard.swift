@@ -63,8 +63,8 @@ class EmojisKeyboard: NibLessView {
 
   private lazy var abcButton: UIButton = {
     let btn = UIButton(type: .system)
-    btn.setTitle("ABC", for: .normal)
-    btn.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+    btn.setImage(UIImage(systemName: "arrow.left"), for: .normal)
+    btn.setPreferredSymbolConfiguration(.init(font: .systemFont(ofSize: 15, weight: .semibold)), forImageIn: .normal)
     btn.translatesAutoresizingMaskIntoConstraints = false
     btn.addTarget(self, action: #selector(abcTapped), for: .touchUpInside)
     return btn
@@ -114,6 +114,8 @@ class EmojisKeyboard: NibLessView {
 
     abcButton.tintColor = style.toolbarButtonFrontColor
     deleteButton.tintColor = style.toolbarButtonFrontColor
+    styleCapsule(abcButton)
+    styleCapsule(deleteButton)
 
     NSLayoutConstraint.activate([
       categoryBar.topAnchor.constraint(equalTo: topAnchor),
@@ -133,10 +135,21 @@ class EmojisKeyboard: NibLessView {
 
       abcButton.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 12),
       abcButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
+      abcButton.widthAnchor.constraint(equalToConstant: 42),
+      abcButton.heightAnchor.constraint(equalToConstant: 32),
 
       deleteButton.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -12),
       deleteButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
+      deleteButton.widthAnchor.constraint(equalToConstant: 42),
+      deleteButton.heightAnchor.constraint(equalToConstant: 32),
     ])
+  }
+
+  /// 胶囊底样式
+  private func styleCapsule(_ button: UIButton) {
+    button.backgroundColor = .secondarySystemFill
+    button.layer.cornerRadius = 16
+    button.layer.masksToBounds = true
   }
 
   // MARK: - Layout
