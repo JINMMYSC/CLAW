@@ -314,7 +314,7 @@ public extension RimeViewModel {
         keyboards: nil
       )
 
-      // 咕噜极简九宫格：默认使用 t9（中文九键）方案
+      // ClawTalk极简九宫格：默认使用 t9（中文九键）方案
       let rimeSchema = RimeSchema(schemaId: "t9", schemaName: "中文九键")
       rimeContext.selectSchemas = [rimeSchema]
       rimeContext.currentSchema = rimeSchema

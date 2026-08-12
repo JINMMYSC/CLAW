@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C12C5FC374E72F4FC25C6571 /* ClawTalkTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = C177FD1E2CD7CB2582BB02C3 /* ClawTalkTheme.swift */; };
+		C07D8629BEBE680FBEB1FC77 /* Inter[opsz,wght].ttf in Resources */ = {isa = PBXBuildFile; fileRef = C0CCA766049083D10CF786F5 /* Inter[opsz,wght].ttf */; };
+		C07D56BAA2C34654A71D6954 /* Inter-Italic[opsz,wght].ttf in Resources */ = {isa = PBXBuildFile; fileRef = C007BC00ACB713B54DD287F1 /* Inter-Italic[opsz,wght].ttf */; };
+		C046A90056757B65C1462D07 /* RedHatDisplay[wght].ttf in Resources */ = {isa = PBXBuildFile; fileRef = C0A96E853D3A74CBF4570107 /* RedHatDisplay[wght].ttf */; };
+		C086183D476AE669C8D9347D /* JetBrainsMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C0B3F3EF9F77DAE83DF6F1D8 /* JetBrainsMono-Regular.ttf */; };
+		C05FFF85AAD86DB6752D29C1 /* JetBrainsMono-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C0FAC3C75C512AA1A343C8A6 /* JetBrainsMono-Medium.ttf */; };
+		C0BD2FE89CC593C2A71E264A /* JetBrainsMono-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C0A71DE0B6C19476BDB7E044 /* JetBrainsMono-SemiBold.ttf */; };
 		C00C26B72B0698E300E92F89 /* HamsterKeyboardKit in Frameworks */ = {isa = PBXBuildFile; productRef = C00C26B62B0698E300E92F89 /* HamsterKeyboardKit */; };
 		C00C26D32B069D6A00E92F89 /* libyaml-cpp.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = C00C26BF2B069D6900E92F89 /* libyaml-cpp.xcframework */; };
 		C00C26D42B069D6A00E92F89 /* libyaml-cpp.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = C00C26BF2B069D6900E92F89 /* libyaml-cpp.xcframework */; };
@@ -74,6 +81,13 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C177FD1E2CD7CB2582BB02C3 /* ClawTalkTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClawTalkTheme.swift; sourceTree = "<group>"; };
+		C0CCA766049083D10CF786F5 /* Inter[opsz,wght].ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Inter[opsz,wght].ttf"; path = "Assets/Fonts/Inter[opsz,wght].ttf"; sourceTree = "<group>"; };
+		C007BC00ACB713B54DD287F1 /* Inter-Italic[opsz,wght].ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Inter-Italic[opsz,wght].ttf"; path = "Assets/Fonts/Inter-Italic[opsz,wght].ttf"; sourceTree = "<group>"; };
+		C0A96E853D3A74CBF4570107 /* RedHatDisplay[wght].ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "RedHatDisplay[wght].ttf"; path = "Assets/Fonts/RedHatDisplay[wght].ttf"; sourceTree = "<group>"; };
+		C0B3F3EF9F77DAE83DF6F1D8 /* JetBrainsMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "JetBrainsMono-Regular.ttf"; path = "Assets/Fonts/JetBrainsMono-Regular.ttf"; sourceTree = "<group>"; };
+		C0FAC3C75C512AA1A343C8A6 /* JetBrainsMono-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "JetBrainsMono-Medium.ttf"; path = "Assets/Fonts/JetBrainsMono-Medium.ttf"; sourceTree = "<group>"; };
+		C0A71DE0B6C19476BDB7E044 /* JetBrainsMono-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "JetBrainsMono-SemiBold.ttf"; path = "Assets/Fonts/JetBrainsMono-SemiBold.ttf"; sourceTree = "<group>"; };
 		C000CA9D296EA72600EC5323 /* HamsterKeyboardInputViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HamsterKeyboardInputViewController.swift; sourceTree = "<group>"; };
 		C00749622ABAD48C00C5CD0A /* HamsterFileServer */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = HamsterFileServer; path = Packages/HamsterFileServer; sourceTree = "<group>"; };
 		C00C26BF2B069D6900E92F89 /* libyaml-cpp.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = "libyaml-cpp.xcframework"; sourceTree = "<group>"; };
@@ -156,6 +170,19 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		C035FAA75EF7C2063D25DBD8 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				C0CCA766049083D10CF786F5 /* Inter[opsz,wght].ttf */,
+				C007BC00ACB713B54DD287F1 /* Inter-Italic[opsz,wght].ttf */,
+				C0A96E853D3A74CBF4570107 /* RedHatDisplay[wght].ttf */,
+				C0B3F3EF9F77DAE83DF6F1D8 /* JetBrainsMono-Regular.ttf */,
+				C0FAC3C75C512AA1A343C8A6 /* JetBrainsMono-Medium.ttf */,
+				C0A71DE0B6C19476BDB7E044 /* JetBrainsMono-SemiBold.ttf */,
+			);
+			path = Fonts;
+			sourceTree = "<group>";
+		};
 		C00C26BA2B069D3500E92F89 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -197,6 +224,7 @@
 				C08387EE2A55467900EA8082 /* Assets */,
 				C03319D92A2DFEBB00CE4950 /* AppDelegete.swift */,
 				C03319DB2A2DFEF700CE4950 /* SceneDelegate.swift */,
+				C177FD1E2CD7CB2582BB02C3 /* ClawTalkTheme.swift */,
 			);
 			path = Hamster;
 			sourceTree = "<group>";
@@ -282,6 +310,7 @@
 				C03319E12A2E1BEA00CE4950 /* LaunchScreen.storyboard */,
 				C02435932A0490220080CFB4 /* Assets.xcassets */,
 				C02435942A0490220080CFB4 /* Preview Content */,
+				C035FAA75EF7C2063D25DBD8 /* Fonts */,
 			);
 			path = Assets;
 			sourceTree = "<group>";
@@ -407,6 +436,12 @@
 			files = (
 				C09F6AF72A07FB3900F2EF18 /* Assets.xcassets in Resources */,
 				C03EC3A62B06670F00DB741E /* InfoPlist.strings in Resources */,
+				C07D8629BEBE680FBEB1FC77 /* Inter[opsz,wght].ttf in Resources */,
+				C07D56BAA2C34654A71D6954 /* Inter-Italic[opsz,wght].ttf in Resources */,
+				C046A90056757B65C1462D07 /* RedHatDisplay[wght].ttf in Resources */,
+				C086183D476AE669C8D9347D /* JetBrainsMono-Regular.ttf in Resources */,
+				C05FFF85AAD86DB6752D29C1 /* JetBrainsMono-Medium.ttf in Resources */,
+				C0BD2FE89CC593C2A71E264A /* JetBrainsMono-SemiBold.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -428,6 +463,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C12C5FC374E72F4FC25C6571 /* ClawTalkTheme.swift in Sources */,
 				C01396FC2AB499D80043674A /* RimeSyncIntent.swift in Sources */,
 				C01396FD2AB499D80043674A /* RimeDeployIntent.swift in Sources */,
 				C0DA3F422AFB5AE9003E74DA /* RimeDeployBackgroundIntent.swift in Sources */,
@@ -634,7 +670,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hamster/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "咕噜输入法";
+				INFOPLIST_KEY_CFBundleDisplayName = "ClawTalk输入法";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -679,7 +715,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Hamster/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "咕噜输入法";
+				INFOPLIST_KEY_CFBundleDisplayName = "ClawTalk输入法";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -718,7 +754,7 @@
 				DEVELOPMENT_TEAM = X5G6AN3DYX;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HamsterKeyboard/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "咕噜输入法";
+				INFOPLIST_KEY_CFBundleDisplayName = "ClawTalk输入法";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -750,7 +786,7 @@
 				DEVELOPMENT_TEAM = X5G6AN3DYX;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HamsterKeyboard/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "咕噜输入法";
+				INFOPLIST_KEY_CFBundleDisplayName = "ClawTalk输入法";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;

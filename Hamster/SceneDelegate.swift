@@ -18,6 +18,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
     if window == nil {
       let window = UIWindow(windowScene: windowScene)
       window.rootViewController = HamsterAppDependencyContainer.shared.makeRootController()
+      window.tintColor = ClawTalkTheme.accent
       self.window = window
       window.makeKeyAndVisible()
     }
@@ -57,6 +58,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
     if window == nil {
       let window = UIWindow(windowScene: windowScene)
       window.rootViewController = HamsterAppDependencyContainer.shared.makeRootController()
+      window.tintColor = ClawTalkTheme.accent
       self.window = window
       window.makeKeyAndVisible()
     }

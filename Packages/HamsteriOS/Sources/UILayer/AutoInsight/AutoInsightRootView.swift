@@ -93,7 +93,7 @@ public struct AutoInsightRootView: View {
       Text("每日洞察")
         .font(.title2.bold())
 
-      Text("开启后，咕噜输入法将定时自动分析你的输入记录，\n生成心灵陪伴与事务指导，通过通知提醒你查看。")
+      Text("开启后，ClawTalk输入法将定时自动分析你的输入记录，\n生成心灵陪伴与事务指导，通过通知提醒你查看。")
         .font(.subheadline)
         .foregroundColor(.secondary)
         .multilineTextAlignment(.center)

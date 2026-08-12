@@ -28,7 +28,7 @@ struct GURURootView: View {
       // 日期列表
       Section {
         if viewModel.availableDates.isEmpty {
-          Text("暂无采集数据\n使用咕噜输入法打字后将在此显示")
+          Text("暂无采集数据\n使用ClawTalk输入法打字后将在此显示")
             .font(.subheadline)
             .foregroundColor(.secondary)
             .multilineTextAlignment(.center)
@@ -321,7 +321,7 @@ struct GURURootView: View {
     } header: {
       Text("剪贴板")
     } footer: {
-      Text("开启后，每次使用咕噜输入法时将自动记录剪贴板新增内容（文字、图片、Emoji），含时间戳与类型标注。")
+      Text("开启后，每次使用ClawTalk输入法时将自动记录剪贴板新增内容（文字、图片、Emoji），含时间戳与类型标注。")
         .font(.caption)
     }
   }
@@ -434,7 +434,7 @@ struct GURURootView: View {
 
   var helpText: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text("• 咕噜输入法在使用过程中自动采集您的输入（RIME 上屏词汇及英文单词）")
+      Text("• ClawTalk输入法在使用过程中自动采集您的输入（RIME 上屏词汇及英文单词）")
       Text("• 数据保存在本机私有空间，不会自动上传")
       Text("• 支持上传到 iCloud Drive / 同步到 Google Drive")
       Text("• 开启剪贴板监听后记录文字、图片、Emoji 类型")

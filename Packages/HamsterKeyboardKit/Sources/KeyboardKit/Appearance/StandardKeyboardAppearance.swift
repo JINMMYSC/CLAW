@@ -63,9 +63,9 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
     var style = KeyboardBackgroundStyle.standard
     style.backgroundColor = UIColor.white.withAlphaComponent(0.001)
 
-    // 中文九宫格：贴近苹果原版白底
+    // 中文九宫格：贴近苹果原版浅灰底
     if keyboardContext.keyboardType.isChineseNineGrid, !keyboardContext.hasDarkColorScheme {
-      style.backgroundColor = .white
+      style.backgroundColor = UIColor(red: 224 / 255, green: 224 / 255, blue: 228 / 255, alpha: 1)
     }
 
     // 开启键盘配色
@@ -155,7 +155,7 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
     }
   }
 
-  /// 咕噜输入法配色
+  /// ClawTalk输入法配色
   open func hamsterColor() -> HamsterKeyboardColor? {
     guard keyboardContext.hamsterConfiguration?.keyboard?.enableColorSchema ?? false else { return nil }
 
@@ -645,9 +645,9 @@ extension KeyboardAction {
     }
     if isUppercasedShiftAction { return buttonBackgroundColorForPressedState(for: context) }
     if isSystemAction || isSymbolOfDarkAction || isCharacterOfDarkAction || isCleanSpellingArea {
-      // 中文九宫格：贴近苹果原版白底
+      // 中文九宫格：系统键与键盘背景同色
       if context.keyboardType.isChineseNineGrid, !context.hasDarkColorScheme {
-        return .white
+        return UIColor(red: 224 / 255, green: 224 / 255, blue: 228 / 255, alpha: 1)
       }
       return HamsterUIColor.shared.standardDarkButtonBackground(for: context)
     }

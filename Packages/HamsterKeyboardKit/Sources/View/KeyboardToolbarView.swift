@@ -27,7 +27,7 @@ class KeyboardToolbarView: NibLessView {
   private var oldBounds: CGRect = .zero
   private var subscriptions = Set<AnyCancellable>()
 
-  /// 常用功能项: 咕噜输入法App
+  /// 常用功能项: ClawTalk输入法App
   lazy var iconButton: UIButton = {
     let button = UIButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
@@ -229,6 +229,11 @@ class KeyboardToolbarView: NibLessView {
     backgroundColor = UIColor { traits in
       traits.userInterfaceStyle == .dark ? .clear : UIColor(red: 226 / 255, green: 227 / 255, blue: 231 / 255, alpha: 1)
     }
+    let toolButtons: [UIButton] = [iconButton, guruButton, emojiButton, privacyButton, dismissKeyboardButton]
+    for b in toolButtons {
+      b.layer.cornerRadius = 10
+      b.clipsToBounds = true
+    }
     if keyboardContext.displayAppIconButton {
       iconButton.tintColor = style.toolbarButtonFrontColor
     }
@@ -276,54 +281,80 @@ class KeyboardToolbarView: NibLessView {
   }
 
   @objc func dismissKeyboardTouchDownAction() {
-    dismissKeyboardButton.backgroundColor = style.toolbarButtonPressedBackgroundColor
+    pressButton(dismissKeyboardButton)
   }
 
   @objc func dismissKeyboardTouchUpAction() {
-    dismissKeyboardButton.backgroundColor = style.toolbarButtonBackgroundColor
+    unpressButton(dismissKeyboardButton)
     actionHandler.handle(.release, on: .dismissKeyboard)
   }
 
   @objc func openHamsterAppTouchDownAction() {
+    pressButton(iconButton)
   }
 
   @objc func openHamsterAppTouchUpAction() {
+    unpressButton(iconButton)
     actionHandler.handle(.release, on: .url(URL(string: "hamster://app.lgm.7517/main"), id: "openHamster"))
   }
 
   @objc func guruButtonTouchDownAction() {
-    guruButton.backgroundColor = style.toolbarButtonPressedBackgroundColor
+    pressButton(guruButton)
   }
 
   @objc func guruButtonTouchUpAction() {
-    guruButton.backgroundColor = style.toolbarButtonBackgroundColor
+    unpressButton(guruButton)
     actionHandler.handle(.release, on: .url(URL(string: "hamster://app.lgm.7517/guru"), id: "openGuru"))
   }
 
   @objc func emojiButtonTouchDownAction() {
-    emojiButton.backgroundColor = style.toolbarButtonPressedBackgroundColor
+    pressButton(emojiButton)
   }
 
   @objc func emojiButtonTouchUpAction() {
-    emojiButton.backgroundColor = style.toolbarButtonBackgroundColor
-    keyboardContext.setKeyboardType(.emojis)
+    unpressButton(emojiButton)
+    if keyboardContext.keyboardType == .emojis {
+      keyboardContext.setKeyboardType(keyboardContext.selectKeyboard)
+    } else {
+      keyboardContext.setKeyboardType(.emojis)
+    }
   }
 
   @objc func privacyButtonTouchDownAction() {
-    privacyButton.backgroundColor = style.toolbarButtonPressedBackgroundColor
+    pressButton(privacyButton)
   }
 
   @objc func privacyButtonTouchUpAction() {
-    privacyButton.backgroundColor = style.toolbarButtonBackgroundColor
+    unpressButton(privacyButton)
     GURUPrivacyService.shared.toggle()
     updatePrivacyButtonAppearance()
   }
 
+  private func pressButton(_ button: UIButton) {
+    UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+      button.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
+    }
+    if button != iconButton {
+      button.backgroundColor = self.style.toolbarButtonPressedBackgroundColor
+    }
+  }
+
+  private func unpressButton(_ button: UIButton) {
+    UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+      button.transform = .identity
+    }
+    if button != iconButton {
+      button.backgroundColor = self.style.toolbarButtonBackgroundColor
+    }
+  }
+
   @objc func touchCancel() {
     dismissKeyboardButton.backgroundColor = style.toolbarButtonBackgroundColor
-    iconButton.backgroundColor = style.toolbarButtonBackgroundColor
     guruButton.backgroundColor = style.toolbarButtonBackgroundColor
     emojiButton.backgroundColor = style.toolbarButtonBackgroundColor
     privacyButton.backgroundColor = style.toolbarButtonBackgroundColor
+    [dismissKeyboardButton, iconButton, guruButton, emojiButton, privacyButton].forEach { button in
+      button.transform = .identity
+    }
   }
 }
