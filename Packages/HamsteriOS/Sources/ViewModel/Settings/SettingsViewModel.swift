@@ -163,6 +163,14 @@ public class SettingsViewModel: ObservableObject {
             self.navigate(.feedback)
           }
         ),
+        .init(
+          icon: UIImage(systemName: "keyboard.badge.ellipsis")!,
+          text: "键盘模拟演示",
+          accessoryType: .disclosureIndicator,
+          navigationAction: { [unowned self] in
+            self.navigate(.keyboardSimulator)
+          }
+        ),
       ]),
       SettingSectionModel(title: "云同步与备份", items: [
         .init(

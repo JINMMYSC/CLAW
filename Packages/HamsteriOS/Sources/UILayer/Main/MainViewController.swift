@@ -27,6 +27,7 @@ protocol SubViewControllerFactory {
   func makeGoogleDriveViewController() -> GoogleDriveViewController
   func makeLogViewController() -> LogViewController
   func makeInputMethodSettingsViewController() -> InputMethodSettingsViewController
+  func makeKeyboardSimulatorViewController() -> ClawKeyboardSimulatorViewController
 }
 
 open class MainViewController: UISplitViewController {
@@ -78,6 +79,9 @@ open class MainViewController: UISplitViewController {
 
   private lazy var inputMethodSettingsViewController: InputMethodSettingsViewController
     = subViewControllerFactory.makeInputMethodSettingsViewController()
+
+  private lazy var keyboardSimulatorViewController: ClawKeyboardSimulatorViewController
+    = subViewControllerFactory.makeKeyboardSimulatorViewController()
 
   private lazy var aboutViewController: AboutViewController
     = subViewControllerFactory.makeAboutViewController()
@@ -193,6 +197,8 @@ extension MainViewController {
       presentLogViewController()
     case .inputMethodSettings:
       presentInputMethodSettingsViewController()
+    case .keyboardSimulator:
+      presentKeyboardSimulatorViewController()
     case .about:
       presentAboutViewController()
     case .main:
@@ -264,6 +270,10 @@ extension MainViewController {
 
   func presentInputMethodSettingsViewController() {
     presentViewController(inputMethodSettingsViewController)
+  }
+
+  func presentKeyboardSimulatorViewController() {
+    presentViewController(keyboardSimulatorViewController)
   }
 
   func presentAboutViewController() {

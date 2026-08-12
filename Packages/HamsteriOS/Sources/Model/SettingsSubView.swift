@@ -61,6 +61,9 @@ public enum SettingsSubView: String {
   /// 调试日志页面
   case debugLog
 
+  /// 键盘模拟演示页面
+  case keyboardSimulator
+
   /// 空页面
   case none
 }
