@@ -54,6 +54,13 @@ extension BackupRootView {
 }
 
 extension BackupRootView: UITableViewDelegate {
+  /// 点击备份文件 -> 分享
+  func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    tableView.deselectRow(at: indexPath, animated: true)
+    guard indexPath.section == 1, backupViewModel.backupFiles.indices.contains(indexPath.row) else { return }
+    backupViewModel.shareFile = backupViewModel.backupFiles[indexPath.row]
+  }
+
   /// 划动处理
   func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
     guard indexPath.section == 1 else { return nil }
@@ -88,7 +95,7 @@ extension BackupRootView: UITableViewDataSource {
 
   public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
     if section == 0 {
-      return 1
+      return 2
     }
     return backupViewModel.backupFiles.count
   }
@@ -96,7 +103,8 @@ extension BackupRootView: UITableViewDataSource {
   public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
     if indexPath.section == 0 {
       let cell = ButtonTableViewCell(style: .default, reuseIdentifier: ButtonTableViewCell.identifier)
-      cell.updateWithSettingItem(backupViewModel.settingItem)
+      let item = indexPath.row == 0 ? backupViewModel.settingItem : backupViewModel.importSettingItem
+      cell.updateWithSettingItem(item)
       return cell
     }
 

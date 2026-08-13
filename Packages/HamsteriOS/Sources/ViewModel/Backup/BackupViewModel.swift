@@ -22,12 +22,27 @@ public class BackupViewModel {
     favoriteButton: .appBackup
   )
 
+  lazy var importSettingItem = SettingItemModel(
+    text: "导入备份",
+    buttonAction: { [unowned self] in
+      importBackupRequested = true
+    }
+  )
+
   /// 备份文件列表
   @Published
   var backupFiles: [FileInfo] = []
 
   @Published
   var backupSwipeAction: BackupSwipeAction?
+
+  /// 导入备份请求
+  @Published
+  var importBackupRequested = false
+
+  /// 分享备份文件
+  @Published
+  var shareFile: FileInfo?
 
   /// 选择文件
   var selectFile: FileInfo?
@@ -42,6 +57,21 @@ public class BackupViewModel {
 
   func loadBackupFiles() {
     backupFiles = fileBrowserViewModel.currentPathFiles().filter { $0.url.pathExtension.lowercased() == "zip" }
+  }
+
+  /// 导入备份文件（从文件选择器拷贝到备份目录）
+  func importBackup(from fileURL: URL) async throws {
+    let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
+    defer {
+      if didStartAccessing { fileURL.stopAccessingSecurityScopedResource() }
+    }
+    let backupURL = FileManager.sandboxBackupDirectory
+    if !FileManager.default.fileExists(atPath: backupURL.path) {
+      try FileManager.createDirectory(dst: backupURL)
+    }
+    let destinationURL = backupURL.appendingPathComponent(fileURL.lastPathComponent)
+    try FileManager.default.copyItem(at: fileURL, to: destinationURL)
+    loadBackupFiles()
   }
 
   /// 备份应用

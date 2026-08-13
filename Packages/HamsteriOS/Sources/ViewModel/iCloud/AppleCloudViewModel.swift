@@ -65,6 +65,13 @@ public class AppleCloudViewModel: ObservableObject {
       }
     ),
     .init(
+      text: "从 iCloud 恢复",
+      type: .button,
+      buttonAction: { [unowned self] in
+        Task { await restoreFromiCloud() }
+      }
+    ),
+    .init(
       text: "正则过滤",
       textValue: { [unowned self] in regexOnCopyFile },
       textHandled: { [unowned self] in
@@ -97,3 +104,24 @@ public class AppleCloudViewModel: ObservableObject {
     }
   }
 }
+  /// 从 iCloud 恢复文件至本地（SharedSupport + UserData）
+  func restoreFromiCloud() async {
+    await MainActor.run { syncState = .syncing }
+    await ProgressHUD.animate("从 iCloud 恢复中……", interaction: false)
+    do {
+      _ = URL.iCloudDocumentURL
+      try FileManager.copyAppleCloudSharedSupportDirectoryToSandbox()
+      try FileManager.copyAppleCloudUserDataDirectoryToSandbox()
+      UserDefaults.standard.set(Date(), forKey: lastSyncTimeKey)
+      UserDefaults.standard.set(true, forKey: lastSyncSuccessKey)
+      await ProgressHUD.dismiss()
+      await MainActor.run { syncState = .finished(success: true, message: "已从 iCloud 恢复，请执行「重新部署」生效") }
+    } catch {
+      Logger.statistics.error("apple cloud restore error: \(error)")
+      UserDefaults.standard.set(Date(), forKey: lastSyncTimeKey)
+      UserDefaults.standard.set(false, forKey: lastSyncSuccessKey)
+      await ProgressHUD.dismiss()
+      await MainActor.run { syncState = .finished(success: false, message: error.localizedDescription) }
+    }
+  }
+

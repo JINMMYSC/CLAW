@@ -170,7 +170,6 @@ struct GoogleDriveRootView: View {
           } label: {
             Label("登录 Google 账号", systemImage: "person.badge.plus")
           }
-          .disabled(viewModel.clientID.isEmpty)
 
           if !viewModel.statusMessage.isEmpty {
             Text(viewModel.statusMessage)
@@ -181,7 +180,8 @@ struct GoogleDriveRootView: View {
         } footer: {
           VStack(alignment: .leading, spacing: 4) {
             Text("同步 ClawTalk 采集记录至 Google Drive / Hamster / ClawTalk / 目录。")
-            Text("首次使用：前往 Google Cloud Console → APIs & Services → Credentials，创建 **Web 应用** 类型的 OAuth 2.0 Client ID，在「已获授权的重定向 URI」中添加：\nhamster://oauth2redirect")
+            Text("首次使用：填入 Google Cloud Console 创建的 OAuth 2.0 Client ID（APIs & Services → Credentials → 创建 **Web 应用**），并在「已获授权的重定向 URI」添加 hamster://oauth2redirect，保存后即可点击登录。")
+            Text("如未填入 Client ID，点击登录会提示配置。")
           }
           .font(.caption)
         }

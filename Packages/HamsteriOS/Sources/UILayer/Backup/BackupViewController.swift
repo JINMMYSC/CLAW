@@ -7,9 +7,11 @@
 
 import Combine
 import HamsterUIKit
+import ProgressHUD
 import UIKit
+import UniformTypeIdentifiers
 
-class BackupViewController: NibLessViewController {
+class BackupViewController: NibLessViewController, UIDocumentPickerDelegate {
   // MARK: properties
 
   private let backupViewModel: BackupViewModel
@@ -26,6 +28,20 @@ class BackupViewController: NibLessViewController {
       .sink { [unowned self] action in
         guard let action = action else { return }
         swipeActionHandled(action: action)
+      }.store(in: &subscriptions)
+
+    backupViewModel.$importBackupRequested
+      .receive(on: DispatchQueue.main)
+      .sink { [unowned self] requested in
+        guard requested else { return }
+        presentImportPicker()
+      }.store(in: &subscriptions)
+
+    backupViewModel.$shareFile
+      .receive(on: DispatchQueue.main)
+      .sink { [unowned self] fileInfo in
+        guard let fileInfo = fileInfo else { return }
+        presentShareActivity(fileInfo: fileInfo)
       }.store(in: &subscriptions)
   }
 
@@ -75,5 +91,36 @@ class BackupViewController: NibLessViewController {
     }))
     alertController.addAction(UIAlertAction(title: "取消", style: .cancel, handler: nil))
     present(alertController, animated: true)
+  }
+
+  /// 导入备份：打开文件选择器
+  func presentImportPicker() {
+    let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.zip])
+    picker.delegate = self
+    picker.allowsMultipleSelection = false
+    present(picker, animated: true)
+  }
+
+  /// 分享备份文件
+  func presentShareActivity(fileInfo: FileInfo) {
+    let activity = UIActivityViewController(activityItems: [fileInfo.url], applicationActivities: nil)
+    activity.popoverPresentationController?.sourceView = view
+    present(activity, animated: true)
+  }
+}
+
+// MARK: - UIDocumentPickerDelegate
+
+extension BackupViewController: UIDocumentPickerDelegate {
+  func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+    guard let url = urls.first else { return }
+    Task {
+      do {
+        try await backupViewModel.importBackup(from: url)
+        await ProgressHUD.success("导入成功", interaction: false, delay: 1.5)
+      } catch {
+        await ProgressHUD.failed("导入失败", interaction: false, delay: 2)
+      }
+    }
   }
 }

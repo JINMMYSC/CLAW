@@ -49,6 +49,12 @@ public class RimeViewModel {
     }
   }
 
+  /// 简繁切换开关（开启=使用 traditionalization 开关键，关闭=清空）
+  public var simplifiedTraditionalSwitchEnabled: Bool {
+    get { !keyValueOfSwitchSimplifiedAndTraditional.isEmpty }
+    set { keyValueOfSwitchSimplifiedAndTraditional = newValue ? "traditionalization" : "" }
+  }
+
   // 是否覆盖词库文件
   // 非造词用户保持默认值 true
   public var overrideDictFiles: Bool {
@@ -64,15 +70,14 @@ public class RimeViewModel {
   lazy var settings: [SettingSectionModel] = [
     .init(
       title: "简繁切换",
-      footer: "配置文件中`switches`简繁转换选项的配置名称，仓用于中文简体与繁体之间快速切换。",
+      footer: "开启后键盘支持在简体与繁体之间快速切换（RIME switches 中的 traditionalization 开关）。",
       items: [
         .init(
-          icon: UIImage(systemName: "square.and.pencil"),
-          placeholder: "简繁切换键值",
-          type: .textField,
-          textValue: { [unowned self] in keyValueOfSwitchSimplifiedAndTraditional },
-          textHandled: { [unowned self] in
-            keyValueOfSwitchSimplifiedAndTraditional = $0
+          text: "启用简繁切换",
+          type: .toggle,
+          toggleValue: { [unowned self] in simplifiedTraditionalSwitchEnabled },
+          toggleHandled: { [unowned self] in
+            simplifiedTraditionalSwitchEnabled = $0
           }
         ),
       ]
@@ -232,6 +237,12 @@ public extension RimeViewModel {
     await ProgressHUD.animate("RIME部署中, 请稍候……", AnimationType.circleRotateChase, interaction: false)
     var hamsterConfiguration = HamsterConfigurationStore.shared.configuration
     do {
+      // iCloud 同步开启时，先从 iCloud 拉取 RIME 文件再部署
+      if hamsterConfiguration.general?.enableAppleCloud == true {
+        _ = URL.iCloudDocumentURL
+        try? FileManager.copyAppleCloudSharedSupportDirectoryToSandbox()
+        try? FileManager.copyAppleCloudUserDataDirectoryToSandbox()
+      }
       try rimeContext.deployment(configuration: &hamsterConfiguration)
       await checkRimeLogger(filePath)
       HamsterConfigurationStore.shared.configuration = hamsterConfiguration
