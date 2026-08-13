@@ -321,7 +321,7 @@ public final class ClawPanelOverlayView: UIView {
 
     if profiles.isEmpty {
       heartTargetButton.menu = UIMenu(children: [
-        UIAction(title: "暂无档案，请到设置添加", attributes: .disabled) {},
+        UIAction(title: "暂无档案，请到设置添加", attributes: .disabled) { _ in },
       ])
       return
     }
@@ -378,8 +378,9 @@ extension ClawPanelOverlayView: PHPickerViewControllerDelegate {
 public final class ClawMorePanelOverlayView: UIView {
   private let keyboardContext: KeyboardContext
   private let actionHandler: KeyboardActionHandler
+  private var subscriptions = Set<AnyCancellable>()
 
-  private let maskView = UIView()
+  private let backdropView = UIView()
   private let cardView = UIView()
   private let moreAppButton = UIButton(type: .system)
   private let moreGuruButton = UIButton(type: .system)
@@ -414,8 +415,8 @@ public final class ClawMorePanelOverlayView: UIView {
   private func setupViews() {
     isHidden = true
 
-    maskView.backgroundColor = ClawPanelPalette.overlayMask
-    maskView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(maskTapped)))
+    backdropView.backgroundColor = ClawPanelPalette.overlayMask
+    backdropView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(maskTapped)))
 
     cardView.backgroundColor = ClawPanelPalette.keyWhite
     cardView.layer.cornerRadius = 20
@@ -445,7 +446,7 @@ public final class ClawMorePanelOverlayView: UIView {
   }
 
   private func setupConstraints() {
-    [maskView, cardView].forEach {
+    [backdropView, cardView].forEach {
       $0.translatesAutoresizingMaskIntoConstraints = false
       addSubview($0)
     }
@@ -455,10 +456,10 @@ public final class ClawMorePanelOverlayView: UIView {
     }
 
     NSLayoutConstraint.activate([
-      maskView.topAnchor.constraint(equalTo: topAnchor),
-      maskView.bottomAnchor.constraint(equalTo: bottomAnchor),
-      maskView.leadingAnchor.constraint(equalTo: leadingAnchor),
-      maskView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      backdropView.topAnchor.constraint(equalTo: topAnchor),
+      backdropView.bottomAnchor.constraint(equalTo: bottomAnchor),
+      backdropView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      backdropView.trailingAnchor.constraint(equalTo: trailingAnchor),
 
       cardView.centerXAnchor.constraint(equalTo: centerXAnchor),
       cardView.centerYAnchor.constraint(equalTo: centerYAnchor),
