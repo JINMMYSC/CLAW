@@ -247,6 +247,14 @@ public class KeyboardContext: ObservableObject {
   @Published
   public var candidatesViewState: CandidateBarView.State = .collapse
 
+  /// ClawTalk 业务面板状态：-1=收起，0=AI语音助手，1=帮你回，2=超会说
+  @Published
+  public var clawPanelTab: Int = -1
+
+  /// ClawTalk 更多设置页是否展开
+  @Published
+  public var clawMorePanelVisible: Bool = false
+
   /**
    Hamster 应用配置
    */

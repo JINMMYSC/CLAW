@@ -381,4 +381,8 @@ extension HamsterAppDependencyContainer: SubViewControllerFactory {
   func makeKeyboardSimulatorViewController() -> ClawKeyboardSimulatorViewController {
     ClawKeyboardSimulatorViewController()
   }
+
+  func makeHeartTargetSettingsViewController() -> HeartTargetSettingsViewController {
+    HeartTargetSettingsViewController()
+  }
 }

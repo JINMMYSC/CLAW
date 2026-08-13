@@ -63,9 +63,9 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
     var style = KeyboardBackgroundStyle.standard
     style.backgroundColor = UIColor.white.withAlphaComponent(0.001)
 
-    // 中文九宫格：贴近苹果原版浅灰底
+    // 中文九宫格��ClawTalk 参考图键盘底 #B7BCC7
     if keyboardContext.keyboardType.isChineseNineGrid, !keyboardContext.hasDarkColorScheme {
-      style.backgroundColor = UIColor(red: 224 / 255, green: 224 / 255, blue: 228 / 255, alpha: 1)
+      style.backgroundColor = ClawPanelPalette.keyboardBackground
     }
 
     // 开启键盘配色
@@ -647,7 +647,7 @@ extension KeyboardAction {
     if isSystemAction || isSymbolOfDarkAction || isCharacterOfDarkAction || isCleanSpellingArea {
       // 中文九宫格：系统键与键盘背景同色
       if context.keyboardType.isChineseNineGrid, !context.hasDarkColorScheme {
-        return UIColor(red: 209 / 255, green: 212 / 255, blue: 217 / 255, alpha: 1)
+        return ClawPanelPalette.keyboardBackground
       }
       return HamsterUIColor.shared.standardDarkButtonBackground(for: context)
     }
@@ -701,6 +701,10 @@ extension KeyboardAction {
   /// 空闲状态下按键的前景色
   func buttonForegroundColorForIdleState(for context: KeyboardContext) -> UIColor {
     let standard = HamsterUIColor.shared.standardButtonForeground(for: context)
+    // 中文九宫格：九键字母 ClawTalk 参考图 #8D909A（浅色分支）
+    if case .chineseNineGrid = self, !context.hasDarkColorScheme {
+      return ClawPanelPalette.keyLabel
+    }
     if isSystemAction { return standard }
     if isPrimaryAction { return .white }
     return standard

@@ -28,6 +28,7 @@ protocol SubViewControllerFactory {
   func makeLogViewController() -> LogViewController
   func makeInputMethodSettingsViewController() -> InputMethodSettingsViewController
   func makeKeyboardSimulatorViewController() -> ClawKeyboardSimulatorViewController
+  func makeHeartTargetSettingsViewController() -> HeartTargetSettingsViewController
 }
 
 open class MainViewController: UISplitViewController {
@@ -82,6 +83,9 @@ open class MainViewController: UISplitViewController {
 
   private lazy var keyboardSimulatorViewController: ClawKeyboardSimulatorViewController
     = subViewControllerFactory.makeKeyboardSimulatorViewController()
+
+  private lazy var heartTargetSettingsViewController: HeartTargetSettingsViewController
+    = subViewControllerFactory.makeHeartTargetSettingsViewController()
 
   private lazy var aboutViewController: AboutViewController
     = subViewControllerFactory.makeAboutViewController()
@@ -199,6 +203,8 @@ extension MainViewController {
       presentInputMethodSettingsViewController()
     case .keyboardSimulator:
       presentKeyboardSimulatorViewController()
+    case .heartTargets:
+      presentHeartTargetSettingsViewController()
     case .about:
       presentAboutViewController()
     case .main:
@@ -274,6 +280,10 @@ extension MainViewController {
 
   func presentKeyboardSimulatorViewController() {
     presentViewController(keyboardSimulatorViewController)
+  }
+
+  func presentHeartTargetSettingsViewController() {
+    presentViewController(heartTargetSettingsViewController)
   }
 
   func presentAboutViewController() {

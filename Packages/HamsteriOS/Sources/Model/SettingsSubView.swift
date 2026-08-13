@@ -64,6 +64,9 @@ public enum SettingsSubView: String {
   /// 键盘模拟演示页面
   case keyboardSimulator
 
+  /// 心动对象档案页面
+  case heartTargets
+
   /// 空页面
   case none
 }
