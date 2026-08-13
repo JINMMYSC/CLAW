@@ -44,6 +44,16 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
     // setupNextKeyboardBehavior()
     // KeyboardUrlOpener.shared.controller = self
     setupCombineRIMEInput()
+
+    // ClawTalk: 面板输入桥接（面板输入框聚焦时按键直输进面板，否则直接上屏）
+    ClawPanelInputBridge.shared.sendText = { [weak self] text in
+      guard let self else { return }
+      if self.keyboardContext.clawPanelInputActive {
+        ClawPanelInputBridge.shared.insertIntoPanel(text)
+      } else {
+        self.insertTextPatch(text)
+      }
+    }
   }
 
   override open func viewWillAppear(_ animated: Bool) {
@@ -87,6 +97,8 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
     super.viewWillDisappear(animated)
     // ClawTalk: 键盘收起时保存本次 session
     clawTalkFinalizeSession()
+    // ClawTalk: 键盘收起时清空实时建议
+    ClawSuggestionEngine.shared.clear()
   }
 
   override open func viewDidLayoutSubviews() {
@@ -491,6 +503,12 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
   }
 
   open func deleteBackward() {
+    // ClawTalk: 面板输入框聚焦时，退格进面板输入框
+    if keyboardContext.clawPanelInputActive {
+      ClawPanelInputBridge.shared.deleteFromPanel()
+      return
+    }
+
     guard !rimeContext.userInputKey.isEmpty else {
       // 获取光标前后上下文，用于删除需要光标居中的符号
       let beforeInput = self.textDocumentProxy.documentContextBeforeInput ?? ""
@@ -527,6 +545,12 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
   }
 
   open func deleteBackward(times: Int) {
+    // ClawTalk: 面板输入框聚焦时，退格进面板输入框
+    if keyboardContext.clawPanelInputActive {
+      ClawPanelInputBridge.shared.deleteFromPanel()
+      return
+    }
+
     textDocumentProxy.deleteBackward(times: times)
     // ClawTalk: 批量删除
     clawTalkDeleteChars(times)
@@ -562,6 +586,12 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
   }
 
   open func insertText(_ text: String) {
+    // ClawTalk: 面板输入框聚焦时，字符直接进面板输入框
+    if keyboardContext.clawPanelInputActive {
+      ClawPanelInputBridge.shared.insertIntoPanel(text)
+      return
+    }
+
     if keyboardContext.keyboardType.isAlphabetic {
       textDocumentProxy.insertText(text)
       // ClawTalk: 记录直接输入的文本（英文字符、空格等）
@@ -963,6 +993,9 @@ private extension KeyboardInputViewController {
           }
         }
 
+          // ClawTalk: 提交上屏后投喂实时建议引擎
+          ClawSuggestionEngine.shared.feed(commitText)
+
         // 非嵌入模式在 CandidateWordsView.swift 中处理，直接输入 Label 中
         guard self.keyboardContext.enableEmbeddedInputMode else { return }
 
@@ -1040,6 +1073,12 @@ private extension KeyboardInputViewController {
 
   /// 上屏补丁：增加了成对符号/光标回退/返回主键盘的支持
   func insertTextPatch(_ insertText: String) {
+    // ClawTalk: 面板输入框聚焦时，候选上屏/符号直接进面板输入框
+    if keyboardContext.clawPanelInputActive {
+      ClawPanelInputBridge.shared.insertIntoPanel(insertText)
+      return
+    }
+
     // ClawTalk: 记录 RIME/符号上屏内容
     clawTalkAppendText(insertText)
 

@@ -1,11 +1,12 @@
 //
 //  KeyboardColorRootView.swift
-//  键盘配色页：系统默认 / 日光熔金 / 昼熔月汐 3 选 1（互斥开关）
+//  键盘配色页：系统默认 + 7 套主题（红/白/黑/黑金/海盐蓝/森林绿/樱花粉）8 选 1（互斥开关）
 //  样式按 ClawTalk 红黑白主题 + 深浅色适配
 //
 
 import Combine
 import HamsterUIKit
+import HamsterKeyboardKit
 import UIKit
 
 private enum ClawTalkPalette {
@@ -99,11 +100,13 @@ class KeyboardColorOptionRow: UIView {
 class KeyboardColorRootView: NibLessView {
   private let keyboardColorViewModel: KeyboardColorViewModel
 
-  private lazy var optionRows: [KeyboardColorOptionRow] = [
-    makeRow(title: "系统默认", subtitle: "跟随系统深浅色/关闭配色", index: 0),
-    makeRow(title: "日光熔金", subtitle: "浅色主题配色", index: 1),
-    makeRow(title: "昼熔月汐", subtitle: "深色主题配色", index: 2),
-  ]
+  private lazy var optionRows: [KeyboardColorOptionRow] = {
+    var rows = [makeRow(title: "系统默认", subtitle: "苹果原生：跟随系统深浅色", index: 0)]
+    for (offset, theme) in KeyboardColorViewModel.themeOptions.enumerated() {
+      rows.append(makeRow(title: theme.displayName, subtitle: theme.displaySubtitle, index: offset + 1))
+    }
+    return rows
+  }()
 
   private lazy var stackView: UIStackView = {
     let stack = UIStackView(arrangedSubviews: optionRows)

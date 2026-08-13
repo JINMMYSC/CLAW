@@ -3,6 +3,11 @@ import Foundation
 /// ClawTalk 隐私开关服务
 /// 控制是否采集输入记录和剪贴板，状态持久化存储在 App Group UserDefaults
 /// 默认值：采集开启（isCollectionEnabled = true）
+
+public extension Notification.Name {
+  /// 隐私采集状态变化通知（键盘眼睛按钮等 UI 刷新用）
+  static let clawPrivacyDidChange = Notification.Name("clawTalk_privacy_did_change")
+}
 public final class ClawTalkPrivacyService {
   public static let shared = ClawTalkPrivacyService()
 
@@ -37,6 +42,7 @@ public final class ClawTalkPrivacyService {
   public func toggle() -> Bool {
     let next = !isCollectionEnabled
     isCollectionEnabled = next
+    NotificationCenter.default.post(name: .clawPrivacyDidChange, object: nil)
     return next
   }
 }

@@ -50,8 +50,6 @@ class KeyboardRootView: NibLessView {
   /// 工具栏展开时约束
   private var toolbarExpandDynamicConstraints = [NSLayoutConstraint]()
 
-  /// 更多设置页覆盖层约束
-  private var staticConstraintsMore = [NSLayoutConstraint]()
 
   /// 工具栏高度约束
   private var toolbarHeightConstraint: NSLayoutConstraint?
@@ -156,16 +154,6 @@ class KeyboardRootView: NibLessView {
     return view
   }()
 
-  /// 更多设置页覆盖层（长按 AI 进入：R / 脑子 / 眼睛）
-  private lazy var morePanelOverlayView: ClawMorePanelOverlayView = {
-    let view = ClawMorePanelOverlayView(
-      appearance: appearance,
-      actionHandler: actionHandler,
-      keyboardContext: keyboardContext
-    )
-    view.translatesAutoresizingMaskIntoConstraints = false
-    return view
-  }()
 
   /// 主键盘
   private lazy var primaryKeyboardView: UIView = {
@@ -251,18 +239,10 @@ class KeyboardRootView: NibLessView {
     } else {
       addSubview(primaryKeyboardView)
     }
-    addSubview(morePanelOverlayView)
   }
 
   /// 激活约束
   override func activateViewConstraints() {
-    // 更多设置页覆盖层铺满
-    staticConstraintsMore = [
-      morePanelOverlayView.topAnchor.constraint(equalTo: topAnchor),
-      morePanelOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor),
-      morePanelOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
-      morePanelOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
-    ]
 
     if keyboardContext.enableToolbar {
       // 工具栏高度约束，可随配置调整高度
@@ -281,7 +261,6 @@ class KeyboardRootView: NibLessView {
     } else {
       NSLayoutConstraint.activate(createNoToolbarConstraints())
     }
-    NSLayoutConstraint.activate(staticConstraintsMore)
   }
 
   /// 工具栏静态约束（不会发生变动）

@@ -63,8 +63,8 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
     var style = KeyboardBackgroundStyle.standard
     style.backgroundColor = UIColor.white.withAlphaComponent(0.001)
 
-    // 中文九宫格��ClawTalk 参考图键盘底 #B7BCC7
-    if keyboardContext.keyboardType.isChineseNineGrid, !keyboardContext.hasDarkColorScheme {
+    // 中文九宫格：跟随主题（默认=苹果原生）键盘底色
+    if keyboardContext.keyboardType.isChineseNineGrid {
       style.backgroundColor = ClawPanelPalette.keyboardBackground
     }
 
@@ -157,21 +157,28 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
 
   /// ClawTalk输入法配色
   open func hamsterColor() -> HamsterKeyboardColor? {
-    guard keyboardContext.hamsterConfiguration?.keyboard?.enableColorSchema ?? false else { return nil }
+    let config = keyboardContext.hamsterConfiguration?.keyboard
+    let schemaName = keyboardContext.hasDarkColorScheme
+      ? (config?.useColorSchemaForDark ?? "")
+      : (config?.useColorSchemaForLight ?? "")
+
+    // ClawTalk: 面板配色跟随当前主题（未启用配色 = 系统默认/苹果原生）
+    ClawPanelPalette.update(
+      theme: ClawTalkThemePresets.theme(forSchemaName: schemaName),
+      userInterfaceStyle: keyboardContext.colorScheme
+    )
+
+    guard config?.enableColorSchema ?? false else { return nil }
 
     // 配色缓存
     if let cacheHamsterKeyboardColor = cacheHamsterKeyboardColor[keyboardContext.traitCollection.userInterfaceStyle] {
       return cacheHamsterKeyboardColor
     }
 
-    var schemaName: String? = nil
-    if keyboardContext.hasDarkColorScheme {
-      schemaName = keyboardContext.hamsterConfiguration?.keyboard?.useColorSchemaForDark
-    } else {
-      schemaName = keyboardContext.hamsterConfiguration?.keyboard?.useColorSchemaForLight
-    }
-
-    guard let schema = keyboardContext.hamsterConfiguration?.keyboard?.colorSchemas?.first(where: { $0.schemaName == schemaName }) else { return nil }
+    // 优先查配置 colorSchemas；找不到时回落到 ClawTalk 内置主题预设
+    let schema = config?.colorSchemas?.first(where: { $0.schemaName == schemaName })
+      ?? ClawTalkThemePresets.schema(named: schemaName)
+    guard let schema else { return nil }
 
     let hamsterColor = HamsterKeyboardColor(colorSchema: schema, userInterfaceStyle: keyboardContext.colorScheme)
     self.cacheHamsterKeyboardColor[keyboardContext.traitCollection.userInterfaceStyle] = hamsterColor

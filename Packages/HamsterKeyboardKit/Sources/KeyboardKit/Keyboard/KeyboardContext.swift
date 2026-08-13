@@ -251,9 +251,9 @@ public class KeyboardContext: ObservableObject {
   @Published
   public var clawPanelTab: Int = -1
 
-  /// ClawTalk 更多设置页是否展开
+  /// ClawTalk 面板输入框是否聚焦（聚焦时键盘按键直输进面板输入框）
   @Published
-  public var clawMorePanelVisible: Bool = false
+  public var clawPanelInputActive: Bool = false
 
   /**
    Hamster 应用配置
