@@ -103,7 +103,7 @@ public class AppleCloudViewModel: ObservableObject {
       await MainActor.run { syncState = .finished(success: false, message: error.localizedDescription) }
     }
   }
-}
+
   /// 从 iCloud 恢复文件至本地（SharedSupport + UserData）
   func restoreFromiCloud() async {
     await MainActor.run { syncState = .syncing }
@@ -124,4 +124,4 @@ public class AppleCloudViewModel: ObservableObject {
       await MainActor.run { syncState = .finished(success: false, message: error.localizedDescription) }
     }
   }
-
+}

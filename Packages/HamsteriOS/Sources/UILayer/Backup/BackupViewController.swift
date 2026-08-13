@@ -11,7 +11,7 @@ import ProgressHUD
 import UIKit
 import UniformTypeIdentifiers
 
-class BackupViewController: NibLessViewController, UIDocumentPickerDelegate {
+class BackupViewController: NibLessViewController {
   // MARK: properties
 
   private let backupViewModel: BackupViewModel
