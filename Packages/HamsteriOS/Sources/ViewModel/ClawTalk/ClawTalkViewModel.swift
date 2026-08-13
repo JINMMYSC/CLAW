@@ -3,12 +3,12 @@ import Foundation
 import HamsterKit
 import UIKit
 
-class GURUViewModel: ObservableObject {
-  // MARK: - Published State (GURU)
+class ClawTalkViewModel: ObservableObject {
+  // MARK: - Published State (ClawTalk)
 
   @Published var availableDates: [Date] = []
   @Published var selectedDates: Set<Date> = []
-  @Published var previewEntries: [GURUEntry] = []
+  @Published var previewEntries: [ClawTalkEntry] = []
   @Published var previewDate: Date?
   @Published var isUploading: Bool = false
   @Published var uploadProgress: Double = 0
@@ -32,7 +32,7 @@ class GURUViewModel: ObservableObject {
   @Published var aiStatusMessage: String = ""
   @Published var savedPrompts: [AIPrompt] = AIService.shared.savedPrompts
 
-  private let service = GURUDataService.shared
+  private let service = ClawTalkDataService.shared
   private let clipboardService = ClipboardMonitorService.shared
   private let aiService = AIService.shared
 
@@ -113,7 +113,7 @@ class GURUViewModel: ObservableObject {
 
   func exportFileURL() -> URL? {
     let markdown = exportMarkdown()
-    let filename = "GURU-Export-\(Date().formatted(date: .abbreviated, time: .omitted)).md"
+    let filename = "ClawTalk-Export-\(Date().formatted(date: .abbreviated, time: .omitted)).md"
     let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
     try? markdown.write(to: url, atomically: true, encoding: .utf8)
     return url
@@ -167,10 +167,10 @@ class GURUViewModel: ObservableObject {
   }
 
   /// 构建携带选定日期数据的用户消息并发送
-  func sendAIQuery(prompt: AIPrompt, includeGURU: Bool, includeClipboard: Bool) {
+  func sendAIQuery(prompt: AIPrompt, includeClawTalk: Bool, includeClipboard: Bool) {
     var contextText = prompt.content
 
-    if includeGURU && !selectedDates.isEmpty {
+    if includeClawTalk && !selectedDates.isEmpty {
       contextText += "\n\n## 我的输入记录（选定日期）\n\n"
       contextText += service.exportMarkdown(dates: Array(selectedDates).sorted())
     }
@@ -232,7 +232,7 @@ class GURUViewModel: ObservableObject {
   // MARK: - Helpers
 
   func entryCount(for date: Date) -> Int { service.entries(for: date).count }
-  func formattedDate(_ date: Date) -> String { GURUDataService.dateFormatter.string(from: date) }
+  func formattedDate(_ date: Date) -> String { ClawTalkDataService.dateFormatter.string(from: date) }
 
   private func formatBytes(_ bytes: Int64) -> String {
     if bytes < 1024 { return "\(bytes) B" }

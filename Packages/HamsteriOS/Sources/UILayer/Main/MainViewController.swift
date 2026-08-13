@@ -21,14 +21,13 @@ protocol SubViewControllerFactory {
   func makeBackupViewController() -> BackupViewController
   func makeAboutViewController() -> AboutViewController
   func makeRimeViewController() -> RimeViewController
-  func makeGURUViewController() -> GURUViewController
+  func makeClawTalkViewController() -> ClawTalkViewController
   func makeAutoInsightViewController() -> AutoInsightViewController
   func makeSmartFreqViewController() -> SmartFreqViewController
   func makeGoogleDriveViewController() -> GoogleDriveViewController
   func makeLogViewController() -> LogViewController
   func makeInputMethodSettingsViewController() -> InputMethodSettingsViewController
-  func makeKeyboardSimulatorViewController() -> ClawKeyboardSimulatorViewController
-  func makeHeartTargetSettingsViewController() -> HeartTargetSettingsViewController
+    func makeHeartTargetSettingsViewController() -> HeartTargetSettingsViewController
 }
 
 open class MainViewController: UISplitViewController {
@@ -63,8 +62,8 @@ open class MainViewController: UISplitViewController {
   private lazy var iCloudViewController: AppleCloudViewController
     = subViewControllerFactory.makeAppleCloudViewController()
 
-  private lazy var guruViewController: GURUViewController
-    = subViewControllerFactory.makeGURUViewController()
+  private lazy var clawTalkViewController: ClawTalkViewController
+    = subViewControllerFactory.makeClawTalkViewController()
 
   private lazy var autoInsightViewController: AutoInsightViewController
     = subViewControllerFactory.makeAutoInsightViewController()
@@ -81,8 +80,6 @@ open class MainViewController: UISplitViewController {
   private lazy var inputMethodSettingsViewController: InputMethodSettingsViewController
     = subViewControllerFactory.makeInputMethodSettingsViewController()
 
-  private lazy var keyboardSimulatorViewController: ClawKeyboardSimulatorViewController
-    = subViewControllerFactory.makeKeyboardSimulatorViewController()
 
   private lazy var heartTargetSettingsViewController: HeartTargetSettingsViewController
     = subViewControllerFactory.makeHeartTargetSettingsViewController()
@@ -189,8 +186,8 @@ extension MainViewController {
       presentBackupViewController()
     case .iCloud:
       presentAppleCloudViewController()
-    case .guru:
-      presentGURUViewController()
+    case .clawTalk:
+      presentClawTalkViewController()
     case .autoInsight:
       presentAutoInsightViewController()
     case .smartFreq:
@@ -201,8 +198,6 @@ extension MainViewController {
       presentLogViewController()
     case .inputMethodSettings:
       presentInputMethodSettingsViewController()
-    case .keyboardSimulator:
-      presentKeyboardSimulatorViewController()
     case .heartTargets:
       presentHeartTargetSettingsViewController()
     case .about:
@@ -254,8 +249,8 @@ extension MainViewController {
     presentViewController(iCloudViewController)
   }
 
-  func presentGURUViewController() {
-    presentViewController(guruViewController)
+  func presentClawTalkViewController() {
+    presentViewController(clawTalkViewController)
   }
 
   func presentAutoInsightViewController() {
@@ -278,9 +273,6 @@ extension MainViewController {
     presentViewController(inputMethodSettingsViewController)
   }
 
-  func presentKeyboardSimulatorViewController() {
-    presentViewController(keyboardSimulatorViewController)
-  }
 
   func presentHeartTargetSettingsViewController() {
     presentViewController(heartTargetSettingsViewController)

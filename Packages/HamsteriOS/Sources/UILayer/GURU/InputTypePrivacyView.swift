@@ -62,7 +62,7 @@ struct InputTypePrivacyView: View {
       } header: {
         Label("低敏感 · 默认采集", systemImage: "checkmark.shield")
       } footer: {
-        Text("普通使用场景，关闭后该类输入不会进入 GURU 记录。")
+        Text("普通使用场景，关闭后该类输入不会进入 ClawTalk 记录。")
           .font(.caption)
       }
 

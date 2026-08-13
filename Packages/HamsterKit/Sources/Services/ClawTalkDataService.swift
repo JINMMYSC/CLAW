@@ -1,14 +1,14 @@
 import Foundation
 
-/// GURU 数据服务 - 本地存储、读取、上传 iCloud
+/// ClawTalk 数据服务 - 本地存储、读取、上传 iCloud
 /// 键盘扩展和主 App 共享同一个单例（通过 App Group）
-public class GURUDataService {
-  public static let shared = GURUDataService()
+public class ClawTalkDataService {
+  public static let shared = ClawTalkDataService()
 
   private let fileManager = FileManager.default
   private let encoder: JSONEncoder
   private let decoder: JSONDecoder
-  private let writeQueue = DispatchQueue(label: "com.desgemini.guru.write", qos: .utility)
+  private let writeQueue = DispatchQueue(label: "com.desgemini.clawTalk.write", qos: .utility)
 
   // MARK: - Paths
 
@@ -16,8 +16,8 @@ public class GURUDataService {
     fileManager.containerURL(forSecurityApplicationGroupIdentifier: HamsterConstants.appGroupName)
   }
 
-  public var guruBaseURL: URL? {
-    appGroupURL?.appendingPathComponent("GURU", isDirectory: true)
+  public var clawTalkBaseURL: URL? {
+    appGroupURL?.appendingPathComponent("ClawTalk", isDirectory: true)
   }
 
   public static let dateFormatter: DateFormatter = {
@@ -34,16 +34,28 @@ public class GURUDataService {
     encoder.dateEncodingStrategy = .iso8601
     decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
+    migrateLegacyDirectoryIfNeeded()
     createDirectoryIfNeeded()
+  }
+
+  /// 迁移旧数据目录（GURU → ClawTalk），一次性搬移
+  private func migrateLegacyDirectoryIfNeeded() {
+    guard let appGroupURL, let newURL = clawTalkBaseURL else { return }
+    let legacyURL = appGroupURL.appendingPathComponent("GURU", isDirectory: true)
+    var isDir: ObjCBool = false
+    guard fileManager.fileExists(atPath: legacyURL.path, isDirectory: &isDir), isDir.boolValue else { return }
+    if !fileManager.fileExists(atPath: newURL.path) {
+      try? fileManager.moveItem(at: legacyURL, to: newURL)
+    }
   }
 
   // MARK: - Write
 
   /// 保存一条完整的 session 记录（键盘 session 结束时调用）
   /// 写入前自动经过敏感词过滤，命中内容替换为 ***
-  public func saveSession(_ entry: GURUEntry) {
+  public func saveSession(_ entry: ClawTalkEntry) {
     guard entry.isMeaningful else { return }
-    let filtered = GURUEntry(
+    let filtered = ClawTalkEntry(
       startTime: entry.startTime,
       text: SensitiveFilter.shared.filter(entry.text),
       context: entry.context.map { SensitiveFilter.shared.filter($0) },
@@ -55,7 +67,7 @@ public class GURUDataService {
     }
   }
 
-  private func writeEntry(_ entry: GURUEntry) {
+  private func writeEntry(_ entry: ClawTalkEntry) {
     guard let url = dailyFileURL(for: entry.startTime) else { return }
     do {
       let data = try encoder.encode(entry)
@@ -77,7 +89,7 @@ public class GURUDataService {
   // MARK: - Read
 
   public func availableDates() -> [Date] {
-    guard let base = guruBaseURL else { return [] }
+    guard let base = clawTalkBaseURL else { return [] }
     return (try? fileManager.contentsOfDirectory(atPath: base.path))?
       .compactMap { filename -> Date? in
         let name = (filename as NSString).deletingPathExtension
@@ -86,15 +98,15 @@ public class GURUDataService {
       .sorted(by: >) ?? []
   }
 
-  public func entries(for date: Date) -> [GURUEntry] {
+  public func entries(for date: Date) -> [ClawTalkEntry] {
     guard let url = dailyFileURL(for: date),
           fileManager.fileExists(atPath: url.path),
           let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
     return content
       .components(separatedBy: "\n")
-      .compactMap { line -> GURUEntry? in
+      .compactMap { line -> ClawTalkEntry? in
         guard !line.isEmpty, let data = line.data(using: .utf8) else { return nil }
-        return try? decoder.decode(GURUEntry.self, from: data)
+        return try? decoder.decode(ClawTalkEntry.self, from: data)
       }
   }
 
@@ -104,7 +116,7 @@ public class GURUDataService {
 
   /// 文件大小（bytes）
   public func localStorageSize() -> Int64 {
-    guard let base = guruBaseURL else { return 0 }
+    guard let base = clawTalkBaseURL else { return 0 }
     let urls = (try? fileManager.contentsOfDirectory(
       at: base, includingPropertiesForKeys: [.fileSizeKey])) ?? []
     return urls.reduce(0) { sum, url in
@@ -164,12 +176,12 @@ public class GURUDataService {
     completion: @escaping (Result<Int, Error>) -> Void
   ) {
     guard let icloudURL = URL.iCloudDocumentURL else {
-      completion(.failure(GURUError.iCloudUnavailable))
+      completion(.failure(ClawTalkError.iCloudUnavailable))
       return
     }
-    let guruiCloudURL = icloudURL.appendingPathComponent("GURU", isDirectory: true)
+    let clawTalkiCloudURL = icloudURL.appendingPathComponent("ClawTalk", isDirectory: true)
     do {
-      try fileManager.createDirectory(at: guruiCloudURL, withIntermediateDirectories: true)
+      try fileManager.createDirectory(at: clawTalkiCloudURL, withIntermediateDirectories: true)
     } catch {
       completion(.failure(error))
       return
@@ -185,7 +197,7 @@ public class GURUDataService {
           continue
         }
         let filename = Self.dateFormatter.string(from: date) + ".jsonl"
-        let destURL = guruiCloudURL.appendingPathComponent(filename)
+        let destURL = clawTalkiCloudURL.appendingPathComponent(filename)
         do {
           if self.fileManager.fileExists(atPath: destURL.path) {
             let localContent = try String(contentsOf: localURL, encoding: .utf8)
@@ -210,17 +222,17 @@ public class GURUDataService {
 
   private func dailyFileURL(for date: Date) -> URL? {
     let filename = Self.dateFormatter.string(from: date) + ".jsonl"
-    return guruBaseURL?.appendingPathComponent(filename)
+    return clawTalkBaseURL?.appendingPathComponent(filename)
   }
 
   private func createDirectoryIfNeeded() {
-    guard let base = guruBaseURL else { return }
+    guard let base = clawTalkBaseURL else { return }
     try? fileManager.createDirectory(at: base, withIntermediateDirectories: true)
   }
 
   // MARK: - Errors
 
-  public enum GURUError: LocalizedError {
+  public enum ClawTalkError: LocalizedError {
     case iCloudUnavailable
     public var errorDescription: String? {
       switch self {

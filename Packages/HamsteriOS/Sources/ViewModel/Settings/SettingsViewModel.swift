@@ -44,7 +44,7 @@ public class SettingsViewModel: ObservableObject {
     }
   }
 
-  func navigateToGuru() { navigate(.guru) }
+  func navigateToGuru() { navigate(.clawTalk) }
   func navigateToICloud() { navigate(.iCloud) }
   func navigateToAutoInsight() { navigate(.autoInsight) }
   func navigateToSmartFreq() { navigate(.smartFreq) }
@@ -164,16 +164,8 @@ public class SettingsViewModel: ObservableObject {
           }
         ),
         .init(
-          icon: UIImage(systemName: "keyboard.badge.ellipsis")!,
-          text: "键盘模拟演示",
-          accessoryType: .disclosureIndicator,
-          navigationAction: { [unowned self] in
-            self.navigate(.keyboardSimulator)
-          }
-        ),
-        .init(
           icon: UIImage(systemName: "heart.fill")!,
-          text: "心动对象档案",
+          text: "聊天对象档案",
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
             self.navigate(.heartTargets)
@@ -279,7 +271,13 @@ extension SettingsViewModel {
     guard UserDefaults.standard.isFirstRunning else { return }
 
     // 已部署标记：上次部署成功过就直接快速启动，不再全量编译（避免主程序黑屏）
-    let alreadyDeployed = UserDefaults.hamster.bool(forKey: "guru_rime_deployed")
+    // 迁移旧 key（guru_rime_deployed → clawTalk_rime_deployed）
+    if UserDefaults.hamster.object(forKey: "guru_rime_deployed") != nil,
+       UserDefaults.hamster.object(forKey: "clawTalk_rime_deployed") == nil {
+      UserDefaults.hamster.set(UserDefaults.hamster.bool(forKey: "guru_rime_deployed"), forKey: "clawTalk_rime_deployed")
+      UserDefaults.hamster.removeObject(forKey: "guru_rime_deployed")
+    }
+    let alreadyDeployed = UserDefaults.hamster.bool(forKey: "clawTalk_rime_deployed")
 
     // 部署中提示（后台执行，主程序不再卡死）
     await ProgressHUD.animate(
@@ -288,7 +286,7 @@ extension SettingsViewModel {
     )
 
     // 标记部署中
-    UserDefaults.hamster.set(true, forKey: "guru_rime_deploy_in_progress")
+    UserDefaults.hamster.set(true, forKey: "clawTalk_rime_deploy_in_progress")
 
     do {
       // 首次启动初始化输入方案目录 + 部署 RIME（全部放到后台线程，避免阻塞主界面导致黑屏）
@@ -301,11 +299,11 @@ extension SettingsViewModel {
               try FileManager.initSandboxBackupDirectory(override: true)
             }
             try self.rimeViewModel.rimeContext.deployment(configuration: &config, forceFullCheck: !alreadyDeployed)
-            UserDefaults.hamster.set(true, forKey: "guru_rime_deployed")
-            UserDefaults.hamster.set(false, forKey: "guru_rime_deploy_in_progress")
+            UserDefaults.hamster.set(true, forKey: "clawTalk_rime_deployed")
+            UserDefaults.hamster.set(false, forKey: "clawTalk_rime_deploy_in_progress")
             continuation.resume(returning: config)
           } catch {
-            UserDefaults.hamster.set(false, forKey: "guru_rime_deploy_in_progress")
+            UserDefaults.hamster.set(false, forKey: "clawTalk_rime_deploy_in_progress")
             continuation.resume(throwing: error)
           }
         }
@@ -324,7 +322,7 @@ extension SettingsViewModel {
       await ProgressHUD.success(alreadyDeployed ? "已就绪" : "部署完成", interaction: false, delay: 1.5)
     } catch {
       // 失败也要清除部署中标记，避免卡死，下次启动重试
-      UserDefaults.hamster.set(false, forKey: "guru_rime_deploy_in_progress")
+      UserDefaults.hamster.set(false, forKey: "clawTalk_rime_deploy_in_progress")
       Logger.statistics.error("rime init file directory error: \(error.localizedDescription)")
       await ProgressHUD.failed("导入数据异常", interaction: false, delay: 2)
       throw error

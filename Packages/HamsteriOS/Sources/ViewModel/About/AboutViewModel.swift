@@ -27,76 +27,12 @@ public class AboutViewModel: ObservableObject {
     exportConfigurationSubject.eraseToAnyPublisher()
   }
 
-  lazy var settingItems: [SettingSectionModel] = [
+    lazy var settingItems: [SettingSectionModel] = [
     .init(items: [
       .init(text: "RIME版本", secondaryText: AppInfo.rimeVersion, type: .settings, buttonAction: {
         UIPasteboard.general.string = AppInfo.rimeVersion
         await ProgressHUD.success("复制成功", interaction: false, delay: 1.5)
-      }),
-      .init(text: "许可证", secondaryText: "MIT + Commons Clause", type: .settings, buttonAction: {
-        let link = "https://github.com/CauT/GuruIM/blob/main/LICENSE.txt"
-        if let url = URL(string: link) {
-          DispatchQueue.main.async {
-            UIApplication.shared.open(url)
-          }
-        }
-      }),
-      .init(text: "联系邮箱", secondaryText: "donglingyongadls@gmail.com", type: .settings, buttonAction: {
-        let link = "donglingyongadls@gmail.com"
-        if let url = URL(string: "mailto:\(link)") {
-          DispatchQueue.main.async {
-            UIApplication.shared.open(url)
-          }
-        }
-      }),
-      .init(text: "开源地址", secondaryText: "https://github.com/CauT/GuruIM", type: .settings, buttonAction: {
-        let link = "https://github.com/CauT/GuruIM"
-        if let url = URL(string: link) {
-          DispatchQueue.main.async {
-            UIApplication.shared.open(url)
-          }
-        }
-      }),
-      .init(text: "使用开源库列表", accessoryType: .disclosureIndicator, type: .navigation, navigationAction: { [unowned self] in displayOpenSourceView = true })
-    ]),
-
-    .init(
-      footer: "重置通过界面修改的配置项。\n注意：不包含新增/修改配置文件中的配置项。",
-      items: [
-        .init(text: "重置界面设置", textTintColor: .systemRed, type: .button, buttonAction: { [unowned self] in
-          self.restUISettingsSubject.send {
-            HamsterConfigurationStore.shared.reset()
-          }
-        })
-      ]),
-
-    .init(
-      footer: "导出的通过界面修改的配置项。\n注意：不包新增/修改配置文件中的设置。",
-      items: [
-        .init(text: "导出界面设置", type: .button, buttonAction: { [unowned self] in
-          let appConfig = HamsterConfigurationStore.shared.applicationConfiguration
-          let url = FileManager.hamsterAppConfigFileOnUserData
-          do {
-            try HamsterConfigurationRepositories.shared.saveToYAML(config: appConfig, path: url)
-            exportConfigurationSubject.send(url)
-          } catch {
-            await ProgressHUD.failed("导出 UI 设置失败")
-          }
-        })
-      ])
-//    .init(
-//      footer: "应用设置：指当前应用全部设置，包含 UI 交互产生的设置及自定义配置文件中的设置。\n导出文件默认存放在 `Rime/hamster.all.yaml` 中，但不会对应用有任何作用。",
-//      items: [
-//        .init(text: "导出应用设置", type: .button, buttonAction: { [unowned self] in
-//          let config = HamsterConfigurationStore.shared.configuration
-//          let url = FileManager.hamsterAllConfigFileOnUserData
-//          do {
-//            try HamsterConfigurationRepositories.shared.saveToYAML(config: config, yamlPath: url)
-//            exportConfigurationSubject.send(url)
-//          } catch {
-//            await ProgressHUD.failed("导出 UI 设置失败")
-//          }
-//        })
-//      ])
+      })
+    ])
   ]
 }

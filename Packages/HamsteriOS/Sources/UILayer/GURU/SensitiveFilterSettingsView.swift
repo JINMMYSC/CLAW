@@ -46,7 +46,7 @@ struct SensitiveFilterSettingsView: View {
       } header: {
         Text("自动识别（替换为 ***）")
       } footer: {
-        Text("开启后，GURU 输入记录和剪贴板内容在保存时会自动屏蔽匹配项。")
+        Text("开启后，ClawTalk 输入记录和剪贴板内容在保存时会自动屏蔽匹配项。")
           .font(.caption)
       }
 

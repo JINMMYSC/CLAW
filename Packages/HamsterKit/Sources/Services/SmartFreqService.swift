@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-/// 智能调频服务 - 静默分析 GURU 记录，自动优化候选词排序并添加新词
+/// 智能调频服务 - 静默分析 ClawTalk 记录，自动优化候选词排序并添加新词
 public class SmartFreqService {
   public static let shared = SmartFreqService()
 
@@ -149,14 +149,14 @@ NEW\t全拼编码\t词语
 
   private func run() async {
     let cfg = config
-    let guruText = loadGURUText(sinceMinutes: cfg.intervalMinutes)
-    guard !guruText.isEmpty else {
-      logger.info("SmartFreq: no GURU data in the past \(cfg.intervalMinutes)min, skipping")
+    let clawTalkText = loadClawTalkText(sinceMinutes: cfg.intervalMinutes)
+    guard !clawTalkText.isEmpty else {
+      logger.info("SmartFreq: no ClawTalk data in the past \(cfg.intervalMinutes)min, skipping")
       return
     }
 
     let prompt = Self.defaultPrompt
-      .replacingOccurrences(of: "{data}", with: guruText)
+      .replacingOccurrences(of: "{data}", with: clawTalkText)
 
     let result = await callAIWithUsage(prompt: prompt)
 
@@ -173,7 +173,7 @@ NEW\t全拼编码\t词语
     mergeFreqRules(freqRules)
     mergeNewPhrases(newPhrases)
 
-    let entryCount = guruText.components(separatedBy: "\n").filter { !$0.isEmpty }.count
+    let entryCount = clawTalkText.components(separatedBy: "\n").filter { !$0.isEmpty }.count
     let tokensUsed = usage?.totalTokens ?? 0
 
     // 保存分析结果
@@ -196,14 +196,14 @@ NEW\t全拼编码\t词语
 
   // MARK: - Data Loading
 
-  private func loadGURUText(sinceMinutes minutes: Int) -> String {
+  private func loadClawTalkText(sinceMinutes minutes: Int) -> String {
     let since = Date().addingTimeInterval(TimeInterval(-minutes * 60))
     let calendar = Calendar.current
     var lines: [String] = []
 
     var cursor = since
     while cursor <= Date() {
-      let entries = GURUDataService.shared.entries(for: cursor)
+      let entries = ClawTalkDataService.shared.entries(for: cursor)
         .filter { $0.startTime >= since && $0.isMeaningful }
       for e in entries {
         let text = String(e.text.prefix(300))

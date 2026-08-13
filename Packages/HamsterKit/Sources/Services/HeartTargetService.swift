@@ -2,11 +2,11 @@ import Foundation
 import UIKit
 
 extension Notification.Name {
-  /// 心动对象档案集合变化（增删改/切换选中）
+  /// 聊天对象档案集合变化（增删改/切换选中）
   public static let heartTargetProfilesDidChange = Notification.Name("heartTargetProfilesDidChange")
 }
 
-/// 心动对象个人档案（设置页加入，键盘面板内切换）
+/// 聊天对象个人档案（设置页加入，键盘面板内切换）
 public struct HeartTargetProfile: Codable, Identifiable, Equatable {
   public let id: UUID
   public var name: String
@@ -31,7 +31,7 @@ public struct HeartTargetProfile: Codable, Identifiable, Equatable {
   }
 }
 
-/// 心动对象档案存储服务（UserDefaults，App Group 与键盘扩展共享）
+/// 聊天对象档案存储服务（UserDefaults，App Group 与键盘扩展共享）
 public class HeartTargetService {
   public static let shared = HeartTargetService()
 

@@ -1,7 +1,7 @@
 import Foundation
 
-/// GURU 数据采集条目 - 记录用户一次键盘 session 内的完整输入
-public struct GURUEntry: Codable, Identifiable {
+/// ClawTalk 数据采集条目 - 记录用户一次键盘 session 内的完整输入
+public struct ClawTalkEntry: Codable, Identifiable {
   public let id: UUID
   /// session 开始时间（键盘弹出时记录）
   public let startTime: Date
@@ -21,7 +21,7 @@ public struct GURUEntry: Codable, Identifiable {
   }
 }
 
-public extension GURUEntry {
+public extension ClawTalkEntry {
   /// 格式化会话开始时间（用于展示）
   var formattedTime: String {
     let f = DateFormatter()

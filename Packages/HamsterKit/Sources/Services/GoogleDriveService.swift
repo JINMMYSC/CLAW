@@ -1,7 +1,7 @@
 import AuthenticationServices
 import Foundation
 
-/// Google Drive 同步服务 - 通过 REST API 上传 GURU 和剪贴板数据
+/// Google Drive 同步服务 - 通过 REST API 上传 ClawTalk 和剪贴板数据
 /// 不依赖任何第三方 SDK，使用 ASWebAuthenticationSession + URLSession
 public class GoogleDriveService: NSObject {
   public static let shared = GoogleDriveService()
@@ -323,10 +323,10 @@ public class GoogleDriveService: NSObject {
 
   // MARK: - Public Sync
 
-  /// 同步选定日期的 GURU 输入记录到 Google Drive/Hamster/GURU/
-  public func syncGURU(
+  /// 同步选定日期的 ClawTalk 输入记录到 Google Drive/Hamster/ClawTalk/
+  public func syncClawTalk(
     dates: [Date],
-    guruBaseURL: URL,
+    clawTalkBaseURL: URL,
     progress: ((Double) -> Void)? = nil,
     completion: @escaping (Result<Int, Error>) -> Void
   ) {
@@ -338,12 +338,12 @@ public class GoogleDriveService: NSObject {
           switch result {
           case .failure(let e): DispatchQueue.main.async { completion(.failure(e)) }
           case .success(let hamsterId):
-            self?.findOrCreateFolder(name: "GURU", parentId: hamsterId, token: token) { result in
+            self?.findOrCreateFolder(name: "ClawTalk", parentId: hamsterId, token: token) { result in
               switch result {
               case .failure(let e): DispatchQueue.main.async { completion(.failure(e)) }
               case .success(let folderId):
                 self?.uploadLocalFiles(
-                  dates: dates, baseURL: guruBaseURL, folderId: folderId,
+                  dates: dates, baseURL: clawTalkBaseURL, folderId: folderId,
                   mimeType: "application/jsonlines", token: token,
                   progress: progress, completion: completion
                 )
@@ -404,7 +404,7 @@ public class GoogleDriveService: NSObject {
       }
       let date = dates[index]
       index += 1
-      let filename = GURUDataService.dateFormatter.string(from: date) + ".jsonl"
+      let filename = ClawTalkDataService.dateFormatter.string(from: date) + ".jsonl"
       let fileURL = baseURL.appendingPathComponent(filename)
       guard fm.fileExists(atPath: fileURL.path),
             let data = try? Data(contentsOf: fileURL)

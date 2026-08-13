@@ -1,8 +1,8 @@
 import HamsterKit
 import SwiftUI
 
-struct GURURootView: View {
-  @ObservedObject var viewModel: GURUViewModel
+struct ClawTalkRootView: View {
+  @ObservedObject var viewModel: ClawTalkViewModel
   @State private var showDeleteAlert = false
   @State private var dateToDelete: Date?
   @State private var showDeleteSelectedAlert = false
@@ -12,7 +12,7 @@ struct GURURootView: View {
   @State private var showingPromptEditor = false
   @State private var editingPrompt: AIPrompt?
   @State private var selectedPrompt: AIPrompt?
-  @State private var includeGURU = true
+  @State private var includeClawTalk = true
   @State private var includeClipboard = true
   @State private var showClearClipboardAlert = false
 
@@ -92,7 +92,7 @@ struct GURURootView: View {
         Text("说明")
       }
     }
-    .navigationTitle("Now Guru")
+    .navigationTitle("Now ClawTalk")
     .sheet(isPresented: $showingPreview) { previewSheet }
     .sheet(isPresented: $showingAIChat) { aiChatSheet }
     .sheet(isPresented: $showingAISettings) { aiSettingsSheet }
@@ -397,7 +397,7 @@ struct GURURootView: View {
 
   var aiChatSheet: some View {
     NavigationView {
-      AIChatView(viewModel: viewModel, prompt: selectedPrompt, includeGURU: includeGURU, includeClipboard: includeClipboard)
+      AIChatView(viewModel: viewModel, prompt: selectedPrompt, includeClawTalk: includeClawTalk, includeClipboard: includeClipboard)
         .navigationTitle(selectedPrompt?.name ?? "AI 分析")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -450,9 +450,9 @@ struct GURURootView: View {
 // MARK: - AI Chat View
 
 private struct AIChatView: View {
-  @ObservedObject var viewModel: GURUViewModel
+  @ObservedObject var viewModel: ClawTalkViewModel
   let prompt: AIPrompt?
-  let includeGURU: Bool
+  let includeClawTalk: Bool
   let includeClipboard: Bool
 
   @State private var inputText = ""
@@ -494,15 +494,15 @@ private struct AIChatView: View {
       // 包含数据选项（仅首次）
       if !hasSentInitialPrompt {
         HStack {
-          Toggle("GURU记录", isOn: .constant(includeGURU)).labelsHidden()
-          Text("含 GURU 记录").font(.caption2)
+          Toggle("ClawTalk记录", isOn: .constant(includeClawTalk)).labelsHidden()
+          Text("含 ClawTalk 记录").font(.caption2)
           Spacer()
           Toggle("剪贴板", isOn: .constant(includeClipboard)).labelsHidden()
           Text("含剪贴板").font(.caption2)
           Spacer()
           Button("发送分析") {
             if let p = prompt {
-              viewModel.sendAIQuery(prompt: p, includeGURU: includeGURU, includeClipboard: includeClipboard)
+              viewModel.sendAIQuery(prompt: p, includeClawTalk: includeClawTalk, includeClipboard: includeClipboard)
             }
             hasSentInitialPrompt = true
           }
@@ -564,7 +564,7 @@ private struct MessageBubble: View {
 // MARK: - AI Settings View
 
 private struct AISettingsView: View {
-  @ObservedObject var viewModel: GURUViewModel
+  @ObservedObject var viewModel: ClawTalkViewModel
   @State private var showingPromptEditor = false
   @State private var editingPrompt: AIPrompt?
   @State private var openAIKey = ""
@@ -720,7 +720,7 @@ struct PromptEditorView: View {
             .font(.body)
         }
         Section {
-          Text("Prompt 内容将作为消息开头发送给 AI。点击「发送分析」时，系统会自动在后面追加您选中的 GURU / 剪贴板数据。")
+          Text("Prompt 内容将作为消息开头发送给 AI。点击「发送分析」时，系统会自动在后面追加您选中的 ClawTalk / 剪贴板数据。")
             .font(.caption).foregroundColor(.secondary)
         }
       }

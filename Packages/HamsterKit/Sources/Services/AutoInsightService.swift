@@ -33,7 +33,7 @@ public struct AutoInsightConfig: Codable {
   }
 }
 
-/// 每日洞察服务 - 定时分析 GURU 记录并生成 AI 洞察
+/// 每日洞察服务 - 定时分析 ClawTalk 记录并生成 AI 洞察
 public class AutoInsightService {
   public static let shared = AutoInsightService()
 
@@ -174,23 +174,23 @@ public class AutoInsightService {
     let cfg = config
     log.log("开始分析（间隔 \(cfg.intervalMinutes) 分钟内的数据）", tag: "AutoInsight")
 
-    let guruText = loadGURUText(sinceMinutes: cfg.intervalMinutes)
-    let guruCount = guruText.components(separatedBy: "\n").filter { !$0.isEmpty }.count
+    let clawTalkText = loadClawTalkText(sinceMinutes: cfg.intervalMinutes)
+    let clawTalkCount = clawTalkText.components(separatedBy: "\n").filter { !$0.isEmpty }.count
 
     let (clipboardText, clipboardRefs) = loadClipboardData(sinceMinutes: cfg.intervalMinutes)
     let clipCount = clipboardText.components(separatedBy: "\n").filter { !$0.isEmpty }.count
     log.log("剪贴板数据 \(clipCount) 条（监听开关：\(ClipboardMonitorService.shared.isEnabled ? "开" : "关")）", tag: "AutoInsight")
 
-    guard !guruText.isEmpty || !clipboardText.isEmpty else {
-      log.log("无 GURU 及剪贴板数据，跳过本次分析", level: .warn, tag: "AutoInsight")
+    guard !clawTalkText.isEmpty || !clipboardText.isEmpty else {
+      log.log("无 ClawTalk 及剪贴板数据，跳过本次分析", level: .warn, tag: "AutoInsight")
       return
     }
-    log.log("GURU \(guruCount) 条 + 剪贴板 \(clipCount) 条，发起两路并发 AI 请求", tag: "AutoInsight")
+    log.log("ClawTalk \(clawTalkCount) 条 + 剪贴板 \(clipCount) 条，发起两路并发 AI 请求", tag: "AutoInsight")
 
     // 拼合数据段
     var dataSections: [String] = []
-    if !guruText.isEmpty {
-      dataSections.append("【输入记录】\n\(guruText)")
+    if !clawTalkText.isEmpty {
+      dataSections.append("【输入记录】\n\(clawTalkText)")
     }
     if !clipboardText.isEmpty {
       dataSections.append("【剪贴板内容】\n\(clipboardText)")
@@ -242,7 +242,7 @@ public class AutoInsightService {
       log.log("事务指导 ✗ \(e.localizedDescription)", level: .error, tag: "AutoInsight")
     }
 
-    let entryCount = guruCount + clipCount
+    let entryCount = clawTalkCount + clipCount
     let insight = AutoInsightResult(
       spiritualContent: spiritual,
       taskContent: task,
@@ -272,7 +272,7 @@ public class AutoInsightService {
 
   // MARK: - Data Loading
 
-  private func loadGURUText(sinceMinutes minutes: Int) -> String {
+  private func loadClawTalkText(sinceMinutes minutes: Int) -> String {
     let since = Date().addingTimeInterval(TimeInterval(-minutes * 60))
     let calendar = Calendar.current
     var lines: [String] = []
@@ -280,7 +280,7 @@ public class AutoInsightService {
     // 遍历从 since 到今天的所有日期
     var cursor = since
     while cursor <= Date() {
-      let entries = GURUDataService.shared.entries(for: cursor)
+      let entries = ClawTalkDataService.shared.entries(for: cursor)
         .filter { $0.startTime >= since && $0.isMeaningful }
       for e in entries {
         let appCtx = e.appContext.isEmpty ? "未知" : e.appContext

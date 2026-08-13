@@ -1,7 +1,7 @@
 import Foundation
 
 /// 敏感词过滤服务
-/// 在 GURU 和剪贴板内容写入磁盘前，将匹配到的内容替换为 ***
+/// 在 ClawTalk 和剪贴板内容写入磁盘前，将匹配到的内容替换为 ***
 /// 设置持久化在 App Group UserDefaults，键盘扩展与主 App 共享
 public final class SensitiveFilter {
   public static let shared = SensitiveFilter()

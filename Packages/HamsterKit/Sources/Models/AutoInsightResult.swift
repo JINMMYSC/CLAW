@@ -8,7 +8,7 @@ public struct AutoInsightResult: Codable, Identifiable {
   public let spiritualContent: String
   /// 事务指导内容（AI 生成）
   public let taskContent: String
-  /// 参与分析的 GURU 条目数量
+  /// 参与分析的 ClawTalk 条目数量
   public let entriesCount: Int
   /// 是否已被用户读取
   public var isRead: Bool

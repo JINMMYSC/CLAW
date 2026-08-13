@@ -45,7 +45,7 @@ public final class ClawPanelOverlayView: UIView {
   // 结果展示
   private let resultLabel = UILabel()
 
-  // 心动对象
+  // 聊天对象
   private let heartTargetButton = UIButton(type: .system)
 
   // AI 分析状态
@@ -184,7 +184,7 @@ public final class ClawPanelOverlayView: UIView {
   }
 
   private func bind() {
-    // 心动对象档案变化时刷新选择菜单
+    // 聊天对象档案变化时刷新选择菜单
     NotificationCenter.default.addObserver(
       self,
       selector: #selector(heartProfilesDidChange),
@@ -275,7 +275,7 @@ public final class ClawPanelOverlayView: UIView {
     vc.present(picker, animated: true)
   }
 
-  /// AI 分析（读懂TA / 优化），prompt 注入心动对象档案
+  /// AI 分析（读懂TA / 优化），prompt 注入聊天对象档案
   private func runAnalysis(text: String) {
     isLoading = true
     resultLabel.isHidden = false
@@ -291,7 +291,7 @@ public final class ClawPanelOverlayView: UIView {
       systemPrompt = "你是表达优化助手。请帮用户把想说的话优化得更得体、更有说服力，保留原意。"
     }
     if let profile, !profile.bio.isEmpty {
-      systemPrompt += "\n心动对象背景：\(profile.bio)"
+      systemPrompt += "\n聊天对象背景：\(profile.bio)"
     }
 
     AIService.shared.chat(
@@ -312,12 +312,12 @@ public final class ClawPanelOverlayView: UIView {
     }
   }
 
-  // MARK: - 心动对象
+  // MARK: - 聊天对象
 
   private func refreshHeartTargetMenu() {
     let profiles = HeartTargetService.shared.profiles
     let selected = HeartTargetService.shared.selectedProfile?.displayName ?? "未选择"
-    heartTargetButton.setTitle("心动对象：\(selected) ⇄", for: .normal)
+    heartTargetButton.setTitle("聊天对象：\(selected) ⇄", for: .normal)
 
     if profiles.isEmpty {
       heartTargetButton.menu = UIMenu(children: [
@@ -485,7 +485,7 @@ public final class ClawMorePanelOverlayView: UIView {
   }
 
   private func refreshPrivacy() {
-    let collecting = GURUPrivacyService.shared.isCollectionEnabled
+    let collecting = ClawTalkPrivacyService.shared.isCollectionEnabled
     let icon = collecting ? "eye" : "eye.slash"
     morePrivacyButton.setImage(UIImage(systemName: icon), for: .normal)
     morePrivacyButton.setTitle(collecting ? " 隐私采集中（点击暂停）" : " 隐私已暂停（点击采集）", for: .normal)
@@ -510,7 +510,7 @@ public final class ClawMorePanelOverlayView: UIView {
   }
 
   @objc private func morePrivacyTapped() {
-    GURUPrivacyService.shared.toggle()
+    ClawTalkPrivacyService.shared.toggle()
     refreshPrivacy()
   }
 }

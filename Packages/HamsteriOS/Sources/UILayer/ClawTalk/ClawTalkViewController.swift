@@ -1,19 +1,15 @@
-//
-//  ClawKeyboardSimulatorViewController.swift
-//
-//  ClawTalk 键盘模拟演示页（UIKit 容器，承载 SwiftUI 模拟键盘）
-//
-
 import HamsterUIKit
 import SwiftUI
 import UIKit
 
-class ClawKeyboardSimulatorViewController: NibLessViewController {
+class ClawTalkViewController: NibLessViewController {
+  private let viewModel = ClawTalkViewModel()
+
   override func viewDidLoad() {
     super.viewDidLoad()
-    title = "键盘模拟演示"
+    title = "Now ClawTalk"
 
-    let hostingController = UIHostingController(rootView: ClawKeyboardSimulatorView())
+    let hostingController = UIHostingController(rootView: ClawTalkRootView(viewModel: self.viewModel))
     addChild(hostingController)
     view.addSubview(hostingController.view)
     hostingController.view.translatesAutoresizingMaskIntoConstraints = false

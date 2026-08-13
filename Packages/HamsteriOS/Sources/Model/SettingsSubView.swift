@@ -43,8 +43,8 @@ public enum SettingsSubView: String {
   case main
 
 
-  /// GURU 输入采集页面
-  case guru
+  /// ClawTalk 输入采集页面
+  case clawTalk
 
   /// 每日洞察页面
   case autoInsight
@@ -61,10 +61,7 @@ public enum SettingsSubView: String {
   /// 调试日志页面
   case debugLog
 
-  /// 键盘模拟演示页面
-  case keyboardSimulator
-
-  /// 心动对象档案页面
+  /// 聊天对象档案页面
   case heartTargets
 
   /// 空页面

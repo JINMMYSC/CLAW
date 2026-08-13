@@ -1,8 +1,8 @@
 import UIKit
 
-/// 设置页顶部核心功能卡片区：Now Guru + 每日洞察 + 智能调频
+/// 设置页顶部核心功能卡片区：Now ClawTalk + 每日洞察 + 智能调频
 final class FeatureCardsHeaderView: UIView {
-  var guruAction: (() -> Void)?
+  var clawTalkAction: (() -> Void)?
   var autoInsightAction: (() -> Void)?
   var smartFreqAction: (() -> Void)?
 
@@ -17,12 +17,12 @@ final class FeatureCardsHeaderView: UIView {
     return label
   }()
 
-  private lazy var guruCard: UIView = makeCard(
+  private lazy var clawTalkCard: UIView = makeCard(
     icon: "brain.head.profile",
     iconColor: .systemPurple,
     cardColor: UIColor.systemPurple.withAlphaComponent(0.12),
     borderColor: UIColor.systemPurple.withAlphaComponent(0.25),
-    title: "Now Guru",
+    title: "Now ClawTalk",
     subtitle: "输入采集 · 剪贴板监听 · AI 分析"
   )
 
@@ -67,7 +67,7 @@ final class FeatureCardsHeaderView: UIView {
   // MARK: - Setup
 
   private func setup() {
-    cardStack.addArrangedSubview(guruCard)
+    cardStack.addArrangedSubview(clawTalkCard)
     cardStack.addArrangedSubview(autoInsightCard)
     cardStack.addArrangedSubview(smartFreqCard)
     addSubview(sectionLabel)
@@ -85,7 +85,7 @@ final class FeatureCardsHeaderView: UIView {
       cardStack.heightAnchor.constraint(equalToConstant: 118),
     ])
 
-    addTapGesture(to: guruCard, selector: #selector(guruTapped))
+    addTapGesture(to: clawTalkCard, selector: #selector(clawTalkTapped))
     addTapGesture(to: autoInsightCard, selector: #selector(autoInsightTapped))
     addTapGesture(to: smartFreqCard, selector: #selector(smartFreqTapped))
   }
@@ -97,8 +97,8 @@ final class FeatureCardsHeaderView: UIView {
 
   // MARK: - Actions
 
-  @objc private func guruTapped() {
-    bounce(guruCard) { [weak self] in self?.guruAction?() }
+  @objc private func clawTalkTapped() {
+    bounce(clawTalkCard) { [weak self] in self?.clawTalkAction?() }
   }
 
   @objc private func autoInsightTapped() {

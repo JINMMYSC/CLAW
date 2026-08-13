@@ -51,11 +51,11 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
     setupRIME()
     viewWillSetupKeyboard()
     viewWillSyncWithContext()
-    // GURU: 每次键盘弹出开启新 session（隐私模式下跳过）
-    if GURUPrivacyService.shared.isCollectionEnabled {
-      guruBeginSession()
+    // ClawTalk: 每次键盘弹出开启新 session（隐私模式下跳过）
+    if ClawTalkPrivacyService.shared.isCollectionEnabled {
+      clawTalkBeginSession()
       // 注意：不在键盘内自动读取剪贴板。iOS 16+ 读取剪贴板内容会弹「xx想从微信粘贴」提示，
-      // 改为在 GURU 剪贴板页面手动「立即记录」，避免输入时反复弹窗打扰。
+      // 改为在 ClawTalk 剪贴板页面手动「立即记录」，避免输入时反复弹窗打扰。
 
       // 每日洞察：满足间隔条件时后台触发 AI 分析
       Task.detached(priority: .background) {
@@ -85,8 +85,8 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
 
   override open func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
-    // GURU: 键盘收起时保存本次 session
-    guruFinalizeSession()
+    // ClawTalk: 键盘收起时保存本次 session
+    clawTalkFinalizeSession()
   }
 
   override open func viewDidLayoutSubviews() {
@@ -500,12 +500,12 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
       if keyboardContext.cursorBackOfSymbols(key: text) {
         self.textDocumentProxy.adjustTextPosition(byCharacterOffset: 1)
         self.textDocumentProxy.deleteBackward(times: 2)
-        // GURU: 成对符号删除 2 个字符
-        guruDeleteChars(2)
+        // ClawTalk: 成对符号删除 2 个字符
+        clawTalkDeleteChars(2)
       } else {
         textDocumentProxy.deleteBackward(range: keyboardBehavior.backspaceRange)
-        // GURU: 删除 1 个字符
-        guruDeleteLastChar()
+        // ClawTalk: 删除 1 个字符
+        clawTalkDeleteLastChar()
       }
       return
     }
@@ -528,8 +528,8 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
 
   open func deleteBackward(times: Int) {
     textDocumentProxy.deleteBackward(times: times)
-    // GURU: 批量删除
-    guruDeleteChars(times)
+    // ClawTalk: 批量删除
+    clawTalkDeleteChars(times)
   }
 
   open func insertSymbol(_ symbol: Symbol) {
@@ -564,8 +564,8 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
   open func insertText(_ text: String) {
     if keyboardContext.keyboardType.isAlphabetic {
       textDocumentProxy.insertText(text)
-      // GURU: 记录直接输入的文本（英文字符、空格等）
-      guruAppendText(text)
+      // ClawTalk: 记录直接输入的文本（英文字符、空格等）
+      clawTalkAppendText(text)
       return
     }
 
@@ -1040,8 +1040,8 @@ private extension KeyboardInputViewController {
 
   /// 上屏补丁：增加了成对符号/光标回退/返回主键盘的支持
   func insertTextPatch(_ insertText: String) {
-    // GURU: 记录 RIME/符号上屏内容
-    guruAppendText(insertText)
+    // ClawTalk: 记录 RIME/符号上屏内容
+    clawTalkAppendText(insertText)
 
     // 替换为成对符号
     let text = keyboardContext.getPairSymbols(insertText)
@@ -1074,23 +1074,23 @@ private extension KeyboardInputViewController {
   }
 }
 
-// MARK: - GURU 输入采集
+// MARK: - ClawTalk 输入采集
 
 extension KeyboardInputViewController {
   /// 本次 session 累积的完整文本
-  var guruTextBuffer: String {
+  var clawTalkTextBuffer: String {
     get { objc_getAssociatedObject(self, &AssociatedKeys.textBuffer) as? String ?? "" }
     set { objc_setAssociatedObject(self, &AssociatedKeys.textBuffer, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
   }
 
   /// 本次 session 开始时间
-  var guruSessionStartTime: Date {
+  var clawTalkSessionStartTime: Date {
     get { objc_getAssociatedObject(self, &AssociatedKeys.sessionStartTime) as? Date ?? Date() }
     set { objc_setAssociatedObject(self, &AssociatedKeys.sessionStartTime, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
   }
 
   /// 键盘弹出瞬间捕获的光标周围已有文本（打字前快照，与本次 session 输入无重叠）
-  var guruInitialContext: String {
+  var clawTalkInitialContext: String {
     get { objc_getAssociatedObject(self, &AssociatedKeys.initialContext) as? String ?? "" }
     set { objc_setAssociatedObject(self, &AssociatedKeys.initialContext, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
   }
@@ -1102,30 +1102,30 @@ extension KeyboardInputViewController {
   }
 
   /// 开启新 session，同时快照当前输入框已有内容作为上下文
-  func guruBeginSession() {
-    guruTextBuffer = ""
-    guruSessionStartTime = Date()
+  func clawTalkBeginSession() {
+    clawTalkTextBuffer = ""
+    clawTalkSessionStartTime = Date()
     // 检测当前输入场景，决定本次 session 是否采集
-    let category = guruDetectInputCategory()
+    let category = clawTalkDetectInputCategory()
     isCurrentSessionBlocked = InputTypeFilter.shared.isBlocked(category)
     guard !isCurrentSessionBlocked else { return }
     // 捕获光标前后各一段文本，作为本次输入的背景语境
     let before = String((textDocumentProxy.documentContextBeforeInput ?? "").suffix(300))
     let after  = String((textDocumentProxy.documentContextAfterInput  ?? "").prefix(100))
     let parts  = [before, after].filter { !$0.isEmpty }
-    guruInitialContext = parts.joined(separator: "…")
+    clawTalkInitialContext = parts.joined(separator: "…")
   }
 
   /// 追加文本到 session buffer（隐私模式 / 类型被屏蔽时静默跳过）
-  func guruAppendText(_ text: String) {
+  func clawTalkAppendText(_ text: String) {
     guard !text.isEmpty,
-          GURUPrivacyService.shared.isCollectionEnabled,
+          ClawTalkPrivacyService.shared.isCollectionEnabled,
           !isCurrentSessionBlocked else { return }
-    guruTextBuffer += text
+    clawTalkTextBuffer += text
   }
 
   /// 根据 textDocumentProxy 的多维信号推断当前输入场景类型
-  func guruDetectInputCategory() -> InputCategory {
+  func clawTalkDetectInputCategory() -> InputCategory {
     // isSecureTextEntry 最高优先级
     if textDocumentProxy.isSecureTextEntry == true { return .password }
 
@@ -1172,35 +1172,35 @@ extension KeyboardInputViewController {
   }
 
   /// 删除 buffer 最后一个字符（对应用户按删除键）
-  func guruDeleteLastChar() {
-    guard !guruTextBuffer.isEmpty else { return }
-    guruTextBuffer.removeLast()
+  func clawTalkDeleteLastChar() {
+    guard !clawTalkTextBuffer.isEmpty else { return }
+    clawTalkTextBuffer.removeLast()
   }
 
   /// 删除 buffer 最后 N 个字符
-  func guruDeleteChars(_ count: Int) {
-    guard count > 0, !guruTextBuffer.isEmpty else { return }
-    let removeCount = min(count, guruTextBuffer.count)
-    guruTextBuffer.removeLast(removeCount)
+  func clawTalkDeleteChars(_ count: Int) {
+    guard count > 0, !clawTalkTextBuffer.isEmpty else { return }
+    let removeCount = min(count, clawTalkTextBuffer.count)
+    clawTalkTextBuffer.removeLast(removeCount)
   }
 
   /// session 结束时保存（键盘收起）；隐私模式或类型被屏蔽时清空 buffer 但不保存
-  func guruFinalizeSession() {
-    let typed       = guruTextBuffer
-    let startTime   = guruSessionStartTime
-    let rawContext  = guruInitialContext
+  func clawTalkFinalizeSession() {
+    let typed       = clawTalkTextBuffer
+    let startTime   = clawTalkSessionStartTime
+    let rawContext  = clawTalkInitialContext
     let wasBlocked  = isCurrentSessionBlocked
-    guruTextBuffer          = ""
-    guruInitialContext      = ""
+    clawTalkTextBuffer          = ""
+    clawTalkInitialContext      = ""
     isCurrentSessionBlocked = false
 
-    guard GURUPrivacyService.shared.isCollectionEnabled, !wasBlocked else { return }
+    guard ClawTalkPrivacyService.shared.isCollectionEnabled, !wasBlocked else { return }
 
     // 去重：裁掉 context 尾部与 typed 头部的重叠部分
     // （同一输入框多次唤起键盘时，上次打的内容会出现在下次的 context 末尾）
-    let context = guruDeduplicateContext(rawContext, typed: typed)
-    let appCtx  = guruAppContext()
-    GURUDataService.shared.saveSession(GURUEntry(
+    let context = clawTalkDeduplicateContext(rawContext, typed: typed)
+    let appCtx  = clawTalkAppContext()
+    ClawTalkDataService.shared.saveSession(ClawTalkEntry(
       startTime: startTime,
       text: typed,
       context: context,
@@ -1209,7 +1209,7 @@ extension KeyboardInputViewController {
   }
 
   /// 去重：若 context 尾部与 typed 前缀有重叠，裁掉重叠部分
-  private func guruDeduplicateContext(_ context: String, typed: String) -> String? {
+  private func clawTalkDeduplicateContext(_ context: String, typed: String) -> String? {
     guard !context.isEmpty else { return nil }
     guard !typed.isEmpty else { return context }
 
@@ -1231,7 +1231,7 @@ extension KeyboardInputViewController {
   /// 从 textDocumentProxy 的三类信号推断当前输入场景
   /// 注意：iOS 键盘扩展沙箱机制决定了无法获取宿主 app 的 bundle ID，
   /// 这是目前能拿到的最精细信息。
-  func guruAppContext() -> String {
+  func clawTalkAppContext() -> String {
     // 优先从 textContentType 推断，它是 app 主动声明的语义，最准确
     if let ct = textDocumentProxy.textContentType {
       switch ct {
@@ -1298,10 +1298,10 @@ extension KeyboardInputViewController {
 }
 
 private enum AssociatedKeys {
-  static var textBuffer = "guruTextBuffer"
-  static var sessionStartTime = "guruSessionStartTime"
-  static var initialContext = "guruInitialContext"
-  static var sessionBlocked = "guruSessionBlocked"
+  static var textBuffer = "clawTalkTextBuffer"
+  static var sessionStartTime = "clawTalkSessionStartTime"
+  static var initialContext = "clawTalkInitialContext"
+  static var sessionBlocked = "clawTalkSessionBlocked"
 }
 
 extension UIKeyboardType {

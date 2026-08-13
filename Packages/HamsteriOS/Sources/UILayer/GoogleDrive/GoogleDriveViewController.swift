@@ -35,7 +35,7 @@ class GoogleDriveViewModel: ObservableObject {
   @Published var statusMessage: String = ""
 
   private let googleService = GoogleDriveService.shared
-  private let guruService = GURUDataService.shared
+  private let clawTalkService = ClawTalkDataService.shared
 
   func saveClientID(_ id: String) {
     googleService.clientID = id
@@ -68,11 +68,11 @@ class GoogleDriveViewModel: ObservableObject {
   }
 
   func syncAll() {
-    guard let guruBase = guruService.guruBaseURL else {
+    guard let clawTalkBase = clawTalkService.clawTalkBaseURL else {
       statusMessage = "无法获取本地数据路径"
       return
     }
-    let dates = guruService.availableDates()
+    let dates = clawTalkService.availableDates()
     guard !dates.isEmpty else {
       statusMessage = "暂无记录可同步"
       return
@@ -81,9 +81,9 @@ class GoogleDriveViewModel: ObservableObject {
     syncProgress = 0
     statusMessage = "正在同步到 Google Drive..."
 
-    googleService.syncGURU(
+    googleService.syncClawTalk(
       dates: dates,
-      guruBaseURL: guruBase,
+      clawTalkBaseURL: clawTalkBase,
       progress: { [weak self] p in DispatchQueue.main.async { self?.syncProgress = p } },
       completion: { [weak self] result in
         DispatchQueue.main.async {
@@ -143,7 +143,7 @@ struct GoogleDriveRootView: View {
         } header: {
           Text("同步")
         } footer: {
-          Text("同步 GURU 采集记录至 Google Drive / Hamster / GURU / 目录。")
+          Text("同步 ClawTalk 采集记录至 Google Drive / Hamster / ClawTalk / 目录。")
             .font(.caption)
         }
       } else {
@@ -180,7 +180,7 @@ struct GoogleDriveRootView: View {
           Text("账号")
         } footer: {
           VStack(alignment: .leading, spacing: 4) {
-            Text("同步 GURU 采集记录至 Google Drive / Hamster / GURU / 目录。")
+            Text("同步 ClawTalk 采集记录至 Google Drive / Hamster / ClawTalk / 目录。")
             Text("首次使用：前往 Google Cloud Console → APIs & Services → Credentials，创建 **Web 应用** 类型的 OAuth 2.0 Client ID，在「已获授权的重定向 URI」中添加：\nhamster://oauth2redirect")
           }
           .font(.caption)

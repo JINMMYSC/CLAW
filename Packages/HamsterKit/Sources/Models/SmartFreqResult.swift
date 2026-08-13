@@ -4,7 +4,7 @@ import Foundation
 public struct SmartFreqResult: Codable, Identifiable {
   public let id: UUID
   public let date: Date
-  /// 参与分析的 GURU 条目数量
+  /// 参与分析的 ClawTalk 条目数量
   public let entriesCount: Int
   /// 提升词频的词条数
   public let boostCount: Int

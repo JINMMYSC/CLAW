@@ -2,13 +2,13 @@ import HamsterKit
 import PhotosUI
 import UIKit
 
-/// 心动对象档案列表页（设置 → 心动对象档案）
+/// 聊天对象档案列表页（设置 → 聊天对象档案）
 public final class HeartTargetSettingsViewController: UITableViewController {
   private let service = HeartTargetService.shared
 
   public init() {
     super.init(style: .insetGrouped)
-    title = "心动对象档案"
+    title = "聊天对象档案"
   }
 
   required init?(coder: NSCoder) {
@@ -82,7 +82,7 @@ public final class HeartTargetSettingsViewController: UITableViewController {
   }
 }
 
-/// 心动对象档案编辑页（名称 + 描述 + 头像）
+/// 聊天对象档案编辑页（名称 + 描述 + 头像）
 public final class HeartTargetEditViewController: UITableViewController, PHPickerViewControllerDelegate, UITextFieldDelegate, UITextViewDelegate {
   private let service = HeartTargetService.shared
   private let existing: HeartTargetProfile?
@@ -170,7 +170,7 @@ public final class HeartTargetEditViewController: UITableViewController, PHPicke
   public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
     switch section {
     case 0: return "头像"
-    case 1: return "信息（名称与描述会作为 AI 心动对象背景）"
+    case 1: return "信息（名称与描述会作为 AI 聊天对象背景）"
     default: return nil
     }
   }

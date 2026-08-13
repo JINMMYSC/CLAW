@@ -349,8 +349,8 @@ extension HamsterAppDependencyContainer: SubViewControllerFactory {
     return aboutViewController
   }
 
-  func makeGURUViewController() -> GURUViewController {
-    return GURUViewController()
+  func makeClawTalkViewController() -> ClawTalkViewController {
+    return ClawTalkViewController()
   }
 
   func makeAutoInsightViewController() -> AutoInsightViewController {
@@ -378,9 +378,6 @@ extension HamsterAppDependencyContainer: SubViewControllerFactory {
     )
   }
 
-  func makeKeyboardSimulatorViewController() -> ClawKeyboardSimulatorViewController {
-    ClawKeyboardSimulatorViewController()
-  }
 
   func makeHeartTargetSettingsViewController() -> HeartTargetSettingsViewController {
     HeartTargetSettingsViewController()
