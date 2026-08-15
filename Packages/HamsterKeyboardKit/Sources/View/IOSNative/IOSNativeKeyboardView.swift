@@ -3,7 +3,7 @@
 //
 //  ClawTalk「IOS 原生布局」键盘视图
 //
-//  按 IOSNativeLayout 输出设计空间点位，缩放渲染到实际 bounds。
+//  按 IOSNativeLayout 输出设计空间点位，用 Auto Layout 约束布局键位。
 //  面板切换通过 keyboardContext.keyboardType（.keyboardType action）完成；
 //  KeyboardRootView 在 keyboardType 变化时重建本视图。
 //
@@ -45,6 +45,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
 
   private var entries: [KeyEntry] = []
   private var currentPanel: IOSNativePanel = .pinyin9
+  private var layoutConstraints: [NSLayoutConstraint] = []
   private var lastLayoutBounds: CGRect = .zero
 
   public init(
@@ -78,6 +79,20 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     contentMode = .redraw
   }
 
+  /// 高度与设计空间一致（182pt）：
+  /// 与 EmojisKeyboard 相同策略，让系统按内容高度撑起键盘（否则键盘高度崩溃为空白）
+  override public var intrinsicContentSize: CGSize {
+    CGSize(width: UIView.noIntrinsicMetric, height: IOSNativeDesign.height)
+  }
+
+  override public func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil {
+      setNeedsLayout()
+      layoutIfNeeded()
+    }
+  }
+
   // MARK: - 构建
 
   private func rebuild() {
@@ -98,7 +113,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
         calloutContext: calloutContext,
         appearance: appearance
       )
-      button.translatesAutoresizingMaskIntoConstraints = true
+      button.translatesAutoresizingMaskIntoConstraints = false
       addSubview(button)
 
       let label = makeOverlayLabelIfNeeded(for: spec, on: button)
@@ -156,6 +171,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     label.minimumScaleFactor = 0.4
     label.numberOfLines = 1
     label.isUserInteractionEnabled = false
+    label.translatesAutoresizingMaskIntoConstraints = false
     label.font = UIFont.systemFont(ofSize: overlayFontSize(for: spec))
     label.textColor = spec.isSend ? .white : style.foregroundColor
     label.backgroundColor = style.backgroundColor
@@ -164,6 +180,12 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
       label.layer.masksToBounds = true
     }
     button.addSubview(label)
+    NSLayoutConstraint.activate([
+      label.topAnchor.constraint(equalTo: button.topAnchor),
+      label.leadingAnchor.constraint(equalTo: button.leadingAnchor),
+      label.trailingAnchor.constraint(equalTo: button.trailingAnchor),
+      label.bottomAnchor.constraint(equalTo: button.bottomAnchor)
+    ])
 
     button.overlayLabel = label
     button.overlayNormalBG = style.backgroundColor
@@ -177,26 +199,45 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
 
   override public func layoutSubviews() {
     super.layoutSubviews()
-    let size = bounds.size
-    guard size.width > 0, size.height > 0 else { return }
+    guard bounds.width > 0, bounds.height > 0 else { return }
     if lastLayoutBounds == bounds { return }
     lastLayoutBounds = bounds
+    applyLayoutConstraints()
+    updateLabelFonts()
+  }
 
-    let sx = size.width / IOSNativeDesign.width
-    let sy = size.height / IOSNativeDesign.height
-    let fontScale = sx
+  /// 用 Auto Layout 按设计点位约束按键；
+  /// 纵向使用固定行高/间距（末行贴视图底），
+  /// 形成确定高度链，与标准键盘一致；横向按实际宽度缩放填满
+  private func applyLayoutConstraints() {
+    NSLayoutConstraint.deactivate(layoutConstraints)
+    layoutConstraints.removeAll()
+
+    let sx = bounds.width / IOSNativeDesign.width
+    let designH = IOSNativeDesign.height
+
     for entry in entries {
       let r = entry.spec.rect
-      entry.button.frame = CGRect(
-        x: r.minX * sx,
-        y: r.minY * sy,
-        width: r.width * sx,
-        height: r.height * sy
-      )
-      if let label = entry.label {
-        label.frame = entry.button.bounds
-        label.font = UIFont.systemFont(ofSize: overlayFontSize(for: entry.spec) * fontScale)
+      let b = entry.button
+      layoutConstraints.append(b.leadingAnchor.constraint(equalTo: leadingAnchor, constant: r.minX * sx))
+      layoutConstraints.append(b.widthAnchor.constraint(equalToConstant: r.width * sx))
+      if r.maxY >= designH - 0.01 {
+        // 末行/跨行按键：顶部固定 + 底部贴视图底（决定总高度）
+        layoutConstraints.append(b.topAnchor.constraint(equalTo: topAnchor, constant: r.minY))
+        layoutConstraints.append(b.bottomAnchor.constraint(equalTo: bottomAnchor))
+      } else {
+        layoutConstraints.append(b.topAnchor.constraint(equalTo: topAnchor, constant: r.minY))
+        layoutConstraints.append(b.heightAnchor.constraint(equalToConstant: r.height))
       }
+    }
+    NSLayoutConstraint.activate(layoutConstraints)
+  }
+
+  private func updateLabelFonts() {
+    let sx = bounds.width / IOSNativeDesign.width
+    for entry in entries {
+      guard let label = entry.label else { continue }
+      label.font = UIFont.systemFont(ofSize: overlayFontSize(for: entry.spec) * sx)
     }
   }
 }
