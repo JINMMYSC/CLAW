@@ -249,7 +249,7 @@ public enum IOSNativeLayout {
         result.append(IOSNativeKey(action: k.action, displayText: item.1, rect: k.rect, isSend: false, isInputAction: k.isInputAction))
       }
     }
-    row([("拼音", "拼音"), ("\u00a5", "\u00a5"), ("\u2103", "\u2103"), ("%", "%")], rowY(0)) {
+    row([("拼音", "拼音"), ("¥", "¥"), ("℃", "℃"), ("%", "%")], rowY(0)) {
       switch $0 {
       case "拼音": return IOSNativeKey(action: .keyboardType(.chineseNineGrid), displayText: nil, rect: .zero)
       default: return charKey($0)
