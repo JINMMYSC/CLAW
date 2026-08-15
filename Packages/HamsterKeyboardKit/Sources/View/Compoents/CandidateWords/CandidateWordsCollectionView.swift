@@ -160,8 +160,9 @@ extension CandidateWordsCollectionView: UICollectionViewDataSource {
 
   public func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
     let toolbarConfig = keyboardContext.hamsterConfiguration?.toolbar
-    let showIndex = toolbarConfig?.displayIndexOfCandidateWord
-    let showComment = toolbarConfig?.displayCommentOfCandidateWord
+    // ClawTalk IOS 原生布局：候选词不显示序号与注释（P 图要求）
+    let showIndex = keyboardContext.useIOSNativeLayout ? false : toolbarConfig?.displayIndexOfCandidateWord
+    let showComment = keyboardContext.useIOSNativeLayout ? false : toolbarConfig?.displayCommentOfCandidateWord
     let cell = collectionView.dequeueReusableCell(withReuseIdentifier: CandidateWordCell.identifier, for: indexPath)
     if let cell = cell as? CandidateWordCell, indexPath.item < rimeContext.suggestions.count {
       let candidate = rimeContext.suggestions[indexPath.item]
@@ -239,8 +240,9 @@ extension CandidateWordsCollectionView: UICollectionViewDelegateFlowLayout {
     guard indexPath.item < rimeContext.suggestions.count else { return .zero }
     let candidate = rimeContext.suggestions[indexPath.item]
     let toolbarConfig = keyboardContext.hamsterConfiguration?.toolbar
-    let showComment = toolbarConfig?.displayCommentOfCandidateWord ?? false
-    let showIndex = toolbarConfig?.displayIndexOfCandidateWord ?? false
+    // ClawTalk IOS 原生布局：候选词不显示序号与注释（P 图要求）
+    let showComment = keyboardContext.useIOSNativeLayout ? false : (toolbarConfig?.displayCommentOfCandidateWord ?? false)
+    let showIndex = keyboardContext.useIOSNativeLayout ? false : (toolbarConfig?.displayIndexOfCandidateWord ?? false)
 
     // 为 cell 内容增加左右间距, 对应 cell 的 leading, trailing 的约束
     let intrinsicHorizontalMargin: CGFloat = 14

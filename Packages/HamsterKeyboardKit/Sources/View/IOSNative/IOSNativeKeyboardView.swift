@@ -17,21 +17,6 @@ import UIKit
 
 // MARK: - P 图固定配色工具
 
-private func iosRGB(_ hex: UInt32) -> UIColor {
-  UIColor(
-    red: CGFloat((hex >> 16) & 0xFF) / 255,
-    green: CGFloat((hex >> 8) & 0xFF) / 255,
-    blue: CGFloat(hex & 0xFF) / 255,
-    alpha: 1
-  )
-}
-
-private func iosDarker(_ color: UIColor, by factor: CGFloat = 0.85) -> UIColor {
-  var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-  guard color.getRed(&r, green: &g, blue: &b, alpha: &a) else { return color }
-  return UIColor(red: r * factor, green: g * factor, blue: b * factor, alpha: a)
-}
-
 /// 单键配色：按压仅改变背景色（变深），文字颜色保持不变
 private struct IOSNativeKeyColors {
   let normal: UIColor
@@ -41,18 +26,6 @@ private struct IOSNativeKeyColors {
   static func solid(_ normal: UIColor, _ foreground: UIColor) -> IOSNativeKeyColors {
     IOSNativeKeyColors(normal: normal, pressed: iosDarker(normal), foreground: foreground)
   }
-}
-
-/// 按 P 图硬编码的 iOS 原生配色
-private enum IOSNativePalette {
-  static let board = iosRGB(0xD1D4D9)
-  static let char = UIColor.white
-  static let charPressed = iosRGB(0xE8ECF0)
-  static let funcGray = iosRGB(0xAAB0BA)
-  static let lightGray = iosRGB(0xE8ECF0)
-  static let sendBlue = iosRGB(0x007AFF)
-  static let textDark = iosRGB(0x000000)
-  static let textWhite = UIColor.white
 }
 
 /// iOS 原生布局按键：支持覆盖文本标签并随按压状态变色
@@ -90,6 +63,11 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     let icon: UIImageView?
   }
 
+  /// 当前系统深浅色下的 P 图配色（随 keyboardContext.colorScheme 实时切换）
+  private var palette: IOSNativePalette {
+    IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme)
+  }
+
   private var entries: [KeyEntry] = []
   private var currentPanel: IOSNativePanel = .pinyin9
   private var layoutConstraints: [NSLayoutConstraint] = []
@@ -100,6 +78,17 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   /// 当前面板的 return/发送 键（聊天场景无字灰/有字蓝）
   private var sendReturnEntry: KeyEntry?
   private var chatSendTimer: Timer?
+  /// 拼音9键 第4行第2列「选拼音」键：候选拼音逐个跳选
+  private var selectPinyinEntry: KeyEntry?
+  private var selectPinyinIndex = 0
+  private var userInterfaceStyle: UIUserInterfaceStyle = .unspecified
+
+  /// 当前是否大写锁定（英文26键双击 Shift 进入）
+  private var isCapsLocked: Bool {
+    if case .alphabetic(.capsLocked) = keyboardContext.keyboardType { return true }
+    if case .chinese(.capsLocked) = keyboardContext.keyboardType { return true }
+    return false
+  }
 
   public init(
     actionHandler: KeyboardActionHandler,
@@ -130,7 +119,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   }
 
   override public func setupAppearance() {
-    backgroundColor = IOSNativePalette.board
+    backgroundColor = palette.board
     contentMode = .redraw
   }
 
@@ -176,6 +165,13 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     }
     separatorEntry = entries.first { $0.spec.displayText == "^_^" }
     sendReturnEntry = entries.first { $0.spec.isSend }
+    selectPinyinEntry = entries.first { $0.spec.displayText == "选拼音" }
+    // 修复 P 图圆角：底色层显式设置圆角（appearance.style 未配时默认直角）
+    for entry in entries {
+      entry.button.buttonContentView.layer.cornerRadius = IOSNativeDesign.radius
+      entry.button.buttonContentView.layer.masksToBounds = true
+    }
+    refreshOverlays()
     setNeedsLayout()
   }
 
@@ -209,8 +205,8 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     guard spec.isSend, spec.tintOverride == nil else { return }
     let hasText = keyboardContext.textDocumentProxy.hasText
     let colors = hasText
-      ? IOSNativeKeyColors.solid(IOSNativePalette.sendBlue, IOSNativePalette.textWhite)
-      : IOSNativeKeyColors.solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
+      ? IOSNativeKeyColors.solid(palette.sendBlue, palette.textWhite)
+      : IOSNativeKeyColors.solid(palette.funcGray, palette.textDark)
     label.text = hasText ? (spec.displayText ?? "") : nil
     entry.button.overlayNormalBG = colors.normal
     entry.button.overlayPressedBG = colors.pressed
@@ -225,12 +221,13 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     let isTyping = !rimeContext.userInputKey.isEmpty
     entry.button.item.action = isTyping ? .primary(.return) : .character("^_^")
     label.text = isTyping ? "分隔" : "^_^"
-    let normal = isTyping ? IOSNativePalette.char : IOSNativePalette.funcGray
-    let pressed = isTyping ? IOSNativePalette.charPressed : iosDarker(IOSNativePalette.funcGray)
+    // ^_^ / 分隔 双态都白色（P 图要求），按压用字符键按压色
+    let normal = palette.char
+    let pressed = palette.charPressed
     entry.button.overlayNormalBG = normal
     entry.button.overlayPressedBG = pressed
-    entry.button.overlayNormalFG = IOSNativePalette.textDark
-    entry.button.overlayPressedFG = IOSNativePalette.textDark
+    entry.button.overlayNormalFG = palette.textDark
+    entry.button.overlayPressedFG = palette.textDark
     label.backgroundColor = normal
   }
 
@@ -268,64 +265,68 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     if let tint = spec.tintOverride {
       switch tint {
       case .blue:
-        return .solid(IOSNativePalette.sendBlue, IOSNativePalette.textWhite)
+        return .solid(palette.sendBlue, palette.textWhite)
       case .gray:
-        return .solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
+        return .solid(palette.funcGray, palette.textDark)
       }
     }
     if spec.isSend {
       if isBlueSendPanel() {
-        return .solid(IOSNativePalette.sendBlue, IOSNativePalette.textWhite)
+        return .solid(palette.sendBlue, palette.textWhite)
       }
       // 灰底黑字
       return IOSNativeKeyColors(
-        normal: IOSNativePalette.funcGray,
-        pressed: iosDarker(IOSNativePalette.funcGray),
-        foreground: IOSNativePalette.textDark
+        normal: palette.funcGray,
+        pressed: iosDarker(palette.funcGray),
+        foreground: palette.textDark
       )
     }
     switch spec.action {
     case .space:
       return IOSNativeKeyColors(
-        normal: IOSNativePalette.char,
-        pressed: IOSNativePalette.charPressed,
-        foreground: IOSNativePalette.textDark
+        normal: palette.char,
+        pressed: palette.charPressed,
+        foreground: palette.textDark
       )
     case .backspace:
-      return .solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
+      return .solid(palette.funcGray, palette.textDark)
     case .keyboardType, .custom:
       // 03 数字更多第2行第5键「更多」浅灰
       if currentPanel == .numberMore, spec.displayText == "更多" {
         return IOSNativeKeyColors(
-          normal: IOSNativePalette.lightGray,
-          pressed: iosDarker(IOSNativePalette.lightGray),
-          foreground: IOSNativePalette.textDark
+          normal: palette.lightGray,
+          pressed: iosDarker(palette.lightGray),
+          foreground: palette.textDark
+        )
+      }
+      // 拼音9键第4行「选拼音」键：白色（P 图要求），点按逐个跳选候选拼音
+      if currentPanel == .pinyin9, spec.displayText == "选拼音" {
+        return IOSNativeKeyColors(
+          normal: palette.char,
+          pressed: palette.charPressed,
+          foreground: palette.textDark
         )
       }
       // 英文大写 Shift 白、小写 Shift 灰
       if spec.displayText == "⬆" {
         if currentPanel == .enUpper {
           return IOSNativeKeyColors(
-            normal: IOSNativePalette.char,
-            pressed: IOSNativePalette.charPressed,
-            foreground: IOSNativePalette.textDark
+            normal: palette.char,
+            pressed: palette.charPressed,
+            foreground: palette.textDark
           )
         }
-        return .solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
+        return .solid(palette.funcGray, palette.textDark)
       }
-      return .solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
+      return .solid(palette.funcGray, palette.textDark)
     case .character, .chineseNineGrid:
-      // iOS 9键上的 ^_^ 是灰色功能键
-      if spec.displayText == "^_^" {
-        return .solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
-      }
       return IOSNativeKeyColors(
-        normal: IOSNativePalette.char,
-        pressed: IOSNativePalette.charPressed,
-        foreground: IOSNativePalette.textDark
+        normal: palette.char,
+        pressed: palette.charPressed,
+        foreground: palette.textDark
       )
     default:
-      return .solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
+      return .solid(palette.funcGray, palette.textDark)
     }
   }
 
@@ -356,8 +357,15 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
 
   /// P 图图标键：退格/Shift/表情 使用裁切自 P 图的单色图标（设计空间 pt，不随 sx 缩放）
   private struct IOSNativeIconSpec {
-    let asset: String
+    let asset: String?
+    let systemName: String?
     let size: CGSize
+
+    init(asset: String? = nil, systemName: String? = nil, size: CGSize) {
+      self.asset = asset
+      self.systemName = systemName
+      self.size = size
+    }
   }
 
   private func iconSpec(for spec: IOSNativeKey) -> IOSNativeIconSpec? {
@@ -366,6 +374,10 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     }
     let text = spec.displayText ?? ""
     if text == "\u{2B06}" || text == "⬆" {
+      // 双击 Shift 进入大写锁定：P 图为实心箭头+底部横线（SF Symbol capslock.fill 兜底）
+      if isCapsLocked {
+        return IOSNativeIconSpec(systemName: "capslock.fill", size: CGSize(width: 20, height: 23))
+      }
       return IOSNativeIconSpec(asset: "clawIconShift", size: CGSize(width: 20, height: 23))
     }
     if text == "😀" {
@@ -377,15 +389,28 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   private func makeOverlayViewIfNeeded(for spec: IOSNativeKey, on button: IOSNativeButton) -> (UILabel?, UIImageView?) {
     guard needsOverlay(for: spec), let text = spec.displayText else { return (nil, nil) }
     let colors = keyColors(for: spec)
-    if let icon = iconSpec(for: spec), let image = UIImage(named: icon.asset, in: .hamsterKeyboard, with: .none) {
-      let view = UIImageView(image: image)
-      view.contentMode = .center
-      view.isUserInteractionEnabled = false
-      view.translatesAutoresizingMaskIntoConstraints = false
-      view.backgroundColor = colors.normal
-      view.layer.cornerRadius = IOSNativeDesign.radius
-      view.layer.masksToBounds = true
-      button.addSubview(view)
+    if let icon = iconSpec(for: spec) {
+      var image: UIImage?
+      if let asset = icon.asset {
+        image = UIImage(named: asset, in: .hamsterKeyboard, with: .none)
+      } else if let systemName = icon.systemName {
+        image = UIImage(systemName: systemName)
+      }
+      if let image = image {
+        let view: UIImageView
+        if icon.systemName != nil {
+          view = UIImageView(image: image.withRenderingMode(.alwaysTemplate))
+          view.tintColor = colors.foreground
+        } else {
+          view = UIImageView(image: image)
+        }
+        view.contentMode = .center
+        view.isUserInteractionEnabled = false
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = colors.normal
+        view.layer.cornerRadius = IOSNativeDesign.radius
+        view.layer.masksToBounds = true
+        button.addSubview(view)
       NSLayoutConstraint.activate([
         view.topAnchor.constraint(equalTo: button.topAnchor),
         view.leadingAnchor.constraint(equalTo: button.leadingAnchor),
@@ -426,12 +451,76 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     button.overlayPressedFG = colors.foreground
     return (label, nil)
   }
+  }
+
+  // MARK: - 覆盖层配色刷新
+
+  /// 统一刷新所有覆盖层配色（深浅色切换 / rebuild 后调用）
+  /// send / 分隔 两键有独立动态配色，跳过不覆盖
+  private func refreshOverlays() {
+    for entry in entries {
+      if entry.button === sendReturnEntry?.button || entry.button === separatorEntry?.button {
+        continue
+      }
+      let colors = keyColors(for: entry.spec)
+      entry.button.overlayNormalBG = colors.normal
+      entry.button.overlayPressedBG = colors.pressed
+      entry.button.overlayNormalFG = colors.foreground
+      entry.button.overlayPressedFG = colors.foreground
+      if let label = entry.label {
+        label.backgroundColor = colors.normal
+        label.textColor = colors.foreground
+      }
+      if let icon = entry.icon {
+        icon.backgroundColor = colors.normal
+        if icon.image?.renderingMode == .alwaysTemplate {
+          icon.tintColor = colors.foreground
+        }
+      }
+    }
+  }
+
+  // MARK: - 选拼音跳选
+
+  override public func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+    if let touch = touches.first {
+      let point = touch.location(in: self)
+      if let entry = selectPinyinEntry, entry.button.frame.contains(point) {
+        handleSelectPinyinTap()
+      }
+    }
+    super.touchesEnded(touches, with: event)
+  }
+
+  /// 记录上次跳选时的输入串：输入变化则从首个候选重新开始
+  private var selectPinyinInputKey = ""
+
+  /// 选拼音键：在候选拼音列表中循环跳选，并替换当前拼音编码
+  private func handleSelectPinyinTap() {
+    let candidates = rimeContext.getPinyinCandidates()
+    guard !candidates.isEmpty else { return }
+    let inputKeys = rimeContext.getInputKeys()
+    if inputKeys != selectPinyinInputKey {
+      selectPinyinIndex = 0
+      selectPinyinInputKey = inputKeys
+    }
+    selectPinyinIndex = (selectPinyinIndex + 1) % candidates.count
+    let pinyin = candidates[selectPinyinIndex]
+    _ = rimeContext.tryHandleReplaceInputTexts(pinyin, startPos: 0, count: inputKeys.utf8.count)
+  }
 
   // MARK: - 布局
 
   override public func layoutSubviews() {
     super.layoutSubviews()
     guard bounds.width > 0, bounds.height > 0 else { return }
+    if userInterfaceStyle != traitCollection.userInterfaceStyle {
+      userInterfaceStyle = traitCollection.userInterfaceStyle
+      setupAppearance()
+      refreshOverlays()
+      updateSeparatorKeyState()
+      updateChatSendKeyState()
+    }
     if lastLayoutBounds == bounds { return }
     lastLayoutBounds = bounds
     applyLayoutConstraints()
@@ -473,3 +562,8 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     }
   }
 }
+
+
+
+
+

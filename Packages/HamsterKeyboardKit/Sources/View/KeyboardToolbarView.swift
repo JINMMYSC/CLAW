@@ -216,6 +216,7 @@ class KeyboardToolbarView: NibLessView {
   // MARK: - 视图层次
 
   override func constructViewHierarchy() {
+    addSubview(candidateBarView)
     addSubview(panelOverlayView)
     addSubview(suggestionBarView)
     addSubview(commonFunctionBar)
@@ -232,9 +233,17 @@ class KeyboardToolbarView: NibLessView {
   private var panelHeightConstraint: NSLayoutConstraint!
   private var commonBarTopConstraint: NSLayoutConstraint!
   private var suggestionBarHeightConstraint: NSLayoutConstraint!
+  private var candidateBarHeightConstraint: NSLayoutConstraint!
+  private var panelTopToTop: NSLayoutConstraint!
+  private var panelTopToCandidateBar: NSLayoutConstraint!
+  private var candidateBarFullConstraints: [NSLayoutConstraint] = []
+  private var candidateBarTopConstraints: [NSLayoutConstraint] = []
 
   override func activateViewConstraints() {
-    // 面板覆盖层：固定在工具栏顶部，高度随展开/收起变化
+    // 候选栏：IOS 原生布局收起=全屏互斥、展开=顶行；其余布局保持原逻辑
+    candidateBarHeightConstraint = candidateBarView.heightAnchor.constraint(equalToConstant: 0)
+
+    // 面板覆盖层：收起=顶部、展开=候选栏下方，高度随展开/收起变化
     panelHeightConstraint = panelOverlayView.heightAnchor.constraint(equalToConstant: 0)
     panelHeightConstraint.priority = .defaultHigh
 
@@ -242,8 +251,26 @@ class KeyboardToolbarView: NibLessView {
 
     suggestionBarHeightConstraint = suggestionBarView.heightAnchor.constraint(equalToConstant: 0)
 
+    panelTopToTop = panelOverlayView.topAnchor.constraint(equalTo: topAnchor)
+    panelTopToCandidateBar = panelOverlayView.topAnchor.constraint(equalTo: candidateBarView.bottomAnchor)
+    candidateBarFullConstraints = [
+      candidateBarView.topAnchor.constraint(equalTo: topAnchor),
+      candidateBarView.bottomAnchor.constraint(equalTo: bottomAnchor),
+      candidateBarView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      candidateBarView.trailingAnchor.constraint(equalTo: trailingAnchor)
+    ]
+    candidateBarTopConstraints = [
+      candidateBarView.topAnchor.constraint(equalTo: topAnchor),
+      candidateBarView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      candidateBarView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      candidateBarHeightConstraint
+    ]
+
+    // 默认收起：候选栏全屏、面板顶部
+    NSLayoutConstraint.activate(candidateBarFullConstraints)
+    NSLayoutConstraint.activate([panelTopToTop])
+
     NSLayoutConstraint.activate([
-      panelOverlayView.topAnchor.constraint(equalTo: topAnchor),
       panelOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
       panelOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
       panelHeightConstraint,
@@ -301,8 +328,14 @@ class KeyboardToolbarView: NibLessView {
     // 面板配色跟随当前键盘主题
     ClawPanelPalette.sync(with: keyboardContext)
     self.style = appearance.candidateBarStyle
-    // 工具栏/功能行背景跟随主题
-    backgroundColor = ClawPanelPalette.toolbarBackground
+    // 工具栏/功能行背景跟随主题（IOS 原生布局时与键盘板同色）
+    if keyboardContext.useIOSNativeLayout {
+      backgroundColor = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme).board
+    } else {
+      backgroundColor = ClawPanelPalette.toolbarBackground
+    }
+    candidateBarView.setStyle(self.style)
+    candidateBarView.backgroundColor = backgroundColor
 
     updateEntryButtonStates()
     updateEyeButtonState()
@@ -329,6 +362,30 @@ class KeyboardToolbarView: NibLessView {
     let collecting = ClawTalkPrivacyService.shared.isCollectionEnabled
     eyeButton.setImage(UIImage(systemName: collecting ? "eye" : "eye.slash"), for: .normal)
     eyeButton.tintColor = collecting ? ClawPanelPalette.deepBlue : .systemOrange
+  }
+
+  /// 候选栏显隐与布局：收起=全屏互斥（原逻辑）；IOS 原生布局面板展开=固定顶行
+  func updateCandidateBarLayout() {
+    let hasInput = !lastInputEmpty
+    let expanded = keyboardContext.clawPanelTab >= 0
+    if keyboardContext.useIOSNativeLayout {
+      if expanded {
+        NSLayoutConstraint.deactivate(candidateBarFullConstraints)
+        NSLayoutConstraint.activate(candidateBarTopConstraints)
+        NSLayoutConstraint.deactivate([panelTopToTop])
+        NSLayoutConstraint.activate([panelTopToCandidateBar])
+        candidateBarHeightConstraint.constant = hasInput ? keyboardContext.heightOfToolbar : 0
+        candidateBarView.isHidden = !hasInput
+      } else {
+        NSLayoutConstraint.deactivate(candidateBarTopConstraints)
+        NSLayoutConstraint.activate(candidateBarFullConstraints)
+        NSLayoutConstraint.deactivate([panelTopToCandidateBar])
+        NSLayoutConstraint.activate([panelTopToTop])
+        candidateBarView.isHidden = !hasInput
+      }
+    } else {
+      candidateBarView.isHidden = expanded ? true : !hasInput
+    }
   }
 
   /// 实时建议条显隐：有建议 + 面板收起 + 有输入时显示
@@ -358,16 +415,8 @@ class KeyboardToolbarView: NibLessView {
         let isEmpty = $0.isEmpty
         self.lastInputEmpty = isEmpty
         self.commonFunctionBar.isHidden = !isEmpty
-        self.candidateBarView.isHidden = isEmpty
+        self.updateCandidateBarLayout()
         self.updateSuggestionBarVisibility()
-
-        if self.candidateBarView.superview == nil {
-          candidateBarView.setStyle(self.style)
-          addSubview(candidateBarView)
-          candidateBarView.fillSuperview()
-          // 建议条覆盖在候选栏之上
-          bringSubviewToFront(suggestionBarView)
-        }
 
         // 检测是否启用内嵌编码
         guard !keyboardContext.enableEmbeddedInputMode else { return }
@@ -386,14 +435,9 @@ class KeyboardToolbarView: NibLessView {
         guard let self else { return }
         let expanded = tab >= 0
         self.panelOverlayView.isHidden = !expanded
-        // 面板展开时功能行保持显示，候选栏不遮挡面板
-        if expanded {
-          self.commonFunctionBar.isHidden = false
-          self.candidateBarView.isHidden = true
-        } else {
-          self.commonFunctionBar.isHidden = !self.lastInputEmpty
-          self.candidateBarView.isHidden = self.lastInputEmpty
-        }
+        // 面板展开时功能行保持显示；候选栏固定顶行，有输入时保持原位
+        self.commonFunctionBar.isHidden = expanded ? false : !self.lastInputEmpty
+        self.updateCandidateBarLayout()
         self.updateEntryButtonStates()
         self.updateSuggestionBarVisibility()
         let target: CGFloat = expanded ? ClawPanelOverlayView.panelHeight : 0

@@ -333,7 +333,9 @@ class KeyboardRootView: NibLessView {
           guard let heightConstraint = self.toolbarHeightConstraint else { return }
           if self.keyboardContext.candidatesViewState.isCollapse() {
             let panelHeight: CGFloat = tab >= 0 ? ClawPanelOverlayView.panelHeight : 0
-            heightConstraint.constant = self.keyboardContext.heightOfToolbar + panelHeight
+            // IOS 原生布局：面板展开时候选栏固定顶行，工具栏高度多一行
+            let extra = (tab >= 0 && self.keyboardContext.useIOSNativeLayout) ? self.keyboardContext.heightOfToolbar : 0
+            heightConstraint.constant = self.keyboardContext.heightOfToolbar + extra + panelHeight
           }
         }
         .store(in: &subscriptions)
@@ -431,8 +433,11 @@ class KeyboardRootView: NibLessView {
     // 候选栏收起
     if candidateViewState.isCollapse() {
       // 键盘显示
-      let panelHeight: CGFloat = keyboardContext.clawPanelTab >= 0 ? ClawPanelOverlayView.panelHeight : 0
-      toolbarHeightConstraint?.constant = keyboardContext.heightOfToolbar + panelHeight
+      let panelExpanded = keyboardContext.clawPanelTab >= 0
+      let panelHeight: CGFloat = panelExpanded ? ClawPanelOverlayView.panelHeight : 0
+      // IOS 原生布局：面板展开时候选栏固定顶行，工具栏高度多一行
+      let extra = (panelExpanded && keyboardContext.useIOSNativeLayout) ? keyboardContext.heightOfToolbar : 0
+      toolbarHeightConstraint?.constant = keyboardContext.heightOfToolbar + extra + panelHeight
       addSubview(primaryKeyboardView)
       NSLayoutConstraint.deactivate(toolbarExpandDynamicConstraints)
       NSLayoutConstraint.activate(toolbarCollapseDynamicConstraints)

@@ -5,6 +5,7 @@
 //  Created by morse on 2023/8/19.
 //
 
+import Combine
 import HamsterKit
 import HamsterUIKit
 import UIKit
@@ -30,6 +31,7 @@ public class CandidateBarView: NibLessView {
   private var keyboardContext: KeyboardContext
   private var rimeContext: RimeContext
   private var userInterfaceStyle: UIUserInterfaceStyle
+  private var subscriptions = Set<AnyCancellable>()
 
   /// 拼音Label
   lazy var phoneticLabel: UILabel = {
@@ -108,6 +110,20 @@ public class CandidateBarView: NibLessView {
     return view
   }()
 
+  /// IOS 原生布局：上栏拼音列（每个候选词上方一列拼音）
+  lazy var pinyinColumnsView: PinyinColumnsView = {
+    let view = PinyinColumnsView()
+    view.isUserInteractionEnabled = false
+    return view
+  }()
+
+  /// IOS 原生布局：上栏与下栏之间的分隔线
+  lazy var separatorLine: UIView = {
+    let view = UIView(frame: .zero)
+    view.translatesAutoresizingMaskIntoConstraints = false
+    return view
+  }()
+
   // MARK: - 计算属性
 
   /// 布局配置
@@ -131,6 +147,7 @@ public class CandidateBarView: NibLessView {
     constructViewHierarchy()
     activateViewConstraints()
     setupAppearance()
+    combine()
   }
 
   /// 构建视图层次
@@ -138,6 +155,12 @@ public class CandidateBarView: NibLessView {
     // 非内嵌模式添加拼写区域
     if !keyboardContext.enableEmbeddedInputMode {
       addSubview(phoneticLabel)
+      if keyboardContext.useIOSNativeLayout {
+        // IOS 原生布局：单行拼音文本隐藏，改用逐列拼音 + 分隔线
+        phoneticLabel.isHidden = true
+        addSubview(separatorLine)
+        addSubview(pinyinColumnsView)
+      }
     }
     if keyboardContext.swipePaging {
       addSubview(candidatesArea)
@@ -177,6 +200,22 @@ public class CandidateBarView: NibLessView {
         ])
       }
     } else {
+      // IOS 原生布局：上栏拼音列 + 分隔线 + 候选词区；其余布局保持原逻辑
+      let isNative = keyboardContext.useIOSNativeLayout
+      let topView = isNative ? separatorLine : phoneticLabel
+      if isNative {
+        NSLayoutConstraint.activate([
+          pinyinColumnsView.topAnchor.constraint(equalTo: topAnchor),
+          pinyinColumnsView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: buttonInsets.left),
+          pinyinColumnsView.trailingAnchor.constraint(equalTo: trailingAnchor),
+          pinyinColumnsView.heightAnchor.constraint(equalToConstant: codingAreaHeight),
+
+          separatorLine.topAnchor.constraint(equalTo: pinyinColumnsView.bottomAnchor),
+          separatorLine.leadingAnchor.constraint(equalTo: leadingAnchor),
+          separatorLine.trailingAnchor.constraint(equalTo: trailingAnchor),
+          separatorLine.heightAnchor.constraint(equalToConstant: 1)
+        ])
+      }
       if keyboardContext.swipePaging {
         NSLayoutConstraint.activate([
           phoneticLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: buttonInsets.left),
@@ -184,13 +223,13 @@ public class CandidateBarView: NibLessView {
           phoneticLabel.topAnchor.constraint(equalTo: topAnchor),
           phoneticLabel.heightAnchor.constraint(equalToConstant: codingAreaHeight),
 
-          candidatesView.topAnchor.constraint(equalTo: phoneticLabel.bottomAnchor),
+          candidatesView.topAnchor.constraint(equalTo: topView.bottomAnchor),
           candidatesView.bottomAnchor.constraint(equalTo: bottomAnchor),
           candidatesView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: buttonInsets.left),
           candidatesView.trailingAnchor.constraint(equalTo: controlStateView.leadingAnchor),
 
           controlStateView.heightAnchor.constraint(equalTo: controlStateView.widthAnchor, multiplier: 1.0),
-          controlStateView.topAnchor.constraint(equalTo: phoneticLabel.bottomAnchor),
+          controlStateView.topAnchor.constraint(equalTo: topView.bottomAnchor),
           controlStateView.trailingAnchor.constraint(equalTo: trailingAnchor),
           controlStateView.heightAnchor.constraint(equalToConstant: controlStateHeight)
         ])
@@ -201,7 +240,7 @@ public class CandidateBarView: NibLessView {
           phoneticLabel.topAnchor.constraint(equalTo: topAnchor),
           phoneticLabel.heightAnchor.constraint(equalToConstant: codingAreaHeight),
 
-          candidatesView.topAnchor.constraint(equalTo: phoneticLabel.bottomAnchor),
+          candidatesView.topAnchor.constraint(equalTo: topView.bottomAnchor),
           candidatesView.bottomAnchor.constraint(equalTo: bottomAnchor),
           candidatesView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: buttonInsets.left),
           candidatesView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -buttonInsets.right)
@@ -215,11 +254,60 @@ public class CandidateBarView: NibLessView {
     phoneticLabel.textColor = style.phoneticTextColor
     stateImageView.tintColor = style.candidateTextColor
 
+    if keyboardContext.useIOSNativeLayout {
+      // 分隔线：浅色 #C7C7CC / 深色 #48484A
+      separatorLine.backgroundColor = UIColor { trait in
+        trait.userInterfaceStyle == .dark
+          ? UIColor(red: 72 / 255, green: 72 / 255, blue: 74 / 255, alpha: 1)
+          : UIColor(red: 199 / 255, green: 199 / 255, blue: 204 / 255, alpha: 1)
+      }
+      updatePinyinColumns()
+    }
+
     if keyboardContext.swipePaging {
       candidatesArea.setupStyle(style)
     } else {
       candidatesPagingArea.setupStyle(style)
     }
+  }
+
+  /// IOS 原生布局：候选词变化时刷新上栏拼音列；候选词横滑时同步滚动
+  func combine() {
+    guard keyboardContext.useIOSNativeLayout else { return }
+    rimeContext.$suggestions
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        self?.updatePinyinColumns()
+      }
+      .store(in: &subscriptions)
+
+    candidatesArea.publisher(for: \.contentOffset)
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] offset in
+        self?.pinyinColumnsView.contentOffset = offset
+      }
+      .store(in: &subscriptions)
+  }
+
+  /// 按候选词列宽生成上栏拼音列（宽度算法与候选词 cell 一致）
+  func updatePinyinColumns() {
+    guard keyboardContext.useIOSNativeLayout else { return }
+    let pinyins = rimeContext.suggestions.map { $0.subtitle ?? "" }
+    let widths = rimeContext.suggestions.map { suggestion -> CGFloat in
+      let attr = suggestion.attributeString(showIndex: false, showComment: false, style: style)
+      let size = UILabel.estimatedAttributeSize(attr, targetSize: CGSize(width: 1000, height: 0))
+      var width = size.width + 14
+      if attr.string.count == 1, let minWidth = UILabel.fontSizeAndMinWidthMapping[style.candidateTextFont.pointSize] {
+        width = minWidth + 14
+      }
+      return width
+    }
+    pinyinColumnsView.update(
+      pinyins: pinyins,
+      widths: widths,
+      font: style.phoneticTextFont,
+      textColor: style.phoneticTextColor
+    )
   }
 
   func setStyle(_ style: CandidateBarStyle) {

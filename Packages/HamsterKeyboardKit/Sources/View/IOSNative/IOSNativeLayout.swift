@@ -103,7 +103,7 @@ public enum IOSNativeLayout {
     case .chineseNumeric: return .numberMore
     case .classifySymbolic: return .cnSymbol1
     case .chineseSymbolic: return .cnSymbol2
-    case .alphabetic(.uppercased), .chinese(.uppercased): return .enUpper
+    case .alphabetic(.uppercased), .alphabetic(.capsLocked), .chinese(.uppercased), .chinese(.capsLocked): return .enUpper
     case .alphabetic(.lowercased), .chinese(.lowercased): return .enLower
     case .numeric: return .enNumber
     case .symbolic: return .enSymbol
@@ -212,13 +212,12 @@ public enum IOSNativeLayout {
   }
 
   private static func shiftAction(context: KeyboardContext) -> KeyboardAction {
+    // 使用 .shift 动作：单击切大小写、双击（StandardKeyboardBehavior）锁定大写
     let t = context.keyboardType
     switch t {
-    case .chinese(.lowercased): return .keyboardType(.chinese(.uppercased))
-    case .chinese(.uppercased): return .keyboardType(.chinese(.lowercased))
-    case .alphabetic(.lowercased): return .keyboardType(.alphabetic(.uppercased))
-    case .alphabetic(.uppercased): return .keyboardType(.alphabetic(.lowercased))
-    default: return .keyboardType(.alphabetic(.uppercased))
+    case .chinese(let state): return .shift(state)
+    case .alphabetic(let state): return .shift(state)
+    default: return .shift(.lowercased)
     }
   }
 
@@ -243,9 +242,9 @@ public enum IOSNativeLayout {
       }
     }
     result.append(key(IOSNativeKey(action: .backspace, displayText: "⌫", rect: .zero), p + 4 * (unit + gh), g.rowY(0), unit, g.rowH))
-    row([("#@¥", "#@¥"), ("GHI", "GHI"), ("JKL", "JKL"), ("MNO", "MNO"), ("^_^", "^_^")], g.rowY(1)) {
+    row([("#+=", "#+="), ("GHI", "GHI"), ("JKL", "JKL"), ("MNO", "MNO"), ("^_^", "^_^")], g.rowY(1)) {
       switch $0 {
-      case "#@¥": return IOSNativeKey(action: .keyboardType(.classifySymbolic), displayText: nil, rect: .zero)
+      case "#+=": return IOSNativeKey(action: .keyboardType(.classifySymbolic), displayText: nil, rect: .zero)
       case "^_^": return IOSNativeKey(action: .character("^_^"), displayText: nil, rect: .zero)
       default: return nineKey($0)
       }
@@ -285,9 +284,9 @@ public enum IOSNativeLayout {
       }
     }
     result.append(key(IOSNativeKey(action: .backspace, displayText: "⌫", rect: .zero), p + 4 * (unit + gh), g.rowY(0), unit, g.rowH))
-    row([("#@¥", "#@¥"), ("4", "4"), ("5", "5"), ("6", "6")], g.rowY(1)) {
+    row([("#+=", "#+="), ("4", "4"), ("5", "5"), ("6", "6")], g.rowY(1)) {
       switch $0 {
-      case "#@¥": return IOSNativeKey(action: .keyboardType(.classifySymbolic), displayText: nil, rect: .zero)
+      case "#+=": return IOSNativeKey(action: .keyboardType(.classifySymbolic), displayText: nil, rect: .zero)
       default: return charKey($0)
       }
     }
@@ -326,9 +325,9 @@ public enum IOSNativeLayout {
       }
     }
     result.append(key(IOSNativeKey(action: .backspace, displayText: "⌫", rect: .zero), p + 4 * (unit + gh), g.rowY(0), unit, g.rowH))
-    row([("#@¥", "#@¥"), (",", ","), ("+", "+"), ("-", "-")], g.rowY(1)) {
+    row([("#+=", "#+="), (",", ","), ("+", "+"), ("-", "-")], g.rowY(1)) {
       switch $0 {
-      case "#@¥": return IOSNativeKey(action: .keyboardType(.classifySymbolic), displayText: nil, rect: .zero)
+      case "#+=": return IOSNativeKey(action: .keyboardType(.classifySymbolic), displayText: nil, rect: .zero)
       default: return charKey($0)
       }
     }
@@ -368,7 +367,7 @@ public enum IOSNativeLayout {
     }
     // Row 3: #+=/123 (43.3) | 6 symbols (39.5, centered) | backspace (43.3).
     let y3 = g.rowY(2)
-    let switchKey = page == 1 ? "#@¥" : "123"
+    let switchKey = page == 1 ? "#+=" : "123"
     let switchAction: KeyboardAction = page == 1 ? .keyboardType(.chineseSymbolic) : .keyboardType(.classifySymbolic)
     result.append(key(IOSNativeKey(action: switchAction, displayText: switchKey, rect: .zero), p, y3, enFuncW, g.rowH))
     let symStart = W / 2 - (6 * cnSymUnit + 5 * gh) / 2
@@ -491,7 +490,7 @@ public enum IOSNativeLayout {
     let zLeft = blockX
     let mRight = blockX + 6 * (unit + gh) + unit
     let symW = (mRight - zLeft - 4 * gh) / 5
-    let switchKey = page == 1 ? "#@¥" : "123"
+    let switchKey = page == 1 ? "#+=" : "123"
     let switchAction: KeyboardAction = page == 1 ? .keyboardType(.symbolic) : .keyboardType(.numeric)
     result.append(key(IOSNativeKey(action: switchAction, displayText: switchKey, rect: .zero), p, y3, enFuncW, g.rowH))
     let syms = page == 1 ? [".", ",", "?", "!", "’"] : [".", ",", "?", "!", "'"]
@@ -520,3 +519,6 @@ public enum IOSNativeLayout {
     enNumberSymbolKeys(context: context, page: 2)
   }
 }
+
+
+

@@ -202,17 +202,23 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
 
   /// 候选栏样式
   open var candidateBarStyle: CandidateBarStyle {
-    // ClawTalk IOS 原生布局：候选栏固定 P 图配色（灰底黑字、首选白底），不随主题
+    // ClawTalk IOS 原生布局：候选栏 P 图配色，底色/文字跟随系统深浅色（与键盘板同色）
     if keyboardContext.useIOSNativeLayout {
-      let boardColor = UIColor(red: 208/255, green: 211/255, blue: 217/255, alpha: 1)
-      let textColor = UIColor(red: 17/255, green: 17/255, blue: 17/255, alpha: 1)
+      let dark = keyboardContext.hasDarkColorScheme
+      let boardColor = dark
+        ? UIColor(red: 28/255, green: 28/255, blue: 30/255, alpha: 1)
+        : UIColor(red: 208/255, green: 211/255, blue: 217/255, alpha: 1)
+      let textColor = dark ? UIColor.white : UIColor(red: 17/255, green: 17/255, blue: 17/255, alpha: 1)
       let grayColor = UIColor(red: 142/255, green: 142/255, blue: 147/255, alpha: 1)
+      let preferredBackground = dark
+        ? UIColor(red: 44/255, green: 44/255, blue: 46/255, alpha: 1)
+        : UIColor.white
       return CandidateBarStyle(
         phoneticTextColor: textColor,
         phoneticTextFont: UIFont.systemFont(ofSize: 15),
         preferredCandidateTextColor: textColor,
         preferredCandidateCommentTextColor: grayColor,
-        preferredCandidateBackgroundColor: .white,
+        preferredCandidateBackgroundColor: preferredBackground,
         preferredCandidateLabelColor: grayColor,
         candidateTextColor: textColor,
         candidateCommentTextColor: grayColor,
