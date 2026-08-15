@@ -147,12 +147,6 @@ public enum IOSNativeLayout {
     IOSNativeKey(action: k.action, displayText: k.displayText, rect: rect(x, y, w, h), isSend: k.isSend, isInputAction: k.isInputAction)
   }
 
-  private static func qwertyBackType(context: KeyboardContext) -> KeyboardType {
-    let t = context.keyboardType
-    if t.isChinesePrimaryKeyboard { return .chinese(.lowercased) }
-    return .alphabetic(.lowercased)
-  }
-
   private static func shiftAction(context: KeyboardContext) -> KeyboardAction {
     let t = context.keyboardType
     switch t {
