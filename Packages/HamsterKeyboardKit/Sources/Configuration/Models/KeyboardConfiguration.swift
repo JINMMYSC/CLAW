@@ -12,6 +12,9 @@ public struct KeyboardConfiguration: Codable, Hashable {
   /// 使用键盘类型
   public var useKeyboardType: String?
 
+  /// ClawTalk: iOS 原生布局开关（true 时键盘按 iOS 原生点位渲染，false 保持原布局）
+  public var useIOSNativeLayout: Bool?
+
   /// 关闭划动显示文本
   public var disableSwipeLabel: Bool?
 
@@ -154,8 +157,9 @@ public struct KeyboardConfiguration: Codable, Hashable {
   /// 默认启用（nil 视为 true）
   public var enableBackspaceSwipeUpDeleteLine: Bool?
 
-  public init(useKeyboardType: String? = nil, disableSwipeLabel: Bool? = nil, upSwipeOnLeft: Bool? = nil, swipeLabelUpAndDownLayout: Bool? = nil, swipeLabelUpAndDownIrregularLayout: Bool? = nil, displayButtonBubbles: Bool? = nil, enableKeySounds: Bool? = nil, enableHapticFeedback: Bool? = nil, hapticFeedbackIntensity: Int? = nil, displaySemicolonButton: Bool? = nil, displayClassifySymbolButton: Bool? = nil, displaySpaceLeftButton: Bool? = nil, spaceLeftButtonProcessByRIME: Bool? = nil, keyValueOfSpaceLeftButton: String? = nil, displaySpaceRightButton: Bool? = nil, spaceRightButtonProcessByRIME: Bool? = nil, keyValueOfSpaceRightButton: String? = nil, displayChineseEnglishSwitchButton: Bool? = nil, chineseEnglishSwitchButtonIsOnLeftOfSpaceButton: Bool? = nil, enableNineGridOfNumericKeyboard: Bool? = nil, numberKeyProcessByRimeOnNineGridOfNumericKeyboard: Bool? = nil, leftSymbolProcessByRimeOnNineGridOfNumericKeyboard: Bool? = nil, rightSymbolProcessByRimeOnNineGridOfNumericKeyboard: Bool? = nil, symbolsOfGridOfNumericKeyboard: [String]? = nil, lockShiftState: Bool? = nil, enableEmbeddedInputMode: Bool? = nil, widthOfOneHandedKeyboard: Int? = nil, symbolsOfCursorBack: [String]? = nil, symbolsOfReturnToMainKeyboard: [String]? = nil, symbolsOfChineseNineGridKeyboard: [String]? = nil, pairsOfSymbols: [String]? = nil, enableSymbolKeyboard: Bool? = nil, lockForSymbolKeyboard: Bool? = nil, enableColorSchema: Bool? = nil, useColorSchemaForLight: String? = nil, useColorSchemaForDark: String? = nil, colorSchemas: [KeyboardColorSchema]? = nil, enableLoadingTextForSpaceButton: Bool? = nil, loadingTextForSpaceButton: String? = nil, labelTextForSpaceButton: String? = nil, showCurrentInputSchemaNameForSpaceButton: Bool? = nil, showCurrentInputSchemaNameOnLoadingTextForSpaceButton: Bool? = nil, showUppercasedCharacterOnChineseKeyboard: Bool? = nil, enableButtonUnderBorder: Bool? = nil, enableBackspaceSwipeUpDeleteLine: Bool? = nil) {
+  public init(useKeyboardType: String? = nil, disableSwipeLabel: Bool? = nil, upSwipeOnLeft: Bool? = nil, swipeLabelUpAndDownLayout: Bool? = nil, swipeLabelUpAndDownIrregularLayout: Bool? = nil, displayButtonBubbles: Bool? = nil, enableKeySounds: Bool? = nil, enableHapticFeedback: Bool? = nil, hapticFeedbackIntensity: Int? = nil, displaySemicolonButton: Bool? = nil, displayClassifySymbolButton: Bool? = nil, displaySpaceLeftButton: Bool? = nil, spaceLeftButtonProcessByRIME: Bool? = nil, keyValueOfSpaceLeftButton: String? = nil, displaySpaceRightButton: Bool? = nil, spaceRightButtonProcessByRIME: Bool? = nil, keyValueOfSpaceRightButton: String? = nil, displayChineseEnglishSwitchButton: Bool? = nil, chineseEnglishSwitchButtonIsOnLeftOfSpaceButton: Bool? = nil, enableNineGridOfNumericKeyboard: Bool? = nil, numberKeyProcessByRimeOnNineGridOfNumericKeyboard: Bool? = nil, leftSymbolProcessByRimeOnNineGridOfNumericKeyboard: Bool? = nil, rightSymbolProcessByRimeOnNineGridOfNumericKeyboard: Bool? = nil, symbolsOfGridOfNumericKeyboard: [String]? = nil, lockShiftState: Bool? = nil, enableEmbeddedInputMode: Bool? = nil, widthOfOneHandedKeyboard: Int? = nil, symbolsOfCursorBack: [String]? = nil, symbolsOfReturnToMainKeyboard: [String]? = nil, symbolsOfChineseNineGridKeyboard: [String]? = nil, pairsOfSymbols: [String]? = nil, enableSymbolKeyboard: Bool? = nil, lockForSymbolKeyboard: Bool? = nil, enableColorSchema: Bool? = nil, useColorSchemaForLight: String? = nil, useColorSchemaForDark: String? = nil, colorSchemas: [KeyboardColorSchema]? = nil, enableLoadingTextForSpaceButton: Bool? = nil, loadingTextForSpaceButton: String? = nil, labelTextForSpaceButton: String? = nil, showCurrentInputSchemaNameForSpaceButton: Bool? = nil, showCurrentInputSchemaNameOnLoadingTextForSpaceButton: Bool? = nil, showUppercasedCharacterOnChineseKeyboard: Bool? = nil, enableButtonUnderBorder: Bool? = nil, enableBackspaceSwipeUpDeleteLine: Bool? = nil, useIOSNativeLayout: Bool? = nil) {
     self.useKeyboardType = useKeyboardType
+    self.useIOSNativeLayout = useIOSNativeLayout
     self.disableSwipeLabel = disableSwipeLabel
     self.upSwipeOnLeft = upSwipeOnLeft
     self.swipeLabelUpAndDownLayout = swipeLabelUpAndDownLayout
@@ -205,6 +209,7 @@ public struct KeyboardConfiguration: Codable, Hashable {
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     self.useKeyboardType = try container.decodeIfPresent(String.self, forKey: .useKeyboardType)
+    self.useIOSNativeLayout = try container.decodeIfPresent(Bool.self, forKey: .useIOSNativeLayout)
     self.disableSwipeLabel = try container.decodeIfPresent(Bool.self, forKey: .disableSwipeLabel)
     self.upSwipeOnLeft = try container.decodeIfPresent(Bool.self, forKey: .upSwipeOnLeft)
     self.swipeLabelUpAndDownLayout = try container.decodeIfPresent(Bool.self, forKey: .swipeLabelUpAndDownLayout)
@@ -253,6 +258,7 @@ public struct KeyboardConfiguration: Codable, Hashable {
 
   enum CodingKeys: CodingKey {
     case useKeyboardType
+    case useIOSNativeLayout
     case disableSwipeLabel
     case upSwipeOnLeft
     case swipeLabelUpAndDownLayout
@@ -302,6 +308,7 @@ public struct KeyboardConfiguration: Codable, Hashable {
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encodeIfPresent(self.useKeyboardType, forKey: .useKeyboardType)
+    try container.encodeIfPresent(self.useIOSNativeLayout, forKey: .useIOSNativeLayout)
     try container.encodeIfPresent(self.disableSwipeLabel, forKey: .disableSwipeLabel)
     try container.encodeIfPresent(self.upSwipeOnLeft, forKey: .upSwipeOnLeft)
     try container.encodeIfPresent(self.swipeLabelUpAndDownLayout, forKey: .swipeLabelUpAndDownLayout)

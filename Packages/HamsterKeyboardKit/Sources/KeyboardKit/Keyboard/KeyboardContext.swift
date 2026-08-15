@@ -369,6 +369,11 @@ public class KeyboardContext: ObservableObject {
   }
 
   /// 是否开启工具栏
+  /// ClawTalk: iOS 原生布局模式（true 时所有面板按 iOS 原生点位渲染）
+  var useIOSNativeLayout: Bool {
+    hamsterConfiguration?.keyboard?.useIOSNativeLayout ?? false
+  }
+
   var enableToolbar: Bool {
     hamsterConfiguration?.toolbar?.enableToolbar ?? true
   }

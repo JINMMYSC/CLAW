@@ -147,6 +147,20 @@ class KeyboardRootView: NibLessView {
     return view
   }
 
+  /// iOS 原生布局键盘视图（useIOSNativeLayout 开启时使用）
+  /// 注意：计算属性，在 primaryKeyboardView 闭包中按需创建
+  private var iosNativeKeyboardView: IOSNativeKeyboardView {
+    let view = IOSNativeKeyboardView(
+      actionHandler: actionHandler,
+      appearance: appearance,
+      keyboardContext: keyboardContext,
+      rimeContext: rimeContext,
+      calloutContext: calloutContext
+    )
+    view.translatesAutoresizingMaskIntoConstraints = false
+    return view
+  }
+
   /// 工具栏
   private lazy var toolbarView: UIView = {
     let view = KeyboardToolbarView(appearance: appearance, actionHandler: actionHandler, keyboardContext: keyboardContext, rimeContext: rimeContext)
@@ -435,6 +449,12 @@ class KeyboardRootView: NibLessView {
 
   /// 根据键盘类型选择键盘
   func chooseKeyboard(keyboardType: KeyboardType) -> UIView? {
+    // ClawTalk: iOS 原生布局模式下，支持的键盘类型全部由新视图渲染（不动原有视图）
+    if keyboardContext.useIOSNativeLayout, IOSNativeLayout.panel(for: keyboardType) != nil {
+      return iosNativeKeyboardView
+    }
+
+    // 生成临时键盘
 //    // 从 cache 中获取键盘
 //    if let tempKeyboardView = tempKeyboardViewCache[keyboardType] {
 //      return tempKeyboardView

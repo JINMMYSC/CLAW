@@ -226,6 +226,17 @@ public class KeyboardSettingsViewModel: ObservableObject, Hashable, Identifiable
     }
   }
 
+  /// ClawTalk: iOS 原生布局开关
+  public var useIOSNativeLayout: Bool {
+    get {
+      HamsterConfigurationStore.shared.configuration.keyboard?.useIOSNativeLayout ?? false
+    }
+    set {
+      HamsterConfigurationStore.shared.configuration.keyboard?.useIOSNativeLayout = newValue
+      HamsterConfigurationStore.shared.applicationConfiguration.keyboard?.useIOSNativeLayout = newValue
+    }
+  }
+
   public var displaySemicolonButton: Bool {
     get {
       HamsterConfigurationStore.shared.configuration.keyboard?.displaySemicolonButton ?? false
@@ -799,7 +810,14 @@ public class KeyboardSettingsViewModel: ObservableObject, Hashable, Identifiable
           type: .navigation,
           navigationAction: { [unowned self] in
             self.subViewSubject.send(.keyboardLayout)
-          })
+          }),
+        .init(
+          text: "iOS 原生布局",
+          type: .toggle,
+          toggleValue: { [unowned self] in useIOSNativeLayout },
+          toggleHandled: { [unowned self] in
+            useIOSNativeLayout = $0
+          }),
       ]
     ),
     .init(
