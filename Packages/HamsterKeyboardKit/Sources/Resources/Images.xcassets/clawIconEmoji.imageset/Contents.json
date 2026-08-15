@@ -1,0 +1,23 @@
+{
+  "images": [
+    {
+      "filename": "clawIconEmoji-1x.png",
+      "idiom": "universal",
+      "scale": "1x"
+    },
+    {
+      "filename": "clawIconEmoji-2x.png",
+      "idiom": "universal",
+      "scale": "2x"
+    },
+    {
+      "filename": "clawIconEmoji-3x.png",
+      "idiom": "universal",
+      "scale": "3x"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

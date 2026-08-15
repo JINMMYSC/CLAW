@@ -202,6 +202,30 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
 
   /// 候选栏样式
   open var candidateBarStyle: CandidateBarStyle {
+    // ClawTalk IOS 原生布局：候选栏固定 P 图配色（灰底黑字、首选白底），不随主题
+    if keyboardContext.useIOSNativeLayout {
+      let boardColor = UIColor(red: 208/255, green: 211/255, blue: 217/255, alpha: 1)
+      let textColor = UIColor(red: 17/255, green: 17/255, blue: 17/255, alpha: 1)
+      let grayColor = UIColor(red: 142/255, green: 142/255, blue: 147/255, alpha: 1)
+      return CandidateBarStyle(
+        phoneticTextColor: textColor,
+        phoneticTextFont: UIFont.systemFont(ofSize: 15),
+        preferredCandidateTextColor: textColor,
+        preferredCandidateCommentTextColor: grayColor,
+        preferredCandidateBackgroundColor: .white,
+        preferredCandidateLabelColor: grayColor,
+        candidateTextColor: textColor,
+        candidateCommentTextColor: grayColor,
+        candidateLabelColor: grayColor,
+        candidateLabelFont: UIFont.systemFont(ofSize: 11),
+        candidateTextFont: UIFont.systemFont(ofSize: 17),
+        candidateCommentFont: UIFont.systemFont(ofSize: 12),
+        toolbarButtonFrontColor: textColor,
+        toolbarButtonBackgroundColor: .clear,
+        toolbarButtonPressedBackgroundColor: boardColor
+      )
+    }
+
     var phoneticTextFontSize: CGFloat = phoneticTextFontSize
     if let size = keyboardContext.hamsterConfiguration?.toolbar?.codingAreaFontSize {
       phoneticTextFontSize = CGFloat(size)

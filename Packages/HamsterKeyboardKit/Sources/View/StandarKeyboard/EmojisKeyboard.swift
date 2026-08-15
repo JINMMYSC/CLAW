@@ -113,6 +113,12 @@ class EmojisKeyboard: NibLessView {
     }
     updateCategoryHighlight()
 
+    // 手指跟手：在分类栏上滑动时，高亮跟随手指位置实时切换分类
+    let categoryPan = UIPanGestureRecognizer(target: self, action: #selector(categoryPan(_:)))
+    categoryPan.cancelsTouchesInView = false
+    categoryPan.delegate = self
+    categoryScrollView.addGestureRecognizer(categoryPan)
+
     deleteButton.tintColor = style.toolbarButtonFrontColor
     styleCapsule(deleteButton)
 
@@ -198,8 +204,33 @@ class EmojisKeyboard: NibLessView {
     categoryScrollView.setContentOffset(CGPoint(x: max(clamped, 0), y: 0), animated: true)
   }
 
+  @objc private func categoryPan(_ pan: UIPanGestureRecognizer) {
+    let itemWidth: CGFloat = 48
+    let loc = pan.location(in: categoryScrollView)
+    let contentX = loc.x + categoryScrollView.contentOffset.x
+    let idx = min(max(Int(contentX / itemWidth), 0), EmojiCategory.allCases.count - 1)
+    let target = EmojiCategory.allCases[idx]
+    if target != selectedCategory {
+      selectedCategory = target
+    }
+    if pan.state == .ended || pan.state == .cancelled || pan.state == .failed {
+      let offsetX = CGFloat(idx) * itemWidth - (categoryScrollView.bounds.width - itemWidth) / 2
+      let maxOffset = max(0, categoryScrollView.contentSize.width - categoryScrollView.bounds.width)
+      categoryScrollView.setContentOffset(CGPoint(x: min(max(offsetX, 0), maxOffset), y: 0), animated: true)
+    }
+  }
+
   @objc private func deleteTapped() {
     keyboardContext.textDocumentProxy.deleteBackward()
+  }
+}
+
+// MARK: - UIGestureRecognizerDelegate
+
+extension EmojisKeyboard: UIGestureRecognizerDelegate {
+  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+    // 允许分类栏的滚动与手指跟手同时生效
+    true
   }
 }
 

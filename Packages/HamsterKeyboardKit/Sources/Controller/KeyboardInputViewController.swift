@@ -472,15 +472,45 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
   override open func textWillChange(_ textInput: UITextInput?) {
     super.textWillChange(textInput)
 
-    // fix: 键盘跟随环境显示数字键盘
-    if let keyboardType = textDocumentProxy.keyboardType, keyboardType.isNumberType {
-      keyboardContext.setKeyboardType(.numericNineGrid)
+    // ClawTalk: 键盘跟随宿主输入环境（数字/邮箱/网址/搜索/密码）
+    let newEnvironment = Self.detectInputEnvironment(from: textDocumentProxy)
+    if keyboardContext.inputEnvironment != newEnvironment {
+      keyboardContext.inputEnvironment = newEnvironment
+      switch newEnvironment {
+      case .number:
+        keyboardContext.setKeyboardType(.numericNineGrid)
+      case .password, .email, .url, .search:
+        keyboardContext.setKeyboardType(.alphabetic(.lowercased))
+      default:
+        break
+      }
     }
 
     if keyboardContext.textDocumentProxy === textDocumentProxy { return }
     keyboardContext.textDocumentProxy = textDocumentProxy
   }
 
+
+  /// 根据 textDocumentProxy 推断输入环境（键盘布局变体 / return 键用）
+  static func detectInputEnvironment(from proxy: UITextDocumentProxy) -> ClawInputEnvironment {
+    if proxy.isSecureTextEntry == true { return .password }
+    if let keyboardType = proxy.keyboardType {
+      if keyboardType.isNumberType { return .number }
+      switch keyboardType {
+      case .emailAddress: return .email
+      case .URL: return .url
+      case .webSearch: return .search
+      default: break
+      }
+    }
+    switch proxy.returnKeyType {
+    case .search, .google, .yahoo: return .search
+    case .send, .go, .join, .continue: return .chat
+    case .done, .next, .route, .emergencyCall: return .action
+    default: break
+    }
+    return .general
+  }
   /// 当 Document 中的 text 发生变化时，通知输入委托。
   /// - parameters:
   ///   * textInput: 采用 UITextInput 协议的文档实例。

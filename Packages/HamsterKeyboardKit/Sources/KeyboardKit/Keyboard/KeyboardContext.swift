@@ -252,6 +252,9 @@ public class KeyboardContext: ObservableObject {
   public var clawPanelTab: Int = -1
 
   /// ClawTalk 面板输入框是否聚焦（聚焦时键盘按键直输进面板输入框）
+  /// 当前输入环境（宿主输入框语义）：普通/邮箱/网址/搜索/聊天/动作/数字/密码
+  @Published
+  public var inputEnvironment: ClawInputEnvironment = .general
   @Published
   public var clawPanelInputActive: Bool = false
 

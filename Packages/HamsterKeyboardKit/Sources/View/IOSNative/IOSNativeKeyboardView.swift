@@ -51,13 +51,14 @@ private enum IOSNativePalette {
   static let funcGray = iosRGB(0xAAB0BA)
   static let lightGray = iosRGB(0xE8ECF0)
   static let sendBlue = iosRGB(0x007AFF)
-  static let textDark = iosRGB(0x111111)
+  static let textDark = iosRGB(0x000000)
   static let textWhite = UIColor.white
 }
 
 /// iOS 原生布局按键：支持覆盖文本标签并随按压状态变色
 private class IOSNativeButton: KeyboardButton {
   var overlayLabel: UILabel?
+  var overlayIconView: UIImageView?
   var overlayNormalBG: UIColor?
   var overlayPressedBG: UIColor?
   var overlayNormalFG: UIColor?
@@ -65,9 +66,13 @@ private class IOSNativeButton: KeyboardButton {
 
   override func updateButtonStyle(isPressed: Bool) {
     super.updateButtonStyle(isPressed: isPressed)
-    guard let label = overlayLabel else { return }
-    label.backgroundColor = isPressed ? (overlayPressedBG ?? overlayNormalBG) : overlayNormalBG
-    label.textColor = isPressed ? (overlayPressedFG ?? overlayNormalFG) : overlayNormalFG
+    if let label = overlayLabel {
+      label.backgroundColor = isPressed ? (overlayPressedBG ?? overlayNormalBG) : overlayNormalBG
+      label.textColor = isPressed ? (overlayPressedFG ?? overlayNormalFG) : overlayNormalFG
+    }
+    if let icon = overlayIconView {
+      icon.backgroundColor = isPressed ? (overlayPressedBG ?? overlayNormalBG) : overlayNormalBG
+    }
   }
 }
 
@@ -82,12 +87,19 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     let button: IOSNativeButton
     let spec: IOSNativeKey
     let label: UILabel?
+    let icon: UIImageView?
   }
 
   private var entries: [KeyEntry] = []
   private var currentPanel: IOSNativePanel = .pinyin9
   private var layoutConstraints: [NSLayoutConstraint] = []
   private var lastLayoutBounds: CGRect = .zero
+  private var subscriptions = Set<AnyCancellable>()
+  /// p1 拼音9键 行1第5键：^_^ / 分隔 双态键
+  private var separatorEntry: KeyEntry?
+  /// 当前面板的 return/发送 键（聊天场景无字灰/有字蓝）
+  private var sendReturnEntry: KeyEntry?
+  private var chatSendTimer: Timer?
 
   public init(
     actionHandler: KeyboardActionHandler,
@@ -107,10 +119,13 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
       currentPanel = panel
     }
     rebuild()
+    setupSeparatorKey()
+    setupChatSendKey()
     setupAppearance()
   }
 
   deinit {
+    chatSendTimer?.invalidate()
     entries.forEach { $0.button.removeFromSuperview() }
   }
 
@@ -119,10 +134,10 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     contentMode = .redraw
   }
 
-  /// 高度与设计空间一致：4 + 3*(40+8.8) + 40 = 190.4pt
+  /// 高度按当前面板纵向几何（9键族 4+3*(50+6)+50=222；紧凑族 4+3*(46+10)+46=218）
   /// 与 EmojisKeyboard 相同策略，让系统按内容高度撑起键盘（否则键盘高度崩溃为空白）
   override public var intrinsicContentSize: CGSize {
-    CGSize(width: UIView.noIntrinsicMetric, height: IOSNativeDesign.height)
+    CGSize(width: UIView.noIntrinsicMetric, height: IOSNativeDesign.height(for: currentPanel))
   }
 
   override public func didMoveToWindow() {
@@ -156,16 +171,73 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
       button.translatesAutoresizingMaskIntoConstraints = false
       addSubview(button)
 
-      let label = makeOverlayLabelIfNeeded(for: spec, on: button)
-      entries.append(KeyEntry(button: button, spec: spec, label: label))
+      let (label, icon) = makeOverlayViewIfNeeded(for: spec, on: button)
+      entries.append(KeyEntry(button: button, spec: spec, label: label, icon: icon))
     }
+    separatorEntry = entries.first { $0.spec.displayText == "^_^" }
+    sendReturnEntry = entries.first { $0.spec.isSend }
     setNeedsLayout()
+  }
+
+  // MARK: - p1 双态键（^_^ / 分隔）
+
+  private func setupSeparatorKey() {
+    updateSeparatorKeyState()
+    rimeContext.userInputKeyPublished
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        self?.updateSeparatorKeyState()
+      }
+      .store(in: &subscriptions)
+  }
+
+  // MARK: - 聊天发送键动态色（无字灰 / 有字蓝，P 图行为）
+
+  private func setupChatSendKey() {
+    updateChatSendKeyState()
+    chatSendTimer?.invalidate()
+    chatSendTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+      self?.updateChatSendKeyState()
+    }
+  }
+
+  /// 仅聊天发送键（isSend 且无 tintOverride，即 returnKeyType .send/.join）：
+  /// 输入框无字 -> 灰键无文字；有字 -> 蓝键显示 发送/send
+  private func updateChatSendKeyState() {
+    guard let entry = sendReturnEntry, let label = entry.label else { return }
+    let spec = entry.spec
+    guard spec.isSend, spec.tintOverride == nil else { return }
+    let hasText = keyboardContext.textDocumentProxy.hasText
+    let colors = hasText
+      ? IOSNativeKeyColors.solid(IOSNativePalette.sendBlue, IOSNativePalette.textWhite)
+      : IOSNativeKeyColors.solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
+    label.text = hasText ? (spec.displayText ?? "") : nil
+    entry.button.overlayNormalBG = colors.normal
+    entry.button.overlayPressedBG = colors.pressed
+    entry.button.overlayNormalFG = colors.foreground
+    entry.button.overlayPressedFG = colors.foreground
+    label.backgroundColor = colors.normal
+    label.textColor = colors.foreground
+  }
+
+  private func updateSeparatorKeyState() {
+    guard let entry = separatorEntry, let label = entry.label else { return }
+    let isTyping = !rimeContext.userInputKey.isEmpty
+    entry.button.item.action = isTyping ? .primary(.return) : .character("^_^")
+    label.text = isTyping ? "分隔" : "^_^"
+    let normal = isTyping ? IOSNativePalette.char : IOSNativePalette.funcGray
+    let pressed = isTyping ? IOSNativePalette.charPressed : iosDarker(IOSNativePalette.funcGray)
+    entry.button.overlayNormalBG = normal
+    entry.button.overlayPressedBG = pressed
+    entry.button.overlayNormalFG = IOSNativePalette.textDark
+    entry.button.overlayPressedFG = IOSNativePalette.textDark
+    label.backgroundColor = normal
   }
 
   private func rowIndex(for rect: CGRect) -> Int {
     let y = rect.midY
-    let rowH = IOSNativeDesign.rowH
-    let gv = IOSNativeDesign.gapV
+    let rowH = IOSNativeDesign.rowH(for: currentPanel)
+    let gv = IOSNativeDesign.gapV(for: currentPanel)
     let pv = IOSNativeDesign.paddingV
     let rows = [pv, pv + rowH + gv, pv + 2 * (rowH + gv), pv + 3 * (rowH + gv)]
     var best = 0
@@ -192,6 +264,15 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
 
   /// 按面板 + 按键类型返回固定配色
   private func keyColors(for spec: IOSNativeKey) -> IOSNativeKeyColors {
+    // return 键强制配色：搜索/前往/继续=蓝，完成/换行=灰；nil 走面板规则
+    if let tint = spec.tintOverride {
+      switch tint {
+      case .blue:
+        return .solid(IOSNativePalette.sendBlue, IOSNativePalette.textWhite)
+      case .gray:
+        return .solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
+      }
+    }
     if spec.isSend {
       if isBlueSendPanel() {
         return .solid(IOSNativePalette.sendBlue, IOSNativePalette.textWhite)
@@ -249,7 +330,8 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   }
 
   private func overlayFontSize(for spec: IOSNativeKey) -> CGFloat {
-    if spec.isSend { return 16 }
+    if spec.isSend { return 14 }
+    if spec.action == .primary(.return) { return 14 }
     let text = spec.displayText ?? ""
     switch text {
     case "⌫": return 16
@@ -271,9 +353,52 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     return 14
   }
 
-  private func makeOverlayLabelIfNeeded(for spec: IOSNativeKey, on button: IOSNativeButton) -> UILabel? {
-    guard needsOverlay(for: spec), let text = spec.displayText else { return nil }
+
+  /// P 图图标键：退格/Shift/表情 使用裁切自 P 图的单色图标（设计空间 pt，不随 sx 缩放）
+  private struct IOSNativeIconSpec {
+    let asset: String
+    let size: CGSize
+  }
+
+  private func iconSpec(for spec: IOSNativeKey) -> IOSNativeIconSpec? {
+    if spec.action == .backspace {
+      return IOSNativeIconSpec(asset: "clawIconBackspace", size: CGSize(width: 25, height: 22))
+    }
+    let text = spec.displayText ?? ""
+    if text == "\u{2B06}" || text == "⬆" {
+      return IOSNativeIconSpec(asset: "clawIconShift", size: CGSize(width: 20, height: 23))
+    }
+    if text == "😀" {
+      return IOSNativeIconSpec(asset: "clawIconEmoji", size: CGSize(width: 24, height: 24))
+    }
+    return nil
+  }
+
+  private func makeOverlayViewIfNeeded(for spec: IOSNativeKey, on button: IOSNativeButton) -> (UILabel?, UIImageView?) {
+    guard needsOverlay(for: spec), let text = spec.displayText else { return (nil, nil) }
     let colors = keyColors(for: spec)
+    if let icon = iconSpec(for: spec), let image = UIImage(named: icon.asset, in: .hamsterKeyboard, with: .none) {
+      let view = UIImageView(image: image)
+      view.contentMode = .center
+      view.isUserInteractionEnabled = false
+      view.translatesAutoresizingMaskIntoConstraints = false
+      view.backgroundColor = colors.normal
+      view.layer.cornerRadius = IOSNativeDesign.radius
+      view.layer.masksToBounds = true
+      button.addSubview(view)
+      NSLayoutConstraint.activate([
+        view.topAnchor.constraint(equalTo: button.topAnchor),
+        view.leadingAnchor.constraint(equalTo: button.leadingAnchor),
+        view.trailingAnchor.constraint(equalTo: button.trailingAnchor),
+        view.bottomAnchor.constraint(equalTo: button.bottomAnchor)
+      ])
+      button.overlayIconView = view
+      button.overlayNormalBG = colors.normal
+      button.overlayPressedBG = colors.pressed
+      button.overlayNormalFG = colors.foreground
+      button.overlayPressedFG = colors.foreground
+      return (nil, view)
+    }
     let label = UILabel(frame: .zero)
     label.text = text
     label.textAlignment = .center
@@ -299,7 +424,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     button.overlayPressedBG = colors.pressed
     button.overlayNormalFG = colors.foreground
     button.overlayPressedFG = colors.foreground
-    return label
+    return (label, nil)
   }
 
   // MARK: - 布局
@@ -321,7 +446,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     layoutConstraints.removeAll()
 
     let sx = bounds.width / IOSNativeDesign.width
-    let designH = IOSNativeDesign.height
+    let designH = IOSNativeDesign.height(for: currentPanel)
 
     for entry in entries {
       let r = entry.spec.rect
