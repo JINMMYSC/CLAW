@@ -1,0 +1,9 @@
+name: tmp runner probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: probe
+        run: echo "ubuntu runner OK" && uname -a
