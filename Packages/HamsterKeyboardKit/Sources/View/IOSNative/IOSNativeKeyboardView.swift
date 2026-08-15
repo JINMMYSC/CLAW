@@ -144,13 +144,14 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   private func needsOverlay(for spec: IOSNativeKey) -> Bool {
     guard let text = spec.displayText else { return false }
     if spec.action == .backspace { return false }
+    if spec.isConfirm { return true }
     let standard = appearance.buttonText(for: spec.action) ?? ""
     if standard.isEmpty { return true }
     return standard != text
   }
 
   private func overlayFontSize(for spec: IOSNativeKey) -> CGFloat {
-    if spec.isSend { return 16 }
+    if spec.isSend || spec.isConfirm { return 16 }
     let text = spec.displayText ?? ""
     if text == "，。？！" { return 14 }
     if text == ". , :" || text == ". . :" { return 15 }
@@ -163,7 +164,13 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   private func makeOverlayLabelIfNeeded(for spec: IOSNativeKey, on button: IOSNativeButton) -> UILabel? {
     guard needsOverlay(for: spec), let text = spec.displayText else { return nil }
 
-    let style = button.normalButtonStyle
+    // ClawTalk UI: 「确认」键使用功能键灰色样式（与英文面板蓝色 send 区分）
+    let style: KeyboardButtonStyle
+    if spec.isConfirm {
+      style = appearance.buttonStyle(for: .backspace, isPressed: false)
+    } else {
+      style = button.normalButtonStyle
+    }
     let label = UILabel(frame: .zero)
     label.text = text
     label.textAlignment = .center

@@ -47,13 +47,16 @@ public struct IOSNativeKey {
   public let rect: CGRect
   public let isSend: Bool
   public let isInputAction: Bool
+  /// ClawTalk UI: 中文面板右下「确认」键（灰底黑字，与英文面板蓝色 send 区分）
+  public let isConfirm: Bool
 
-  public init(action: KeyboardAction, displayText: String?, rect: CGRect, isSend: Bool = false, isInputAction: Bool = false) {
+  public init(action: KeyboardAction, displayText: String?, rect: CGRect, isSend: Bool = false, isInputAction: Bool = false, isConfirm: Bool = false) {
     self.action = action
     self.displayText = displayText
     self.rect = rect
     self.isSend = isSend
     self.isInputAction = isInputAction
+    self.isConfirm = isConfirm
   }
 }
 
@@ -167,10 +170,10 @@ public enum IOSNativeLayout {
     }
     // 行0第5列→退格键
     result.append(key(IOSNativeKey(action: .backspace, displayText: "⌫", rect: .zero), p + 4 * (unit + gh), pv, unit, rowH))
-    row([("#@¥", "#@¥"), ("GHI", "GHI"), ("JKL", "JKL"), ("MNO", "MNO"), ("^_^", "^_^")], pv + rowH + gv) {
+    row([("#@¥", "#@¥"), ("GHI", "GHI"), ("JKL", "JKL"), ("MNO", "MNO"), ("分隔", "分隔")], pv + rowH + gv) {
       switch $0 {
       case "#@¥": return IOSNativeKey(action: .keyboardType(.classifySymbolic), displayText: nil, rect: .zero)
-      case "^_^": return IOSNativeKey(action: .character("^_^"), displayText: nil, rect: .zero)
+      case "分隔": return IOSNativeKey(action: .character("'"), displayText: nil, rect: .zero)
       default: return nineKey($0)
       }
     }
@@ -182,11 +185,11 @@ public enum IOSNativeLayout {
       }
     }
     let sendY = pv + 2 * (rowH + gv)
-    result.append(key(IOSNativeKey(action: .primary(.return), displayText: "发送", rect: .zero, isSend: true), p + 4 * (unit + gh), sendY, unit, 2 * rowH + gv))
+    result.append(key(IOSNativeKey(action: .primary(.return), displayText: "确认", rect: .zero, isSend: false, isConfirm: true), p + 4 * (unit + gh), sendY, unit, 2 * rowH + gv))
     let y4 = pv + 3 * (rowH + gv)
     result.append(key(IOSNativeKey(action: .keyboardType(.emojis), displayText: "😀", rect: .zero), p, y4, unit, rowH))
     result.append(key(IOSNativeKey(action: .custom(named: "iosNative.noop"), displayText: "选拼音", rect: .zero), p + unit + gh, y4, unit, rowH))
-    result.append(key(IOSNativeKey(action: .space, displayText: "空格", rect: .zero), p + 2 * unit + 2 * gh, y4, 2 * unit + gh, rowH))
+    result.append(key(IOSNativeKey(action: .space, displayText: "选定", rect: .zero), p + 2 * unit + 2 * gh, y4, 2 * unit + gh, rowH))
     return result
   }
 
@@ -222,12 +225,12 @@ public enum IOSNativeLayout {
       }
     }
     let sendY = pv + 2 * (rowH + gv)
-    result.append(key(IOSNativeKey(action: .primary(.return), displayText: "发送", rect: .zero, isSend: true), p + 4 * (unit + gh), sendY, unit, 2 * rowH + gv))
+    result.append(key(IOSNativeKey(action: .primary(.return), displayText: "确认", rect: .zero, isSend: false, isConfirm: true), p + 4 * (unit + gh), sendY, unit, 2 * rowH + gv))
     let y4 = pv + 3 * (rowH + gv)
     result.append(key(IOSNativeKey(action: .keyboardType(.emojis), displayText: "😀", rect: .zero), p, y4, unit, rowH))
     result.append(key(IOSNativeKey(action: .character("."), displayText: ". , :", rect: .zero), p + unit + gh, y4, unit, rowH))
     result.append(key(IOSNativeKey(action: .character("0"), displayText: "0", rect: .zero), p + 2 * unit + 2 * gh, y4, unit, rowH))
-    result.append(key(IOSNativeKey(action: .space, displayText: "空格", rect: .zero), p + 3 * unit + 3 * gh, y4, unit, rowH))
+    result.append(key(IOSNativeKey(action: .space, displayText: "选定", rect: .zero), p + 3 * unit + 3 * gh, y4, unit, rowH))
     return result
   }
 
@@ -305,13 +308,13 @@ public enum IOSNativeLayout {
       result.append(key(charKey(ch), symStart + CGFloat(i) * (symW + gh), y3, symW, rowH))
     }
     result.append(key(IOSNativeKey(action: .backspace, displayText: "⌫", rect: .zero), midQuote, y3, W - p - midQuote, rowH))
-    // 第4排：拼音 | 空格 | 发送
+    // 第4排：拼音 | 空格 | 确认
     let y4 = pv + 3 * (rowH + gv)
     let pinyinRight = symStart + symW
     let dotLeft = symStart + 5 * (symW + gh)
     result.append(key(IOSNativeKey(action: .keyboardType(.chineseNineGrid), displayText: "拼音", rect: .zero), p, y4, pinyinRight - p, rowH))
-    result.append(key(IOSNativeKey(action: .space, displayText: "空格", rect: .zero), pinyinRight + gh, y4, dotLeft - gh - (pinyinRight + gh), rowH))
-    result.append(key(IOSNativeKey(action: .primary(.return), displayText: "发送", rect: .zero, isSend: true), dotLeft, y4, W - p - dotLeft, rowH))
+    result.append(key(IOSNativeKey(action: .space, displayText: "选定", rect: .zero), pinyinRight + gh, y4, dotLeft - gh - (pinyinRight + gh), rowH))
+    result.append(key(IOSNativeKey(action: .primary(.return), displayText: "确认", rect: .zero, isSend: false, isConfirm: true), dotLeft, y4, W - p - dotLeft, rowH))
     return result
   }
 
@@ -327,7 +330,8 @@ public enum IOSNativeLayout {
 
   private static func enKeys(context: KeyboardContext, uppercase: Bool) -> [IOSNativeKey] {
     let unitW = tenUnit()
-    let shiftW = unitW * 1.55
+    // ClawTalk UI: shift/123 键宽 1.75 字母键（键盘P图实测）
+    let shiftW = unitW * 1.75
     var result: [IOSNativeKey] = []
     let letters = uppercase ? "QWERTYUIOPASDFGHJKLZXCVBNM" : "qwertyuiopasdfghjklzxcvbnm"
     let r0 = Array(letters.prefix(10)).map(String.init)
@@ -347,12 +351,13 @@ public enum IOSNativeLayout {
     let y4 = pv + 3 * (rowH + gv)
     let emojiW = unitW
     let spaceX = p + shiftW + gh + emojiW + gh
-    let nRight = p + shiftW + gh + 5 * (unitW + gh) + unitW
-    let mLeft = p + shiftW + gh + 6 * (unitW + gh)
+    // ClawTalk UI: send 键 88pt 宽、space 相应加宽（键盘P图实测）
+    let sendW: CGFloat = 88
+    let mLeft = W - p - sendW
     let numberAction: KeyboardAction = context.keyboardType.isChinesePrimaryKeyboard ? .keyboardType(.numeric) : .keyboardType(.numeric)
     result.append(key(IOSNativeKey(action: numberAction, displayText: "123", rect: .zero), p, y4, shiftW, rowH))
     result.append(key(IOSNativeKey(action: .keyboardType(.emojis), displayText: "😀", rect: .zero), p + shiftW + gh, y4, emojiW, rowH))
-    result.append(key(IOSNativeKey(action: .space, displayText: "space", rect: .zero), spaceX, y4, nRight - spaceX, rowH))
+    result.append(key(IOSNativeKey(action: .space, displayText: "space", rect: .zero), spaceX, y4, mLeft - gh - spaceX, rowH))
     result.append(key(IOSNativeKey(action: .primary(.return), displayText: "send", rect: .zero, isSend: true), mLeft, y4, W - p - mLeft, rowH))
     // 记录当前 QWERTY 类型，供 p8/p9 ABC 返回
     IOSNativeState.lastQWERTYType = context.keyboardType
@@ -363,7 +368,8 @@ public enum IOSNativeLayout {
 
   private static func enNumberSymbolKeys(context: KeyboardContext, page: Int) -> [IOSNativeKey] {
     let unit = tenUnit()
-    let shiftW3 = unit * 1.55
+    // ClawTalk UI: shift/ABC 键宽 1.75 字母键（键盘P图实测）
+    let shiftW3 = unit * 1.75
     var result: [IOSNativeKey] = []
     func addRow10(_ items: [String], _ y: CGFloat) {
       for (i, ch) in items.enumerated() {
@@ -375,7 +381,7 @@ public enum IOSNativeLayout {
       addRow10(["-", "/", ":", ";", "(", ")", "$", "&", "@", "”"], pv + rowH + gv)
     } else {
       addRow10(["[", "]", "{", "}", "#", "%", "^", "*", "+", "="], pv)
-      addRow10(["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "."], pv + rowH + gv)
+      addRow10(["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•"], pv + rowH + gv)
     }
     // 第3排：#+= 对齐 SHIFT，5 个符号键从 Z 左缘填到 M 右缘，⌫ 对齐 p6
     let y3 = pv + 2 * (rowH + gv)
@@ -394,11 +400,12 @@ public enum IOSNativeLayout {
     let y4 = pv + 3 * (rowH + gv)
     let emojiW4 = unit
     let spaceX4 = p + shiftW3 + gh + emojiW4 + gh
-    let nRight4 = p + shiftW3 + gh + 5 * (unit + gh) + unit
-    let mLeft4 = p + shiftW3 + gh + 6 * (unit + gh)
+    // ClawTalk UI: send 键 88pt 宽（键盘P图实测）
+    let sendW4: CGFloat = 88
+    let mLeft4 = W - p - sendW4
     result.append(key(IOSNativeKey(action: .keyboardType(IOSNativeState.lastQWERTYType), displayText: "ABC", rect: .zero), p, y4, shiftW3, rowH))
     result.append(key(IOSNativeKey(action: .keyboardType(.emojis), displayText: "😀", rect: .zero), p + shiftW3 + gh, y4, emojiW4, rowH))
-    result.append(key(IOSNativeKey(action: .space, displayText: "space", rect: .zero), spaceX4, y4, nRight4 - spaceX4, rowH))
+    result.append(key(IOSNativeKey(action: .space, displayText: "space", rect: .zero), spaceX4, y4, mLeft4 - gh - spaceX4, rowH))
     result.append(key(IOSNativeKey(action: .primary(.return), displayText: "send", rect: .zero, isSend: true), mLeft4, y4, W - p - mLeft4, rowH))
     return result
   }
