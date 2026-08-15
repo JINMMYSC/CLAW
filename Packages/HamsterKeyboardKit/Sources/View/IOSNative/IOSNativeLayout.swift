@@ -215,9 +215,9 @@ public enum IOSNativeLayout {
     // 使用 .shift 动作：单击切大小写、双击（StandardKeyboardBehavior）锁定大写
     let t = context.keyboardType
     switch t {
-    case .chinese(let state): return .shift(state)
-    case .alphabetic(let state): return .shift(state)
-    default: return .shift(.lowercased)
+    case .chinese(let state): return .shift(currentCasing: state)
+    case .alphabetic(let state): return .shift(currentCasing: state)
+    default: return .shift(currentCasing: .lowercased)
     }
   }
 
