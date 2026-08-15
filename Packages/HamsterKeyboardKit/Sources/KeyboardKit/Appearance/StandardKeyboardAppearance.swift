@@ -205,9 +205,8 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
     // ClawTalk IOS 原生布局：候选栏 P 图配色，底色/文字跟随系统深浅色（与键盘板同色）
     if keyboardContext.useIOSNativeLayout {
       let dark = keyboardContext.hasDarkColorScheme
-      let boardColor = dark
-        ? UIColor(red: 28/255, green: 28/255, blue: 30/255, alpha: 1)
-        : UIColor(red: 208/255, green: 211/255, blue: 217/255, alpha: 1)
+      // 候选栏底色统一取键盘按钮间隙色（palette.board），与键盘板完全同色
+      let boardColor = IOSNativePalette.current(dark: dark).board
       let textColor = dark ? UIColor.white : UIColor(red: 17/255, green: 17/255, blue: 17/255, alpha: 1)
       let grayColor = UIColor(red: 142/255, green: 142/255, blue: 147/255, alpha: 1)
       let preferredBackground = dark
