@@ -6,6 +6,7 @@
 //  按 IOSNativeLayout 输出设计空间点位，用 Auto Layout 约束布局键位。
 //  面板切换通过 keyboardContext.keyboardType（.keyboardType action）完成；
 //  KeyboardRootView 在 keyboardType 变化时重建本视图。
+//  配色/字号按 P 图（AA 文件夹 9 张）硬编码，不依赖主题。
 //
 
 import Combine
@@ -13,6 +14,46 @@ import HamsterKit
 import HamsterUIKit
 import OSLog
 import UIKit
+
+// MARK: - P 图固定配色工具
+
+private func iosRGB(_ hex: UInt32) -> UIColor {
+  UIColor(
+    red: CGFloat((hex >> 16) & 0xFF) / 255,
+    green: CGFloat((hex >> 8) & 0xFF) / 255,
+    blue: CGFloat(hex & 0xFF) / 255,
+    alpha: 1
+  )
+}
+
+private func iosDarker(_ color: UIColor, by factor: CGFloat = 0.85) -> UIColor {
+  var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+  guard color.getRed(&r, green: &g, blue: &b, alpha: &a) else { return color }
+  return UIColor(red: r * factor, green: g * factor, blue: b * factor, alpha: a)
+}
+
+/// 单键配色：按压仅改变背景色（变深），文字颜色保持不变
+private struct IOSNativeKeyColors {
+  let normal: UIColor
+  let pressed: UIColor
+  let foreground: UIColor
+
+  static func solid(_ normal: UIColor, _ foreground: UIColor) -> IOSNativeKeyColors {
+    IOSNativeKeyColors(normal: normal, pressed: iosDarker(normal), foreground: foreground)
+  }
+}
+
+/// 按 P 图硬编码的 iOS 原生配色
+private enum IOSNativePalette {
+  static let board = iosRGB(0xD1D4D9)
+  static let char = UIColor.white
+  static let charPressed = iosRGB(0xE8ECF0)
+  static let funcGray = iosRGB(0xAAB0BA)
+  static let lightGray = iosRGB(0xE8ECF0)
+  static let sendBlue = iosRGB(0x007AFF)
+  static let textDark = iosRGB(0x111111)
+  static let textWhite = UIColor.white
+}
 
 /// iOS 原生布局按键：支持覆盖文本标签并随按压状态变色
 private class IOSNativeButton: KeyboardButton {
@@ -74,12 +115,11 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   }
 
   override public func setupAppearance() {
-    ClawPanelPalette.sync(with: keyboardContext)
-    backgroundColor = ClawPanelPalette.keyboardBackground
+    backgroundColor = IOSNativePalette.board
     contentMode = .redraw
   }
 
-  /// 高度与设计空间一致（182pt）：
+  /// 高度与设计空间一致：4 + 3*(40+8.8) + 40 = 190.4pt
   /// 与 EmojisKeyboard 相同策略，让系统按内容高度撑起键盘（否则键盘高度崩溃为空白）
   override public var intrinsicContentSize: CGSize {
     CGSize(width: UIView.noIntrinsicMetric, height: IOSNativeDesign.height)
@@ -140,37 +180,100 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     return best
   }
 
-  /// 是否需要覆盖文本标签（标准文本与目标不同/为空/是图标时）
+  /// 是否需要覆盖文本标签：所有带文字的键都覆盖，保证配色/字号完全按 P 图
   private func needsOverlay(for spec: IOSNativeKey) -> Bool {
-    guard let text = spec.displayText else { return false }
-    if spec.action == .backspace { return false }
-    if spec.isConfirm { return true }
-    let standard = appearance.buttonText(for: spec.action) ?? ""
-    if standard.isEmpty { return true }
-    return standard != text
+    spec.displayText != nil
+  }
+
+  /// 发送键蓝/灰分界（按 P 图）：03/06/07/08/09 蓝；01/02/04/05 灰
+  private func isBlueSendPanel() -> Bool {
+    [.numberMore, .enUpper, .enLower, .enNumber, .enSymbol].contains(currentPanel)
+  }
+
+  /// 按面板 + 按键类型返回固定配色
+  private func keyColors(for spec: IOSNativeKey) -> IOSNativeKeyColors {
+    if spec.isSend {
+      if isBlueSendPanel() {
+        return .solid(IOSNativePalette.sendBlue, IOSNativePalette.textWhite)
+      }
+      // 灰底黑字
+      return IOSNativeKeyColors(
+        normal: IOSNativePalette.funcGray,
+        pressed: iosDarker(IOSNativePalette.funcGray),
+        foreground: IOSNativePalette.textDark
+      )
+    }
+    switch spec.action {
+    case .space:
+      return IOSNativeKeyColors(
+        normal: IOSNativePalette.char,
+        pressed: IOSNativePalette.charPressed,
+        foreground: IOSNativePalette.textDark
+      )
+    case .backspace:
+      return .solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
+    case .keyboardType, .custom:
+      // 03 数字更多第2行第5键「更多」浅灰
+      if currentPanel == .numberMore, spec.displayText == "更多" {
+        return IOSNativeKeyColors(
+          normal: IOSNativePalette.lightGray,
+          pressed: iosDarker(IOSNativePalette.lightGray),
+          foreground: IOSNativePalette.textDark
+        )
+      }
+      // 英文大写 Shift 白、小写 Shift 灰
+      if spec.displayText == "⬆" {
+        if currentPanel == .enUpper {
+          return IOSNativeKeyColors(
+            normal: IOSNativePalette.char,
+            pressed: IOSNativePalette.charPressed,
+            foreground: IOSNativePalette.textDark
+          )
+        }
+        return .solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
+      }
+      return .solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
+    case .character, .chineseNineGrid:
+      // iOS 9键上的 ^_^ 是灰色功能键
+      if spec.displayText == "^_^" {
+        return .solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
+      }
+      return IOSNativeKeyColors(
+        normal: IOSNativePalette.char,
+        pressed: IOSNativePalette.charPressed,
+        foreground: IOSNativePalette.textDark
+      )
+    default:
+      return .solid(IOSNativePalette.funcGray, IOSNativePalette.textDark)
+    }
   }
 
   private func overlayFontSize(for spec: IOSNativeKey) -> CGFloat {
-    if spec.isSend || spec.isConfirm { return 16 }
+    if spec.isSend { return 16 }
     let text = spec.displayText ?? ""
-    if text == "，。？！" { return 14 }
-    if text == ". , :" || text == ". . :" { return 15 }
-    if text == "😀" { return 20 }
-    if text == "⬆" { return 18 }
-    if !spec.isInputAction { return 14 }
-    return 18
+    switch text {
+    case "⌫": return 16
+    case "空格", "space": return 13
+    case "😀": return 20
+    case "⬆": return 16
+    case "，。？！": return 14
+    case ". , :", ". . :": return 15
+    case "^_^": return 15
+    default: break
+    }
+    if spec.isInputAction {
+      // 9键面板小字号；英文/10列符号面板大字号
+      if currentPanel == .pinyin9 || currentPanel == .number || currentPanel == .numberMore {
+        return 14
+      }
+      return 18
+    }
+    return 14
   }
 
   private func makeOverlayLabelIfNeeded(for spec: IOSNativeKey, on button: IOSNativeButton) -> UILabel? {
     guard needsOverlay(for: spec), let text = spec.displayText else { return nil }
-
-    // ClawTalk UI: 「确认」键使用功能键灰色样式（与英文面板蓝色 send 区分）
-    let style: KeyboardButtonStyle
-    if spec.isConfirm {
-      style = appearance.buttonStyle(for: .backspace, isPressed: false)
-    } else {
-      style = button.normalButtonStyle
-    }
+    let colors = keyColors(for: spec)
     let label = UILabel(frame: .zero)
     label.text = text
     label.textAlignment = .center
@@ -180,12 +283,10 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     label.isUserInteractionEnabled = false
     label.translatesAutoresizingMaskIntoConstraints = false
     label.font = UIFont.systemFont(ofSize: overlayFontSize(for: spec))
-    label.textColor = spec.isSend ? .white : style.foregroundColor
-    label.backgroundColor = style.backgroundColor
-    if let radius = style.cornerRadius {
-      label.layer.cornerRadius = radius
-      label.layer.masksToBounds = true
-    }
+    label.textColor = colors.foreground
+    label.backgroundColor = colors.normal
+    label.layer.cornerRadius = IOSNativeDesign.radius
+    label.layer.masksToBounds = true
     button.addSubview(label)
     NSLayoutConstraint.activate([
       label.topAnchor.constraint(equalTo: button.topAnchor),
@@ -193,12 +294,11 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
       label.trailingAnchor.constraint(equalTo: button.trailingAnchor),
       label.bottomAnchor.constraint(equalTo: button.bottomAnchor)
     ])
-
     button.overlayLabel = label
-    button.overlayNormalBG = style.backgroundColor
-    button.overlayPressedBG = button.pressedButtonStyle.backgroundColor
-    button.overlayNormalFG = spec.isSend ? .white : style.foregroundColor
-    button.overlayPressedFG = button.pressedButtonStyle.foregroundColor
+    button.overlayNormalBG = colors.normal
+    button.overlayPressedBG = colors.pressed
+    button.overlayNormalFG = colors.foreground
+    button.overlayPressedFG = colors.foreground
     return label
   }
 
