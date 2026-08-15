@@ -207,7 +207,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     let colors = hasText
       ? IOSNativeKeyColors.solid(palette.sendBlue, palette.textWhite)
       : IOSNativeKeyColors.solid(palette.funcGray, palette.textDark)
-    label.text = hasText ? (spec.displayText ?? "") : nil
+    label.text = spec.displayText ?? ""
     entry.button.overlayNormalBG = colors.normal
     entry.button.overlayPressedBG = colors.pressed
     entry.button.overlayNormalFG = colors.foreground

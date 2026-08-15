@@ -153,7 +153,7 @@ public class CandidateBarView: NibLessView {
   /// 构建视图层次
   override public func constructViewHierarchy() {
     // 非内嵌模式添加拼写区域
-    if !keyboardContext.enableEmbeddedInputMode {
+    if !keyboardContext.enableEmbeddedInputMode || keyboardContext.useIOSNativeLayout {
       addSubview(phoneticLabel)
       if keyboardContext.useIOSNativeLayout {
         // IOS 原生布局：单行拼音文本隐藏，改用逐列拼音 + 分隔线
@@ -173,12 +173,12 @@ public class CandidateBarView: NibLessView {
   /// 激活视图约束
   override public func activateViewConstraints() {
     let buttonInsets = layoutConfig.buttonInsets
-    let codingAreaHeight: CGFloat = keyboardContext.heightOfCodingArea
-    let controlStateHeight: CGFloat = keyboardContext.heightOfToolbar - (keyboardContext.enableEmbeddedInputMode ? 0 : codingAreaHeight)
+    let codingAreaHeight: CGFloat = keyboardContext.useIOSNativeLayout ? 15 : keyboardContext.heightOfCodingArea
+    let controlStateHeight: CGFloat = keyboardContext.heightOfToolbar - ((keyboardContext.enableEmbeddedInputMode && !keyboardContext.useIOSNativeLayout) ? 0 : codingAreaHeight)
     let candidatesView = keyboardContext.swipePaging ? candidatesArea : candidatesPagingArea
 
     /// 内嵌模式
-    if keyboardContext.enableEmbeddedInputMode {
+    if keyboardContext.enableEmbeddedInputMode && !keyboardContext.useIOSNativeLayout {
       if keyboardContext.swipePaging {
         NSLayoutConstraint.activate([
           candidatesView.topAnchor.constraint(equalTo: topAnchor),

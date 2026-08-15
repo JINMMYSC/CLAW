@@ -88,8 +88,8 @@ class CandidatesPagingCollectionView: UICollectionView {
   /// 构建数据源
   func makeDataSource() -> UICollectionViewDiffableDataSource<Int, CandidateSuggestion> {
     let toolbarConfig = keyboardContext.hamsterConfiguration?.toolbar
-    let showIndex = toolbarConfig?.displayIndexOfCandidateWord
-    let showComment = toolbarConfig?.displayCommentOfCandidateWord
+    let showIndex = keyboardContext.useIOSNativeLayout ? false : toolbarConfig?.displayIndexOfCandidateWord
+    let showComment = keyboardContext.useIOSNativeLayout ? false : toolbarConfig?.displayCommentOfCandidateWord
 
     let candidateWordCellRegistration = UICollectionView.CellRegistration<CandidateWordCell, CandidateSuggestion>
     { [unowned self] cell, _, candidateSuggestion in
@@ -214,8 +214,8 @@ extension CandidatesPagingCollectionView: UICollectionViewDelegateFlowLayout {
     let candidate = diffableDataSource.snapshot(for: indexPath.section).items[indexPath.item]
     let toolbarConfig = keyboardContext.hamsterConfiguration?.toolbar
 
-    let showComment = toolbarConfig?.displayCommentOfCandidateWord ?? false
-    let showIndex = toolbarConfig?.displayIndexOfCandidateWord ?? false
+    let showComment = keyboardContext.useIOSNativeLayout ? false : toolbarConfig?.displayCommentOfCandidateWord ?? false
+    let showIndex = keyboardContext.useIOSNativeLayout ? false : toolbarConfig?.displayIndexOfCandidateWord ?? false
 
     // 为 cell 内容增加左右间距, 对应 cell 的 leading, trailing 的约束
     let intrinsicHorizontalMargin: CGFloat = 14
