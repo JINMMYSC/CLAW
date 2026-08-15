@@ -424,6 +424,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
       button.overlayPressedFG = colors.foreground
       return (nil, view)
     }
+  }
     let label = UILabel(frame: .zero)
     label.text = text
     label.textAlignment = .center
@@ -450,7 +451,6 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     button.overlayNormalFG = colors.foreground
     button.overlayPressedFG = colors.foreground
     return (label, nil)
-  }
   }
 
   // MARK: - 覆盖层配色刷新
