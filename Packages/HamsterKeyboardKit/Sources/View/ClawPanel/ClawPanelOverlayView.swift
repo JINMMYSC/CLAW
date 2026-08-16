@@ -279,6 +279,8 @@ public final class ClawPanelOverlayView: UIView {
     suggestionBottomToHeart = suggestionStrip.bottomAnchor.constraint(equalTo: heartTargetButton.topAnchor, constant: -6)
     suggestionHeightZero = suggestionStrip.heightAnchor.constraint(equalToConstant: 0)
     waveHeightConstraint = aiWaveContainer.heightAnchor.constraint(equalToConstant: 0)
+    micLeadingToPhone = micButton.leadingAnchor.constraint(equalTo: phoneButton.trailingAnchor, constant: 6)
+    micLeadingToText = micButton.leadingAnchor.constraint(equalTo: inputTextView.trailingAnchor, constant: 6)
 
     NSLayoutConstraint.activate([
       titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
@@ -322,8 +324,6 @@ public final class ClawPanelOverlayView: UIView {
       phoneButton.widthAnchor.constraint(equalToConstant: 36),
       phoneButton.heightAnchor.constraint(equalToConstant: 36),
 
-      micLeadingToPhone = micButton.leadingAnchor.constraint(equalTo: phoneButton.trailingAnchor, constant: 6),
-      micLeadingToText = micButton.leadingAnchor.constraint(equalTo: inputTextView.trailingAnchor, constant: 6),
       micLeadingToPhone,
       micButton.centerYAnchor.constraint(equalTo: inputRow.centerYAnchor),
       micButton.widthAnchor.constraint(equalToConstant: 36),

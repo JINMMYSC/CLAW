@@ -34,7 +34,7 @@ public final class ClawVoiceInputService: NSObject {
     let speech = SFSpeechRecognizer.authorizationStatus()
     let mic = AVAudioSession.sharedInstance().recordPermission
     if speech == .authorized, mic == .granted { return .authorized }
-    if speech == .denied || speech == .restricted || mic == .denied || mic == .restricted {
+    if speech == .denied || speech == .restricted || mic == .denied {
       return .denied
     }
     return .undetermined
