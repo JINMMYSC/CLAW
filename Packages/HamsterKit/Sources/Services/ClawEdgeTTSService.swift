@@ -104,8 +104,8 @@ public final class ClawEdgeTTSService: NSObject, AVAudioPlayerDelegate {
     let utterance = AVSpeechUtterance(string: text)
     utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")
     let baseRate = AVSpeechUtteranceDefaultSpeechRate
-    utterance.rate = baseRate * (1 + CGFloat(ratePercent) / 100)
-    utterance.pitchMultiplier = 1 + CGFloat(pitchHz) / 200
+    utterance.rate = baseRate * (1 + Float(ratePercent) / 100)
+    utterance.pitchMultiplier = 1 + Float(pitchHz) / 200
     synthesizer.delegate = self
     synthesizer.speak(utterance)
   }
