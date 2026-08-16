@@ -78,6 +78,7 @@ final class SplashOverlayView: UIView {
 
     NSLayoutConstraint.activate([
       logo.widthAnchor.constraint(equalToConstant: 140),
+      logo.heightAnchor.constraint(equalToConstant: 144),
       logo.centerXAnchor.constraint(equalTo: centerXAnchor),
       logo.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -40),
       title.topAnchor.constraint(equalTo: logo.bottomAnchor, constant: 16),
