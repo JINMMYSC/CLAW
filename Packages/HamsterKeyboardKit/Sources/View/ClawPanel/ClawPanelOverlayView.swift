@@ -19,8 +19,8 @@ extension UIView {
 // MARK: - 业务面板覆盖层（AI语音助手 / 帮你回 / 超会说）
 
 public final class ClawPanelOverlayView: UIView {
-  /// 面板展开高度（标题 + 多行输入 + 结果区 + 建议条 + 聊天对象）
-  public static let panelHeight: CGFloat = 220
+  /// 面板展开高度（标题 + 内容区 + 输入行），压缩后不再遮挡聊天界面
+  public static let panelHeight: CGFloat = 150
 
   enum PanelTab: Int {
     case ai = 0
@@ -61,9 +61,22 @@ public final class ClawPanelOverlayView: UIView {
   private let newChatButton = UIButton(type: .system)
   private let speakToggleButton = UIButton(type: .system)
   private var chatListHeightConstraint: NSLayoutConstraint!
+  private var chatListBottomToInput: NSLayoutConstraint!
   private var inputRowHeightConstraint: NSLayoutConstraint!
   private var inputRowTopToTitle: NSLayoutConstraint!
   private var inputRowTopToChatList: NSLayoutConstraint!
+  private var inputRowBottomToPanel: NSLayoutConstraint!
+  private var resultBottomToHeart: NSLayoutConstraint!
+  private var resultMinHeight: NSLayoutConstraint!
+  private var resultHeightZero: NSLayoutConstraint!
+  private var heartHeightConstraint: NSLayoutConstraint!
+  private var suggestionBottomToHeart: NSLayoutConstraint!
+  private var suggestionHeightZero: NSLayoutConstraint!
+
+  // 语音起伏动画条（录音中 / 空会话时显示）
+  private let aiWaveContainer = UIView()
+  private var barStack: [UIView] = []
+  private var waveHeightConstraint: NSLayoutConstraint!
 
   // AI 分析状态
   private var isLoading = false
@@ -76,9 +89,8 @@ public final class ClawPanelOverlayView: UIView {
 
   // AI tab 布局常量
   private enum AILayout {
-    static let chatListHeight: CGFloat = 88
-    static let inputRowHeightAI: CGFloat = 56
-    static let inputRowHeightNormal: CGFloat = 72
+    static let inputRowHeight: CGFloat = 48
+    static let waveHeight: CGFloat = 40
     static let bubbleMinWidth: CGFloat = 120
     static let bubbleMaxWidth: CGFloat = 260
   }
@@ -103,6 +115,8 @@ public final class ClawPanelOverlayView: UIView {
           self?.inputTextView.resignFirstResponder()
           ClawVoiceInputService.shared.stop()
           ClawChatService.shared.stopSpeaking()
+          self?.stopWaveAnimation()
+          self?.aiWaveContainer.isHidden = true
         }
         self?.refresh(for: tab)
       }
@@ -140,6 +154,17 @@ public final class ClawPanelOverlayView: UIView {
     speakToggleButton.setTitleColor(ClawPanelPalette.deepBlue, for: .normal)
     speakToggleButton.addTarget(self, action: #selector(speakToggleTapped), for: .touchUpInside)
     updateSpeakToggleTitle()
+
+    // 语音起伏动画条：9 根蓝色竖条（录音中/空会话时显示）
+    for _ in 0..<9 {
+      let bar = UIView()
+      bar.backgroundColor = ClawPanelPalette.brandBlue
+      bar.layer.cornerRadius = 2.5
+      bar.autoresizingMask = [.flexibleTopMargin, .flexibleBottomMargin]
+      aiWaveContainer.addSubview(bar)
+      barStack.append(bar)
+    }
+    aiWaveContainer.isHidden = true
 
     // AI chat list: vertical bubble stack inside a scroll view
     chatListView.alwaysBounceVertical = true
@@ -217,7 +242,7 @@ public final class ClawPanelOverlayView: UIView {
   }
 
   private func setupConstraints() {
-    [titleLabel, closeButton, inputRow, resultTextView, copyButton, suggestionStrip, heartTargetButton, chatListView, newChatButton, speakToggleButton].forEach {
+    [titleLabel, closeButton, aiWaveContainer, inputRow, resultTextView, copyButton, suggestionStrip, heartTargetButton, chatListView, newChatButton, speakToggleButton].forEach {
       $0.translatesAutoresizingMaskIntoConstraints = false
       addSubview($0)
     }
@@ -227,13 +252,22 @@ public final class ClawPanelOverlayView: UIView {
     }
 
     suggestionStripWidthConstraint = suggestionStrip.widthAnchor.constraint(equalToConstant: 0)
-    chatListHeightConstraint = chatListView.heightAnchor.constraint(equalToConstant: AILayout.chatListHeight)
-    inputRowHeightConstraint = inputRow.heightAnchor.constraint(equalToConstant: AILayout.inputRowHeightNormal)
-    inputRowTopToTitle = inputRow.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8)
-    inputRowTopToChatList = inputRow.topAnchor.constraint(equalTo: chatListView.bottomAnchor, constant: 8)
+    chatListHeightConstraint = chatListView.heightAnchor.constraint(equalToConstant: 0)
+    chatListBottomToInput = chatListView.bottomAnchor.constraint(equalTo: inputRow.topAnchor, constant: -6)
+    inputRowHeightConstraint = inputRow.heightAnchor.constraint(equalToConstant: AILayout.inputRowHeight)
+    inputRowTopToTitle = inputRow.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6)
+    inputRowTopToChatList = inputRow.topAnchor.constraint(equalTo: chatListView.bottomAnchor, constant: 6)
+    inputRowBottomToPanel = inputRow.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8)
+    resultBottomToHeart = resultTextView.bottomAnchor.constraint(equalTo: heartTargetButton.topAnchor, constant: -6)
+    resultMinHeight = resultTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 28)
+    resultHeightZero = resultTextView.heightAnchor.constraint(equalToConstant: 0)
+    heartHeightConstraint = heartTargetButton.heightAnchor.constraint(equalToConstant: 20)
+    suggestionBottomToHeart = suggestionStrip.bottomAnchor.constraint(equalTo: heartTargetButton.topAnchor, constant: -6)
+    suggestionHeightZero = suggestionStrip.heightAnchor.constraint(equalToConstant: 0)
+    waveHeightConstraint = aiWaveContainer.heightAnchor.constraint(equalToConstant: 0)
 
     NSLayoutConstraint.activate([
-      titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+      titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
       titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
       closeButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
       closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
@@ -244,7 +278,12 @@ public final class ClawPanelOverlayView: UIView {
       newChatButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
       newChatButton.trailingAnchor.constraint(equalTo: speakToggleButton.leadingAnchor, constant: -8),
 
-      chatListView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+      aiWaveContainer.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
+      aiWaveContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+      aiWaveContainer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+      waveHeightConstraint,
+
+      chatListView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
       chatListView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
       chatListView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
       chatListHeightConstraint,
@@ -254,7 +293,6 @@ public final class ClawPanelOverlayView: UIView {
       chatStackView.leadingAnchor.constraint(equalTo: chatListView.contentLayoutGuide.leadingAnchor),
       chatStackView.trailingAnchor.constraint(equalTo: chatListView.contentLayoutGuide.trailingAnchor),
       chatStackView.widthAnchor.constraint(equalTo: chatListView.widthAnchor),
-
 
       inputRowTopToTitle,
       inputRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
@@ -276,26 +314,25 @@ public final class ClawPanelOverlayView: UIView {
       actionButton.widthAnchor.constraint(equalToConstant: 84),
       actionButton.heightAnchor.constraint(equalToConstant: 40),
 
-      resultTextView.topAnchor.constraint(equalTo: inputRow.bottomAnchor, constant: 8),
+      resultTextView.topAnchor.constraint(equalTo: inputRow.bottomAnchor, constant: 6),
       resultTextView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
       resultTextView.trailingAnchor.constraint(equalTo: suggestionStrip.leadingAnchor, constant: -8),
-      resultTextView.bottomAnchor.constraint(equalTo: heartTargetButton.topAnchor, constant: -8),
-      resultTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+      resultBottomToHeart,
+      resultMinHeight,
 
       copyButton.topAnchor.constraint(equalTo: resultTextView.topAnchor, constant: 2),
       copyButton.trailingAnchor.constraint(equalTo: resultTextView.trailingAnchor, constant: -4),
       copyButton.widthAnchor.constraint(equalToConstant: 48),
       copyButton.heightAnchor.constraint(equalToConstant: 24),
 
-      suggestionStrip.topAnchor.constraint(equalTo: inputRow.bottomAnchor, constant: 8),
+      suggestionStrip.topAnchor.constraint(equalTo: inputRow.bottomAnchor, constant: 6),
       suggestionStrip.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-      suggestionStrip.bottomAnchor.constraint(equalTo: heartTargetButton.topAnchor, constant: -8),
+      suggestionBottomToHeart,
       suggestionStripWidthConstraint,
 
-      heartTargetButton.topAnchor.constraint(greaterThanOrEqualTo: resultTextView.bottomAnchor, constant: 8),
       heartTargetButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-      heartTargetButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
-      heartTargetButton.heightAnchor.constraint(equalToConstant: 22),
+      heartTargetButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+      heartHeightConstraint,
     ])
   }
 
@@ -326,6 +363,7 @@ public final class ClawPanelOverlayView: UIView {
       .receive(on: DispatchQueue.main)
       .sink { [weak self] _ in
         self?.rebuildChatBubbles()
+        self?.updateWaveVisibility()
       }
       .store(in: &subscriptions)
     ClawChatService.shared.$isSending
@@ -367,20 +405,73 @@ public final class ClawPanelOverlayView: UIView {
     isListening = false
     isMicHeld = false
     micButton.tintColor = ClawPanelPalette.brandBlue
+    inputRowHeightConstraint.constant = AILayout.inputRowHeight
     if isAI {
-      chatListView.isHidden = false
-      chatListHeightConstraint.constant = AILayout.chatListHeight
-      inputRowHeightConstraint.constant = AILayout.inputRowHeightAI
-      NSLayoutConstraint.deactivate([inputRowTopToTitle])
-      NSLayoutConstraint.activate([inputRowTopToChatList])
+      // AI tab：聊天列表弹性占位，输入行贴底；聊天对象与结果区不占空间
+      heartTargetButton.isHidden = true
+      heartHeightConstraint.constant = 0
+      NSLayoutConstraint.deactivate([inputRowTopToTitle, resultBottomToHeart, resultMinHeight, suggestionBottomToHeart])
+      NSLayoutConstraint.activate([inputRowTopToChatList, inputRowBottomToPanel, resultHeightZero, suggestionHeightZero])
       rebuildChatBubbles()
+      updateWaveVisibility()
     } else {
+      heartTargetButton.isHidden = false
+      heartHeightConstraint.constant = 20
+      NSLayoutConstraint.deactivate([inputRowTopToChatList, inputRowBottomToPanel, resultHeightZero, suggestionHeightZero, chatListBottomToInput])
+      NSLayoutConstraint.activate([inputRowTopToTitle, resultBottomToHeart, resultMinHeight, suggestionBottomToHeart, chatListHeightConstraint])
       chatListView.isHidden = true
-      chatListHeightConstraint.constant = 0
-      inputRowHeightConstraint.constant = AILayout.inputRowHeightNormal
-      NSLayoutConstraint.deactivate([inputRowTopToChatList])
-      NSLayoutConstraint.activate([inputRowTopToTitle])
+      aiWaveContainer.isHidden = true
+      stopWaveAnimation()
     }
+  }
+
+  /// AI tab 波形条显隐：录音中或空会话时显示，聊天列表让位
+  private func updateWaveVisibility() {
+    guard isAITab else {
+      aiWaveContainer.isHidden = true
+      stopWaveAnimation()
+      return
+    }
+    let showWave = isListening || ClawChatService.shared.messages.isEmpty
+    aiWaveContainer.isHidden = !showWave
+    chatListView.isHidden = showWave
+    if showWave {
+      waveHeightConstraint.constant = AILayout.waveHeight
+      NSLayoutConstraint.deactivate([chatListBottomToInput])
+      NSLayoutConstraint.activate([chatListHeightConstraint])
+      layoutIfNeeded()
+      startWaveAnimation()
+    } else {
+      waveHeightConstraint.constant = 0
+      NSLayoutConstraint.deactivate([chatListHeightConstraint])
+      NSLayoutConstraint.activate([chatListBottomToInput])
+      stopWaveAnimation()
+    }
+  }
+
+  // MARK: - 语音起伏动画（9 根竖条）
+
+  private func startWaveAnimation() {
+    guard barStack.count == 9 else { return }
+    let containerWidth = aiWaveContainer.bounds.width
+    let midY = aiWaveContainer.bounds.midY
+    let totalWidth: CGFloat = 8 * 22 + 5
+    let startX = max(0, (containerWidth - totalWidth) / 2)
+    for (index, bar) in barStack.enumerated() {
+      let base: CGFloat = 14 + CGFloat((index % 3) * 8)
+      bar.frame = CGRect(x: startX + CGFloat(index) * 22, y: midY - base / 2, width: 5, height: base)
+      let anim = CABasicAnimation(keyPath: "bounds.size.height")
+      anim.fromValue = base
+      anim.toValue = base + 22 + CGFloat(index % 4) * 6
+      anim.duration = 0.5 + Double(index) * 0.09
+      anim.autoreverses = true
+      anim.repeatCount = .infinity
+      bar.layer.add(anim, forKey: "wave")
+    }
+  }
+
+  private func stopWaveAnimation() {
+    barStack.forEach { $0.layer.removeAnimation(forKey: "wave") }
   }
 
 
@@ -650,6 +741,7 @@ public final class ClawPanelOverlayView: UIView {
     } else {
       actionButton.setTitle(tab == PanelTab.helpReply.rawValue ? "读懂TA" : "优化", for: .normal)
     }
+    updateWaveVisibility()
   }
 
   /// 读懂TA 长按：上传聊天截图 → 本地 OCR → 文本填入输入框
