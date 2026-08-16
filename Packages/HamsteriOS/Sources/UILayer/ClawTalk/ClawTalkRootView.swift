@@ -612,6 +612,9 @@ private struct AISettingsView: View {
         SecureKeyField(label: "Claude Key", placeholder: "sk-ant-...", key: viewModel.apiKey(for: .claude)) {
           viewModel.setAPIKey($0, for: .claude)
         }
+        SecureKeyField(label: "DeepSeek Key", placeholder: "sk-...", key: viewModel.apiKey(for: .deepseek)) {
+          viewModel.setAPIKey($0, for: .deepseek)
+        }
       }
 
       // Prompts
