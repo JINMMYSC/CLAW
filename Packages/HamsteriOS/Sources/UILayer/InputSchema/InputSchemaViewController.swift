@@ -73,6 +73,8 @@ extension InputSchemaViewController {
     super.viewWillAppear(animated)
 
     inputSchemaViewModel.reloadTableStateSubject.send(true)
+    // 输入方案列表为空时触发一次真实部署刷新（见 reloadInputSchemasIfNeeded）
+    inputSchemaViewModel.reloadInputSchemasIfNeeded()
   }
 }
 

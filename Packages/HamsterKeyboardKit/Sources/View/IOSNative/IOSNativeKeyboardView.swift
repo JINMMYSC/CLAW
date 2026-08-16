@@ -82,6 +82,36 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   private var selectPinyinEntry: KeyEntry?
   private var selectPinyinIndex = 0
   private var userInterfaceStyle: UIUserInterfaceStyle = .unspecified
+  /// 9 键长按选字母：当前触摸跟踪（同一时刻只能一个键弹出）
+  private final class T9Track {
+    let touch: UITouch
+    let entry: KeyEntry
+    let letters: [String]
+    /// 按下起点（判断手指是否真的滑动过）
+    let pressStart: CGPoint
+    var calloutShown = false
+    /// 手指是否滑出过按键（只有真正滑出过，松开才输入）
+    var hasLeftKey = false
+    /// 手指是否从按下点位移超过阈值（长按不滑动不输入）
+    var hasMoved = false
+    var cancelled = false
+    var selectedIndex: Int?
+    var fourthTimerToken: UUID?
+
+    init(touch: UITouch, entry: KeyEntry, letters: [String], pressStart: CGPoint) {
+      self.touch = touch
+      self.entry = entry
+      self.letters = letters
+      self.pressStart = pressStart
+    }
+  }
+
+  private var t9Track: T9Track?
+  private var t9Bubble: IOST9CalloutView?
+  /// 长按 0.35s 弹出气泡（明哥规格）
+  private let t9LongPressDelay: TimeInterval = 0.35
+  /// 4 字母键在上滑区域再长按 0.3s 选中第四个字母
+  private let t9FourthLetterDelay: TimeInterval = 0.3
 
   /// 当前是否大写锁定（英文26键双击 Shift 进入）
   private var isCapsLocked: Bool {
@@ -115,6 +145,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
 
   deinit {
     chatSendTimer?.invalidate()
+    dismissT9Callout()
     entries.forEach { $0.button.removeFromSuperview() }
   }
 
@@ -134,6 +165,9 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     if window != nil {
       setNeedsLayout()
       layoutIfNeeded()
+    } else {
+      // 输入框失焦/键盘收起：全部重置
+      dismissT9Callout()
     }
   }
 
@@ -142,6 +176,9 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   private func rebuild() {
     entries.forEach { $0.button.removeFromSuperview() }
     entries.removeAll()
+    dismissT9Callout()
+    // 记录进入 emoji 面板前的面板语言族（决定 emoji 返回键文字 ABC/拼音）
+    IOSNativeEmojiReturnState.lastPanelWasEnglish = isEnglishPanelLanguage()
 
     let specs = IOSNativeLayout.keys(for: currentPanel, context: keyboardContext)
     for (index, spec) in specs.enumerated() {
@@ -219,7 +256,8 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   private func updateSeparatorKeyState() {
     guard let entry = separatorEntry, let label = entry.label else { return }
     let isTyping = !rimeContext.userInputKey.isEmpty
-    entry.button.item.action = isTyping ? .primary(.return) : .character("^_^")
+    // 组字态：分隔键（A2 契约保证 .delimiter 链路可用）；空闲态：^_^ 字符
+    entry.button.item.action = isTyping ? .delimiter : .character("^_^")
     label.text = isTyping ? "分隔" : "^_^"
     // ^_^ / 分隔 双态都白色（P 图要求），按压用字符键按压色
     let normal = palette.char
@@ -354,6 +392,15 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     return 14
   }
 
+  private func isEnglishPanelLanguage() -> Bool {
+    switch keyboardContext.keyboardType {
+    case .alphabetic, .numeric, .symbolic:
+      return true
+    default:
+      return false
+    }
+  }
+
 
   /// P 图图标键：退格/Shift/表情 使用裁切自 P 图的单色图标（设计空间 pt，不随 sx 缩放）
   private struct IOSNativeIconSpec {
@@ -483,6 +530,14 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   // MARK: - 选拼音跳选
 
   override public func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+    if let track = t9Track, touches.contains(track.touch) {
+      if track.calloutShown, !track.cancelled, track.hasMoved, let index = track.selectedIndex {
+        // 松开：把选中的字母作为输入（与 9 键点按同一发送路径：insertText）
+        let letter = track.letters[index].lowercased()
+        actionHandler.handle(.release, on: .character(letter))
+      }
+      dismissT9Callout()
+    }
     if let touch = touches.first {
       let point = touch.location(in: self)
       if let entry = selectPinyinEntry, entry.button.frame.contains(point) {
@@ -490,6 +545,179 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
       }
     }
     super.touchesEnded(touches, with: event)
+  }
+
+  override public func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+    if let track = t9Track, touches.contains(track.touch) {
+      dismissT9Callout()
+    }
+    super.touchesCancelled(touches, with: event)
+  }
+
+  // MARK: - 9 键长按选字母
+
+  override public func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+    super.touchesBegan(touches, with: event)
+    for touch in touches {
+      // 新触摸顶掉旧长按（同一时刻只能一个键弹出）
+      if let track = t9Track, track.touch != touch {
+        dismissT9Callout()
+      }
+      guard t9Track == nil else { continue }
+      let point = touch.location(in: self)
+      guard let button = findNearestView(point) as? IOSNativeButton,
+            let entry = entries.first(where: { $0.button === button }),
+            let letters = t9Letters(for: entry.spec) else { continue }
+      let track = T9Track(touch: touch, entry: entry, letters: letters, pressStart: point)
+      t9Track = track
+      DispatchQueue.main.asyncAfter(deadline: .now() + t9LongPressDelay) { [weak self] in
+        guard let self = self, let current = self.t9Track, current === track else { return }
+        self.showT9Callout(for: current)
+      }
+    }
+  }
+
+  override public func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+    super.touchesMoved(touches, with: event)
+    guard let track = t9Track,
+          let touch = touches.first(where: { $0 == track.touch }) else { return }
+    let point = touch.location(in: self)
+    if !track.calloutShown {
+      // 长按未弹出前手指滑出按键区域（留余量）→ 取消长按
+      let expand = track.entry.button.frame.insetBy(dx: -16, dy: -16)
+      if !expand.contains(point) {
+        cancelT9FourthTimer(track)
+        t9Track = nil
+      }
+      return
+    }
+    updateT9Selection(track, point: point)
+  }
+
+  /// 按键对应的可选字母（.chineseNineGrid 键 / number 面板数字键）
+  private func t9Letters(for spec: IOSNativeKey) -> [String]? {
+    switch spec.action {
+    case .chineseNineGrid(let symbol):
+      return IOST9LetterMap.gridKeyLetters[symbol.char]
+    case .character(let char):
+      return IOST9LetterMap.digitLetters[char]
+    default:
+      return nil
+    }
+  }
+
+  /// 长按到时弹出气泡（挂到 superview，允许覆盖候选栏区域，与官方行为一致）
+  private func showT9Callout(for track: T9Track) {
+    guard window != nil else { return }
+    track.calloutShown = true
+    // 气泡生效后按键松开不再发普通字符（数字）
+    track.entry.button.shouldApplyReleaseAction = false
+
+    let bubble = IOST9CalloutView(letters: track.letters, dark: keyboardContext.hasDarkColorScheme)
+    let size = IOST9CalloutView.calloutSize(letterCount: track.letters.count)
+    let container = superview ?? self
+    let keyFrame = track.entry.button.frame
+    let keyFrameInContainer = convert(keyFrame, to: container)
+    var x = keyFrameInContainer.midX - size.width / 2
+    x = min(max(x, 2), max(2, container.bounds.width - size.width - 2))
+    let y = keyFrameInContainer.minY - size.height - 6
+    bubble.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+    bubble.updateSelection(index: nil)
+    container.addSubview(bubble)
+    t9Bubble = bubble
+  }
+
+  /// 按手指位置更新选中字母；滑回键上 / 滑出菜单外 = 取消
+  private func updateT9Selection(_ track: T9Track, point: CGPoint) {
+    guard track.calloutShown, !track.cancelled, let bubble = t9Bubble else { return }
+    if hypot(point.x - track.pressStart.x, point.y - track.pressStart.y) >= 8 {
+      track.hasMoved = true
+    }
+    let keyFrame = track.entry.button.frame
+    let onKey = keyFrame.contains(point)
+    if onKey {
+      // 滑回键上 = 取消（手指从未滑出过按键时不算，避免原地抖动误取消）
+      if track.hasLeftKey {
+        cancelT9Callout(track)
+        return
+      }
+    } else {
+      track.hasLeftKey = true
+    }
+
+    // 滑出菜单外 = 取消
+    let bubbleFrame = bubble.superview == nil ? bubble.frame : convert(bubble.frame, from: bubble.superview!)
+    if !bubbleFrame.contains(point) {
+      cancelT9Callout(track)
+      return
+    }
+
+    let dx = point.x - keyFrame.midX
+    let dy = point.y - keyFrame.midY
+    let threshold: CGFloat = 12
+    let upDist = max(0, -dy - threshold)
+    let leftDist = max(0, -dx - threshold)
+    let rightDist = max(0, dx - threshold)
+    let maxDist = max(upDist, max(leftDist, rightDist))
+
+    var index = 0
+    if maxDist > 0 {
+      if leftDist == maxDist {
+        index = 1 // 左滑 = 第二个字母
+      } else if rightDist == maxDist {
+        index = 2 // 右滑 = 第三个字母
+      } else {
+        index = 0 // 上滑 = 第一个字母
+      }
+    }
+
+    // 4 字母键：上滑区域长按 0.3s 选中第四个字母
+    if index == 0, upDist > 0 {
+      startT9FourthTimer(track)
+    } else {
+      cancelT9FourthTimer(track)
+    }
+
+    track.selectedIndex = index
+    bubble.updateSelection(index: index)
+  }
+
+  private func startT9FourthTimer(_ track: T9Track) {
+    guard track.fourthTimerToken == nil else { return }
+    let token = UUID()
+    track.fourthTimerToken = token
+    DispatchQueue.main.asyncAfter(deadline: .now() + t9FourthLetterDelay) { [weak self] in
+      guard let self = self,
+            let current = self.t9Track,
+            current === track,
+            track.fourthTimerToken == token else { return }
+      track.fourthTimerToken = nil
+      guard track.letters.count == 4 else { return }
+      track.selectedIndex = 3
+      self.t9Bubble?.updateSelection(index: 3)
+    }
+  }
+
+  private func cancelT9FourthTimer(_ track: T9Track) {
+    track.fourthTimerToken = nil
+  }
+
+  private func cancelT9Callout(_ track: T9Track) {
+    guard !track.cancelled else { return }
+    track.cancelled = true
+    cancelT9FourthTimer(track)
+    t9Bubble?.removeFromSuperview()
+    t9Bubble = nil
+  }
+
+  /// 收起气泡并清空跟踪（面板切换 / 失焦 / 触摸结束）
+  private func dismissT9Callout() {
+    if let track = t9Track {
+      cancelT9FourthTimer(track)
+    }
+    t9Bubble?.removeFromSuperview()
+    t9Bubble = nil
+    t9Track = nil
   }
 
   /// 记录上次跳选时的输入串：输入变化则从首个候选重新开始

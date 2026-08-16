@@ -209,6 +209,9 @@ public extension KeyboardInputViewController {
       self.textDocumentProxy.insertText(.tab)
     case XK_space:
       self.textDocumentProxy.insertText(.space)
+    case XK_apostrophe:
+      // 分隔键兜底：Rime 未处理（非组字态）时插入原样字符 '
+      self.textDocumentProxy.insertText("'")
     default:
       break
     }

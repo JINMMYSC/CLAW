@@ -39,9 +39,25 @@ class InputSchemaRootView: NibLessView {
     inputSchemaViewModel.reloadTableStatePublisher
       .receive(on: DispatchQueue.main)
       .sink { [unowned self] _ in
+        updateEmptyState()
         tableView.reloadData()
       }
       .store(in: &subscriptions)
+  }
+
+  /// 列表为空时显示占位提示（数据仍来自 rimeContext.schemas，仅提示不造假数据）
+  private func updateEmptyState() {
+    if inputSchemaViewModel.rimeContext.schemas.isEmpty {
+      let label = UILabel()
+      label.text = "暂无输入方案\n可在右上角 + 号导入方案，或到 RIME 页面重新部署"
+      label.textAlignment = .center
+      label.textColor = .secondaryLabel
+      label.numberOfLines = 0
+      label.font = .systemFont(ofSize: 14)
+      tableView.backgroundView = label
+    } else {
+      tableView.backgroundView = nil
+    }
   }
 
   override func constructViewHierarchy() {

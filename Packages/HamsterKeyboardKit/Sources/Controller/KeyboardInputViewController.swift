@@ -479,6 +479,9 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
       switch newEnvironment {
       case .number:
         keyboardContext.setKeyboardType(.numericNineGrid)
+      case .secureNumberPad:
+        // ClawInputEnvironment.secureNumberPad（A4 新增）：安全数字输入（密码+数字键盘）→ 自动切数字 9 键
+        keyboardContext.setKeyboardType(.numericNineGrid)
       case .password, .email, .url, .search:
         keyboardContext.setKeyboardType(.alphabetic(.lowercased))
       default:
@@ -493,6 +496,10 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
 
   /// 根据 textDocumentProxy 推断输入环境（键盘布局变体 / return 键用）
   static func detectInputEnvironment(from proxy: UITextDocumentProxy) -> ClawInputEnvironment {
+    // 安全数字输入（PIN/验证码等）：secure 标记 + 数字键盘 → .secureNumberPad（须在 .password 判断之前）
+    if proxy.isSecureTextEntry == true, let keyboardType = proxy.keyboardType, keyboardType.isNumberType {
+      return .secureNumberPad
+    }
     if proxy.isSecureTextEntry == true { return .password }
     if let keyboardType = proxy.keyboardType {
       if keyboardType.isNumberType { return .number }

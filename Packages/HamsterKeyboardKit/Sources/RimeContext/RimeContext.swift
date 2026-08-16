@@ -92,6 +92,10 @@ public class RimeContext {
   @MainActor @Published
   public var suggestions: [CandidateSuggestion] = []
 
+  /// IOS 原生布局：当前选中的音节分组索引（候选栏上排音节 chips 高亮用）
+  @MainActor @Published
+  public var selectedSyllableIndex: Int = 0
+
   @MainActor @Published
   public var rimeContext: IRimeContext? = nil
 
@@ -136,6 +140,7 @@ public extension RimeContext {
     self.userInputKey = ""
     self.selectCandidatePinyin = nil
     self.suggestions.removeAll(keepingCapacity: false)
+    self.selectedSyllableIndex = 0
     Rime.shared.cleanComposition()
   }
 
@@ -700,6 +705,7 @@ public extension RimeContext {
     self.userInputKey = userInputText
     self.commitText = commitText
     self.suggestions = candidates
+    self.refreshSelectedSyllableIndex()
   }
 
   /// 分页：下一页
@@ -1041,5 +1047,53 @@ public extension RimeContext {
 
       return false
     })
+  }
+}
+
+// MARK: - IOS 原生布局：音节分组
+
+public extension RimeContext {
+  /// 按拼音（comment）将菜单候选分组，供候选栏上排音节 chips 使用。
+  /// 每个分组返回拼音及该拼音下的候选字；无拼音注释的候选跳过（不参与分组）。
+  @MainActor
+  func getSyllableCandidates() -> [(pinyin: String, candidates: [CandidateSuggestion])] {
+    guard let menu = rimeContext?.menu, let rawCandidates = menu.candidates else { return [] }
+    var groups: [(pinyin: String, candidates: [CandidateSuggestion])] = []
+    let offset = self.candidateIndex
+    for (index, candidate) in rawCandidates.enumerated() {
+      let pinyin = (candidate.comment ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !pinyin.isEmpty else { continue }
+      let suggestion = CandidateSuggestion(
+        index: offset + index,
+        label: "\(offset + index + 1)",
+        text: candidate.text,
+        title: candidate.text,
+        isAutocomplete: false,
+        subtitle: candidate.comment
+      )
+      if let groupIndex = groups.firstIndex(where: { $0.pinyin == pinyin }) {
+        groups[groupIndex].candidates.append(suggestion)
+      } else {
+        groups.append((pinyin: pinyin, candidates: [suggestion]))
+      }
+    }
+    return groups
+  }
+
+  /// 根据当前输入串刷新选中音节索引：输入串与某分组拼音一致时高亮该分组，否则回到第一个分组。
+  /// 输入变化（含选拼音键替换输入串）后由 syncContext() 调用，保证上排 chips 高亮与组字状态一致。
+  @MainActor
+  func refreshSelectedSyllableIndex() {
+    let groups = getSyllableCandidates()
+    guard !groups.isEmpty else {
+      selectedSyllableIndex = 0
+      return
+    }
+    let inputKeys = getInputKeys().replacingOccurrences(of: " ", with: "")
+    if let index = groups.firstIndex(where: { $0.pinyin.replacingOccurrences(of: " ", with: "") == inputKeys }) {
+      selectedSyllableIndex = index
+    } else {
+      selectedSyllableIndex = 0
+    }
   }
 }

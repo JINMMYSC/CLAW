@@ -92,6 +92,21 @@ public enum IOSNativeState {
   public static var lastQWERTYType: KeyboardType = .chinese(.lowercased)
 }
 
+// MARK: - Custom action ids（与 StandardKeyboardActionHandler 的 custom 分支契约）
+
+/// IOS 原生布局自定义按键 action id
+public enum IOSNativeCustomAction {
+  /// 「，。？！ 」标点循环键：每按一次 逗号→句号→问号→叹号→回到逗号。
+  /// 注意：绝不经 Rime 键路径发送 ,/.（避免 key_binder paging_with_comma_period 在组字态把 ,/. 当翻页键）。
+  public static let punctCycle = "iosNative.punctCycle"
+  /// 「选拼音」占位键：由 IOSNativeKeyboardView 视图层自行处理，handler 不响应。
+  public static let noop = "iosNative.noop"
+}
+
+// 简繁切换：官方 iOS 键盘没有「键盘内简繁键」（简体/繁体是两个独立键盘），因此本布局不添加该键；
+// 设置入口由 A4 决定。Rime 侧 API 已存在并保持不动：
+// RimeContext.switchTraditionalSimplifiedChinese / syncTraditionalSimplifiedChineseMode（traditionalization option）。
+
 // MARK: - Layout service
 
 public enum IOSNativeLayout {
@@ -237,7 +252,7 @@ public enum IOSNativeLayout {
     row([("123", "123"), ("，。？！", "，。？！"), ("ABC", "ABC"), ("DEF", "DEF")], g.rowY(0)) {
       switch $0 {
       case "123": return IOSNativeKey(action: .keyboardType(.numericNineGrid), displayText: nil, rect: .zero)
-      case "，。？！": return IOSNativeKey(action: .character(","), displayText: nil, rect: .zero)
+      case "，。？！": return IOSNativeKey(action: .custom(named: IOSNativeCustomAction.punctCycle), displayText: nil, rect: .zero)
       default: return nineKey($0)
       }
     }
@@ -259,7 +274,7 @@ public enum IOSNativeLayout {
     result.append(key(IOSNativeKey(action: .primary(.return), displayText: returnKey.text, rect: .zero, isSend: returnKey.isSend, tintOverride: returnKey.tint), p + 4 * (unit + gh), g.rowY(2), unit, 2 * g.rowH + g.gapV))
     // Row 3: emoji | select-pinyin | space (2 columns).
     result.append(key(IOSNativeKey(action: .keyboardType(.emojis), displayText: "😀", rect: .zero), p, g.rowY(3), unit, g.rowH))
-    result.append(key(IOSNativeKey(action: .custom(named: "iosNative.noop"), displayText: "选拼音", rect: .zero), p + unit + gh, g.rowY(3), unit, g.rowH))
+    result.append(key(IOSNativeKey(action: .custom(named: IOSNativeCustomAction.noop), displayText: "选拼音", rect: .zero), p + unit + gh, g.rowY(3), unit, g.rowH))
     result.append(key(IOSNativeKey(action: .space, displayText: "空格", rect: .zero), p + 2 * unit + 2 * gh, g.rowY(3), 2 * unit + gh, g.rowH))
     return result
   }

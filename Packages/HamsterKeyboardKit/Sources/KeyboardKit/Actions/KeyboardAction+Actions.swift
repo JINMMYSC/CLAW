@@ -172,7 +172,9 @@ public extension KeyboardAction {
     case .url(let url, _): return { $0?.openUrl(url) }
     case .returnLastKeyboard: return { $0?.returnLastKeyboard() }
     case .cleanSpellingArea: return { $0?.resetInputEngine() }
-    case .delimiter: return { $0?.insertText("'") }
+    // 分隔键：组字态发送 Rime XK_apostrophe（拼音分隔符，见 RimeContext.keyCodeMapping）；
+    // 非组字态由 KeyboardInputViewController.tryHandleSpecificCode 兜底插入原样字符 "'"
+    case .delimiter: return { $0?.insertRimeKeyCode(XK_apostrophe) }
     default: return nil
     }
   }
@@ -245,7 +247,7 @@ public extension KeyboardAction {
     case .url(let url, _): return { $0?.openUrl(url) }
     case .returnLastKeyboard: return { $0?.returnLastKeyboard() }
     case .cleanSpellingArea: return { $0?.resetInputEngine() }
-    case .delimiter: return { $0?.insertText("'") }
+    case .delimiter: return { $0?.insertRimeKeyCode(XK_apostrophe) }
     default: return nil
     }
   }

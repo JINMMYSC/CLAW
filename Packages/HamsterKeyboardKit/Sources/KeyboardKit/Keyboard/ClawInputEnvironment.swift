@@ -22,6 +22,11 @@ public enum ClawInputEnvironment: Equatable {
   case action
   /// 数字输入（切数字9键）
   case number
+  /// 安全数字输入（secure 标记 + numberPad 键盘）：切数字9键（.numericNineGrid）
+  /// 契约（A2）：KeyboardInputViewController.detectInputEnvironment 中须在 .password 判断之前
+  /// 检测 `proxy.isSecureTextEntry == true && proxy.keyboardType?.isNumberType == true`，
+  /// 命中即返回本 case，保证 PIN/验证码等安全数字输入框走数字九宫格而不是英文键盘。
+  case secureNumberPad
   /// 密码输入（强制英文键盘）
   case password
 }

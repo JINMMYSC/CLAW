@@ -72,13 +72,13 @@ open class StandardKeyboardBehavior: KeyboardBehavior {
     - Parameters:
       - keyboardContext: The keyboard context to use.
       - doubleTapThreshold: The second threshold to detect a tap as a double tap, by default `0.5`.
-      - endSentenceThreshold: The second threshold during which a sentence can be auto-closed, by default `3.0`.
+      - endSentenceThreshold: The second threshold during which a sentence can be auto-closed, by default `0.4`（与官方 iOS 双击空格判定的时间窗一致）。
       - repeatGestureTimer: A timer that is responsible for triggering a repeat gesture action, by default ``RepeatGestureTimer/shared``.
    */
   public init(
     keyboardContext: KeyboardContext,
     doubleTapThreshold: TimeInterval = 0.5,
-    endSentenceThreshold: TimeInterval = 3.0,
+    endSentenceThreshold: TimeInterval = 0.4,
     repeatGestureTimer: RepeatGestureTimer = .shared
   ) {
     self.keyboardContext = keyboardContext
@@ -143,6 +143,8 @@ open class StandardKeyboardBehavior: KeyboardBehavior {
     on action: KeyboardAction
   ) -> Bool {
     guard gesture == .release, action == .space else { return false }
+    // 双击空格=句号：仅英文键盘（enUpper/enLower 对应 .alphabetic）生效，中文面板不触发
+    guard keyboardContext.keyboardType.isAlphabetic else { return false }
     let proxy = keyboardContext.textDocumentProxy
     let isNewWord = proxy.isCursorAtNewWord
     let isNewSentence = proxy.isCursorAtNewSentence

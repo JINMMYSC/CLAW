@@ -374,6 +374,8 @@ class KeyboardToolbarView: NibLessView {
         NSLayoutConstraint.activate(candidateBarTopConstraints)
         NSLayoutConstraint.deactivate([panelTopToTop])
         NSLayoutConstraint.activate([panelTopToCandidateBar])
+        // IOS 原生布局：候选栏占满工具栏高度（heightOfToolbar），
+        // 内部由候选栏自行拆分为：上排音节条(15pt) + 分隔线(1pt) + 下排候选字行，两排合计适配总高
         candidateBarHeightConstraint.constant = hasInput ? keyboardContext.heightOfToolbar : 0
         candidateBarView.isHidden = !hasInput
       } else {

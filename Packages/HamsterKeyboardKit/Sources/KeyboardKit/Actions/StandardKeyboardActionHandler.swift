@@ -39,6 +39,14 @@ open class StandardKeyboardActionHandler: NSObject, KeyboardActionHandler {
   private var spaceDragActivationLocation: CGPoint?
   private var rimeContext: RimeContext
 
+  /// 「，。？！ 」标点循环键：当前循环位置（0=逗号 1=句号 2=问号 3=叹号）
+  private var punctCycleIndex = 0
+  /// 标点循环键：上次按键是否为「，。？！ 」键本身。
+  /// 只有连续按本键才续循环；中间有任何其他输入（打字/空格/删字/切面板）→ 下一轮从逗号开始。
+  private var punctCycleLastWasCycleKey = false
+  /// 标点循环序列
+  private let punctCyclePunctuations = ["，", "。", "？", "！"]
+
   // MARK: - Initialization
 
   /**
@@ -118,6 +126,8 @@ open class StandardKeyboardActionHandler: NSObject, KeyboardActionHandler {
     // 不能被取代 && 尝试处理取代Action
     // 注意：是 if 不是 guard
     if !replaced && tryHandleReplacementAction(before: gesture, on: action) { return }
+    // IOS 原生布局：面板切换时重置「，。？！ 」循环计数
+    tryResetPunctuationCycleState(for: gesture, on: action)
     triggerFeedback(for: gesture, on: action)
     tryUpdateSpaceDragState(for: gesture, on: action)
     guard let gestureAction = self.action(for: gesture, on: action) else { return }
@@ -125,8 +135,10 @@ open class StandardKeyboardActionHandler: NSObject, KeyboardActionHandler {
     // tryApplyAutocompleteSuggestion(before: gesture, on: action)
     gestureAction(keyboardController)
     // tryReinsertAutocompleteRemovedSpace(after: gesture, on: action)
-    // tryEndSentence(after: gesture, on: action)
+    tryEndSentence(after: gesture, on: action)
     tryChangeKeyboardType(after: gesture, on: action)
+    // IOS 原生布局：英文面板回车后自动大写下一个字母（autocapitalizationType 为句子时）
+    tryAutoCapitalizeAfterSentenceEnd(after: gesture, on: action)
     tryRegisterEmoji(after: gesture, on: action)
     tryRegisterSymbol(after: gesture, on: action)
     // keyboardController?.performAutocomplete()
@@ -149,8 +161,10 @@ open class StandardKeyboardActionHandler: NSObject, KeyboardActionHandler {
     // tryApplyAutocompleteSuggestion(before: gesture, on: action)
     gestureAction(keyboardController)
     // tryReinsertAutocompleteRemovedSpace(after: gesture, on: action)
-    // tryEndSentence(after: gesture, on: action)
+    tryEndSentence(after: gesture, on: action)
     tryChangeKeyboardType(after: gesture, on: action)
+    // IOS 原生布局：英文面板回车后自动大写下一个字母（autocapitalizationType 为句子时）
+    tryAutoCapitalizeAfterSentenceEnd(after: gesture, on: action)
     tryRegisterEmoji(after: gesture, on: action)
     tryRegisterSymbol(after: gesture, on: action)
     // keyboardController?.performAutocomplete()
@@ -185,6 +199,10 @@ open class StandardKeyboardActionHandler: NSObject, KeyboardActionHandler {
    您可以覆盖此函数，自定义操作的行为方式。默认情况下，使用标准动作。
    */
   open func action(for gesture: KeyboardGesture, on action: KeyboardAction) -> KeyboardAction.GestureAction? {
+    // 自定义按键动作（IOS 原生布局等）：统一由本 handler 分派
+    if case .custom(let name) = action {
+      return customAction(for: gesture, named: name)
+    }
     if keyboardContext.keyboardType.isAlphabetic {
       return action.standardAction(for: gesture, processByRIME: false)
     }
@@ -413,6 +431,61 @@ private extension StandardKeyboardActionHandler {
     case .longPress:
       isSpaceDragGestureActive = true
     default: return
+    }
+  }
+
+  /// 自定义按键动作分派（与 IOSNativeLayout.IOSNativeCustomAction 的契约）
+  func customAction(for gesture: KeyboardGesture, named name: String) -> KeyboardAction.GestureAction? {
+    guard gesture == .release else { return nil }
+    switch name {
+    case IOSNativeCustomAction.punctCycle:
+      return { [weak self] _ in self?.handlePunctuationCycle() }
+    default:
+      // 如「选拼音」等占位键：视图层自行处理，handler 不响应
+      return nil
+    }
+  }
+
+  /// 「，。？！ 」标点循环键：每按一次 逗号→句号→问号→叹号→回到逗号。
+  /// 组字态先顶字上屏（复用 controller.insertSymbol 的顶字逻辑），标点本身直接上屏、绝不走 Rime 键路径，
+  /// 避免 key_binder paging_with_comma_period 在组字态把 ,/. 当翻页键。
+  func handlePunctuationCycle() {
+    // 非连续按本键（中间有其他输入）→ 重新从逗号开始
+    if !punctCycleLastWasCycleKey {
+      punctCycleIndex = 0
+    }
+    punctCycleLastWasCycleKey = true
+
+    let punct = punctCyclePunctuations[punctCycleIndex % punctCyclePunctuations.count]
+    punctCycleIndex += 1
+    keyboardController?.insertSymbol(Symbol(char: punct))
+  }
+
+  /// IOS 原生布局：面板切换时重置「，。？！ 」循环计数
+  func tryResetPunctuationCycleState(for gesture: KeyboardGesture, on action: KeyboardAction) {
+    guard gesture == .release else { return }
+    if case .keyboardType = action {
+      // 面板切换：重置计数，下一轮从逗号开始
+      punctCycleIndex = 0
+      punctCycleLastWasCycleKey = false
+      return
+    }
+    // 本键自身不重置连续标记（连续按才续循环）；其他任意按键都打断
+    if case .custom(let name) = action, name == IOSNativeCustomAction.punctCycle { return }
+    punctCycleLastWasCycleKey = false
+  }
+
+  /// 英文面板：autocapitalizationType 为句子/全大写时，回车后自动大写下一个字母（中文面板不触发）
+  func tryAutoCapitalizeAfterSentenceEnd(after gesture: KeyboardGesture, on action: KeyboardAction) {
+    guard gesture == .release else { return }
+    guard case .primary = action else { return }
+    guard keyboardContext.keyboardType.isAlphabetic else { return }
+    guard keyboardContext.isAutoCapitalizationEnabled else { return }
+    switch keyboardContext.autocapitalizationType {
+    case .sentences, .allCharacters:
+      keyboardController?.setKeyboardCase(.uppercased)
+    default:
+      break
     }
   }
 }

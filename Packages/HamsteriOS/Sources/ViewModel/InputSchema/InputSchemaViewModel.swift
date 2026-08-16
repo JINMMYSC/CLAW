@@ -46,6 +46,9 @@ public class InputSchemaViewModel {
   /// 安装 Subject: 用于 conform 提示
   public let installInputSchemaSubject = PassthroughSubject<(InstallType, InputSchemaInfo), Never>()
 
+  /// 空列表重部署刷新进行中标记（主线程读写，防并发重复部署）
+  private var isReloadingSchemas = false
+
   /// 搜索 Subject: 对查询字符做防抖处理，防止短时间多次查询
   public let inputSchemaSearchTextSubject = PassthroughSubject<String, Never>()
 
@@ -305,6 +308,33 @@ extension InputSchemaViewModel {
       await ProgressHUD.failed("导入Zip文件失败, \(error.localizedDescription)")
     }
     try? FileManager.default.removeItem(at: fileURL)
+  }
+
+  /// 输入方案列表为空时从 Rime 引擎重新部署拉取（根因修复：schemas 只在部署时填充，
+  /// 升级残留/部署异常场景下页面打开时可能为空，这里补一次真实部署刷新，不写死数据）。
+  /// 仅当列表为空时触发，成功后发布 reload 事件刷新表格。
+  func reloadInputSchemasIfNeeded() {
+    guard !isReloadingSchemas, rimeContext.schemas.isEmpty else { return }
+    isReloadingSchemas = true
+    Logger.statistics.warning("input schema list is empty, trigger rime deployment to reload")
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      guard let self = self else { return }
+      do {
+        var configuration = HamsterConfigurationStore.shared.configuration
+        try self.rimeContext.deployment(configuration: &configuration)
+        DispatchQueue.main.async {
+          self.isReloadingSchemas = false
+          HamsterConfigurationStore.shared.configuration = configuration
+          self.reloadTableStateSubject.send(true)
+        }
+      } catch {
+        Logger.statistics.error("input schema reload deployment error: \(error.localizedDescription)")
+        DispatchQueue.main.async {
+          self.isReloadingSchemas = false
+          ProgressHUD.failed("输入方案加载失败，请到 RIME 页面重新部署", delay: 2)
+        }
+      }
+    }
   }
 }
 

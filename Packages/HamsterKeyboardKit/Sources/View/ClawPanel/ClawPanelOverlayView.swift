@@ -80,6 +80,10 @@ public final class ClawPanelOverlayView: UIView {
   private let aiWaveContainer = UIView()
   private var barStack: [UIView] = []
   private var waveHeightConstraint: NSLayoutConstraint!
+  /// 波形条顶部钉标题（聊天列表显示时的默认位置）
+  private var aiWaveTopToTitle: NSLayoutConstraint!
+  /// 波形条垂直居中面板（空会话波形条模式）
+  private var aiWaveCenterY: NSLayoutConstraint!
 
   // AI 分析状态
   private var isLoading = false
@@ -279,6 +283,8 @@ public final class ClawPanelOverlayView: UIView {
     suggestionBottomToHeart = suggestionStrip.bottomAnchor.constraint(equalTo: heartTargetButton.topAnchor, constant: -6)
     suggestionHeightZero = suggestionStrip.heightAnchor.constraint(equalToConstant: 0)
     waveHeightConstraint = aiWaveContainer.heightAnchor.constraint(equalToConstant: 0)
+    aiWaveTopToTitle = aiWaveContainer.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6)
+    aiWaveCenterY = aiWaveContainer.centerYAnchor.constraint(equalTo: centerYAnchor)
     micLeadingToPhone = micButton.leadingAnchor.constraint(equalTo: phoneButton.trailingAnchor, constant: 6)
     micLeadingToText = micButton.leadingAnchor.constraint(equalTo: inputTextView.trailingAnchor, constant: 6)
 
@@ -294,7 +300,7 @@ public final class ClawPanelOverlayView: UIView {
       newChatButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
       newChatButton.trailingAnchor.constraint(equalTo: speakToggleButton.leadingAnchor, constant: -8),
 
-      aiWaveContainer.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
+      aiWaveTopToTitle,
       aiWaveContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
       aiWaveContainer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
       waveHeightConstraint,
@@ -470,15 +476,15 @@ public final class ClawPanelOverlayView: UIView {
     chatListView.isHidden = showWave
     if showWave {
       waveHeightConstraint.constant = AILayout.waveHeight
-      // 波形条模式：输入行不挂聊天列表，避免三约束冲突导致重叠
-      NSLayoutConstraint.deactivate([chatListBottomToInput, inputRowTopToChatList])
-      NSLayoutConstraint.activate([chatListHeightConstraint])
+      // 波形条模式：输入行不挂聊天列表，避免三约束冲突导致重叠；波形条垂直居中面板，不顶着标题
+      NSLayoutConstraint.deactivate([chatListBottomToInput, inputRowTopToChatList, aiWaveTopToTitle])
+      NSLayoutConstraint.activate([chatListHeightConstraint, aiWaveCenterY])
       layoutIfNeeded()
       startWaveAnimation()
     } else {
       waveHeightConstraint.constant = 0
-      NSLayoutConstraint.deactivate([chatListHeightConstraint])
-      NSLayoutConstraint.activate([chatListBottomToInput, inputRowTopToChatList])
+      NSLayoutConstraint.deactivate([chatListHeightConstraint, aiWaveCenterY])
+      NSLayoutConstraint.activate([chatListBottomToInput, inputRowTopToChatList, aiWaveTopToTitle])
       stopWaveAnimation()
     }
   }

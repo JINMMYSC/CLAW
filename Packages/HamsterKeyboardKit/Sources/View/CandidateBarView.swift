@@ -110,10 +110,12 @@ public class CandidateBarView: NibLessView {
     return view
   }()
 
-  /// IOS 原生布局：上栏拼音列（每个候选词上方一列拼音）
-  lazy var pinyinColumnsView: PinyinColumnsView = {
-    let view = PinyinColumnsView()
-    view.isUserInteractionEnabled = false
+  /// IOS 原生布局：上排音节 chips 条（横向滚动、点选筛选音节）
+  lazy var syllableChipsView: SyllableChipsView = {
+    let view = SyllableChipsView()
+    view.onChipTap = { [weak self] index in
+      self?.handleSyllableChipTap(index)
+    }
     return view
   }()
 
@@ -156,10 +158,10 @@ public class CandidateBarView: NibLessView {
     if !keyboardContext.enableEmbeddedInputMode || keyboardContext.useIOSNativeLayout {
       addSubview(phoneticLabel)
       if keyboardContext.useIOSNativeLayout {
-        // IOS 原生布局：单行拼音文本隐藏，改用逐列拼音 + 分隔线
+        // IOS 原生布局：单行拼音文本隐藏，改用音节 chips + 分隔线
         phoneticLabel.isHidden = true
         addSubview(separatorLine)
-        addSubview(pinyinColumnsView)
+        addSubview(syllableChipsView)
       }
     }
     if keyboardContext.swipePaging {
@@ -200,17 +202,17 @@ public class CandidateBarView: NibLessView {
         ])
       }
     } else {
-      // IOS 原生布局：上栏拼音列 + 分隔线 + 候选词区；其余布局保持原逻辑
+      // IOS 原生布局：上排音节条 + 分隔线 + 候选词区；其余布局保持原逻辑
       let isNative = keyboardContext.useIOSNativeLayout
       let topView = isNative ? separatorLine : phoneticLabel
       if isNative {
         NSLayoutConstraint.activate([
-          pinyinColumnsView.topAnchor.constraint(equalTo: topAnchor),
-          pinyinColumnsView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: buttonInsets.left),
-          pinyinColumnsView.trailingAnchor.constraint(equalTo: trailingAnchor),
-          pinyinColumnsView.heightAnchor.constraint(equalToConstant: codingAreaHeight),
+          syllableChipsView.topAnchor.constraint(equalTo: topAnchor),
+          syllableChipsView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: buttonInsets.left),
+          syllableChipsView.trailingAnchor.constraint(equalTo: trailingAnchor),
+          syllableChipsView.heightAnchor.constraint(equalToConstant: codingAreaHeight),
 
-          separatorLine.topAnchor.constraint(equalTo: pinyinColumnsView.bottomAnchor),
+          separatorLine.topAnchor.constraint(equalTo: syllableChipsView.bottomAnchor),
           separatorLine.leadingAnchor.constraint(equalTo: leadingAnchor),
           separatorLine.trailingAnchor.constraint(equalTo: trailingAnchor),
           separatorLine.heightAnchor.constraint(equalToConstant: 1)
@@ -261,7 +263,7 @@ public class CandidateBarView: NibLessView {
           ? UIColor(red: 72 / 255, green: 72 / 255, blue: 74 / 255, alpha: 1)
           : UIColor(red: 199 / 255, green: 199 / 255, blue: 204 / 255, alpha: 1)
       }
-      updatePinyinColumns()
+      updateSyllableChips()
     }
 
     if keyboardContext.swipePaging {
@@ -271,43 +273,50 @@ public class CandidateBarView: NibLessView {
     }
   }
 
-  /// IOS 原生布局：候选词变化时刷新上栏拼音列；候选词横滑时同步滚动
+  /// IOS 原生布局：候选变化/选中音节变化时刷新上排音节 chips
   func combine() {
     guard keyboardContext.useIOSNativeLayout else { return }
     rimeContext.$suggestions
       .receive(on: DispatchQueue.main)
       .sink { [weak self] _ in
-        self?.updatePinyinColumns()
+        self?.updateSyllableChips()
       }
       .store(in: &subscriptions)
 
-    candidatesArea.publisher(for: \.contentOffset)
+    rimeContext.$selectedSyllableIndex
       .receive(on: DispatchQueue.main)
-      .sink { [weak self] offset in
-        self?.pinyinColumnsView.contentOffset = offset
+      .sink { [weak self] _ in
+        self?.updateSyllableChips()
       }
       .store(in: &subscriptions)
   }
 
-  /// 按候选词列宽生成上栏拼音列（宽度算法与候选词 cell 一致）
-  func updatePinyinColumns() {
+  /// 按音节分组刷新上排 chips（含高亮）
+  func updateSyllableChips() {
     guard keyboardContext.useIOSNativeLayout else { return }
-    let pinyins = rimeContext.suggestions.map { $0.subtitle ?? "" }
-    let widths = rimeContext.suggestions.map { suggestion -> CGFloat in
-      let attr = suggestion.attributeString(showIndex: false, showComment: false, style: style)
-      let size = UILabel.estimatedAttributeSize(attr, targetSize: CGSize(width: 1000, height: 0))
-      var width = size.width + 14
-      if attr.string.count == 1, let minWidth = UILabel.fontSizeAndMinWidthMapping[style.candidateTextFont.pointSize] {
-        width = minWidth + 14
-      }
-      return width
-    }
-    pinyinColumnsView.update(
-      pinyins: pinyins,
-      widths: widths,
+    let groups = rimeContext.getSyllableCandidates()
+    let selectedIndex = min(max(rimeContext.selectedSyllableIndex, 0), max(0, groups.count - 1))
+    syllableChipsView.update(
+      pinyins: groups.map { $0.pinyin },
+      selectedIndex: selectedIndex,
       font: style.phoneticTextFont,
-      textColor: style.phoneticTextColor
+      normalTextColor: style.phoneticTextColor,
+      selectedTextColor: style.preferredCandidateTextColor,
+      selectedBackgroundColor: style.preferredCandidateBackgroundColor
     )
+  }
+
+  /// 点击音节 chip：替换输入串为该音节拼音（与选拼音键同法），
+  /// Rime 重新组字后下排候选刷新为该音节的字
+  func handleSyllableChipTap(_ index: Int) {
+    guard keyboardContext.useIOSNativeLayout else { return }
+    let groups = rimeContext.getSyllableCandidates()
+    guard index >= 0, index < groups.count else { return }
+    rimeContext.selectedSyllableIndex = index
+    let replaceText = groups[index].pinyin.replacingOccurrences(of: " ", with: "")
+    guard !replaceText.isEmpty else { return }
+    let inputKeys = rimeContext.getInputKeys()
+    _ = rimeContext.tryHandleReplaceInputTexts(replaceText, startPos: 0, count: inputKeys.utf8.count)
   }
 
   func setStyle(_ style: CandidateBarStyle) {
@@ -328,5 +337,101 @@ public class CandidateBarView: NibLessView {
     return state == .collapse
       ? UIImage(systemName: "chevron.down", withConfiguration: config)
       : UIImage(systemName: "chevron.up", withConfiguration: config)
+  }
+}
+
+/// IOS 原生布局：候选栏上排音节 chips 条
+/// 横向滚动、点选高亮；点选回调由 CandidateBarView 处理（替换输入串）
+final class SyllableChipsView: UIScrollView {
+  private let containerView = UIView()
+  private var chips: [UIButton] = []
+  private var containerTrailing: NSLayoutConstraint?
+
+  /// chip 点击回调（参数为音节分组索引）
+  var onChipTap: ((Int) -> Void)?
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    showsHorizontalScrollIndicator = false
+    alwaysBounceHorizontal = true
+    alwaysBounceVertical = false
+    containerView.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(containerView)
+    NSLayoutConstraint.activate([
+      containerView.topAnchor.constraint(equalTo: topAnchor),
+      containerView.bottomAnchor.constraint(equalTo: bottomAnchor),
+      containerView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      containerView.heightAnchor.constraint(equalTo: heightAnchor)
+    ])
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  /// 重建音节 chips
+  /// - Parameters:
+  ///   - pinyins: 音节拼音文本（可含空格，如 "ni hao"）
+  ///   - selectedIndex: 当前高亮的分组索引
+  func update(
+    pinyins: [String],
+    selectedIndex: Int,
+    font: UIFont,
+    normalTextColor: UIColor,
+    selectedTextColor: UIColor,
+    selectedBackgroundColor: UIColor
+  ) {
+    chips.forEach { $0.removeFromSuperview() }
+    chips.removeAll()
+    if let trailing = containerTrailing {
+      trailing.isActive = false
+      containerTrailing = nil
+    }
+
+    var previous: UIButton?
+    for (index, pinyin) in pinyins.enumerated() {
+      let isSelected = index == selectedIndex
+      let button = UIButton(type: .custom)
+      button.setTitle(pinyin, for: .normal)
+      button.titleLabel?.font = font
+      button.titleLabel?.adjustsFontSizeToFitWidth = true
+      button.titleLabel?.minimumScaleFactor = 0.6
+      let textColor = isSelected ? selectedTextColor : normalTextColor
+      button.setTitleColor(textColor, for: .normal)
+      button.setTitleColor(textColor, for: .highlighted)
+      button.backgroundColor = isSelected ? selectedBackgroundColor : .clear
+      button.layer.cornerRadius = 6
+      button.clipsToBounds = true
+      button.contentEdgeInsets = UIEdgeInsets(top: 2, left: 8, bottom: 2, right: 8)
+      button.tag = index
+      button.addTarget(self, action: #selector(chipTapped(_:)), for: .touchUpInside)
+      button.translatesAutoresizingMaskIntoConstraints = false
+      containerView.addSubview(button)
+      chips.append(button)
+
+      NSLayoutConstraint.activate([
+        button.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 1.5),
+        button.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -1.5)
+      ])
+      if let previous = previous {
+        button.leadingAnchor.constraint(equalTo: previous.trailingAnchor, constant: 5).isActive = true
+      } else {
+        button.leadingAnchor.constraint(equalTo: containerView.leadingAnchor).isActive = true
+      }
+      previous = button
+    }
+
+    if let last = previous {
+      containerTrailing = containerView.trailingAnchor.constraint(equalTo: last.trailingAnchor)
+    } else {
+      containerTrailing = containerView.trailingAnchor.constraint(equalTo: trailingAnchor)
+    }
+    containerTrailing?.isActive = true
+    layoutIfNeeded()
+  }
+
+  @objc private func chipTapped(_ sender: UIButton) {
+    onChipTap?(sender.tag)
   }
 }
