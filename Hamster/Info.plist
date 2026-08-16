@@ -54,6 +54,10 @@
 	<true/>
 	<key>UIRequiresPersistentWiFi</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>ClawTalk 使用麦克风进行 AI 语音对话与语音输入，将你说的话转成文字或语音识别。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>ClawTalk 使用语音识别（中文）将你说的话转成文字，仅在语音输入期间处理音频。</string>
 	<key>rimeVersion</key>
 	<string>1.9.0</string>
 </dict>

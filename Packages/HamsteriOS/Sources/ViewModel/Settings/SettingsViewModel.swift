@@ -5,11 +5,13 @@
 //  Created by morse on 2023/6/13.
 //
 
+import AVFoundation
 import Combine
 import HamsterKeyboardKit
 import HamsterKit
 import OSLog
 import ProgressHUD
+import Speech
 import UIKit
 
 public class SettingsViewModel: ObservableObject {
@@ -164,6 +166,14 @@ public class SettingsViewModel: ObservableObject {
           }
         ),
         .init(
+          icon: UIImage(systemName: "waveform")!,
+          text: "语音设置",
+          accessoryType: .disclosureIndicator,
+          navigationAction: { [unowned self] in
+            self.navigate(.voice)
+          }
+        ),
+        .init(
           icon: UIImage(systemName: "heart.fill")!,
           text: "聊天对象档案",
           accessoryType: .disclosureIndicator,
@@ -236,6 +246,23 @@ public class SettingsViewModel: ObservableObject {
 }
 
 extension SettingsViewModel {
+  /// 宿主首启申请麦克风 + 语音识别权限（仅未决定时弹一次）
+  private func requestVoicePermissionsIfNeeded() async {
+    let speech = SFSpeechRecognizer.authorizationStatus()
+    if speech == .notDetermined {
+      _ = await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+        SFSpeechRecognizer.requestAuthorization { _ in cont.resume() }
+      }
+    }
+    let mic = AVAudioSession.sharedInstance().recordPermission
+    if mic == .undetermined {
+      _ = await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+        AVAudioSession.sharedInstance().requestRecordPermission { _ in cont.resume() }
+      }
+    }
+  }
+
+
   /// 启动加载数据
   func loadAppData() async throws {
     // PATCH: 仓1.0版本处理
@@ -299,6 +326,12 @@ extension SettingsViewModel {
               try FileManager.initSandboxBackupDirectory(override: true)
             }
             try self.rimeViewModel.rimeContext.deployment(configuration: &config, forceFullCheck: !alreadyDeployed)
+            // 自检（FIX-HMSTR-026）：标记已部署但方案仍为空 = App Group 残留标记/方案缺失，强制重新解压 + 全量重部署
+            if self.rimeViewModel.rimeContext.schemas.isEmpty {
+              try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
+              try FileManager.initSandboxBackupDirectory(override: true)
+              try self.rimeViewModel.rimeContext.deployment(configuration: &config, forceFullCheck: true)
+            }
             UserDefaults.hamster.set(true, forKey: "clawTalk_rime_deployed")
             UserDefaults.hamster.set(false, forKey: "clawTalk_rime_deploy_in_progress")
             continuation.resume(returning: config)
@@ -316,6 +349,9 @@ extension SettingsViewModel {
 
       // 修改应用首次运行标志
       UserDefaults.standard.isFirstRunning = false
+
+      // 首次启动在宿主上下文申请语音权限（键盘扩展不弹权限框，避免闪退）
+      await requestVoicePermissionsIfNeeded()
 
       HamsterConfigurationStore.shared.configuration = configuration
 
@@ -463,6 +499,8 @@ extension SettingsViewModel {
 }
 
 extension SettingsViewModel {
+
+
   static let _SlideUp = "↑" // 表示上滑 Upwards Arrow: https://www.compart.com/en/unicode/U+2191
   static let _SlideDown = "↓" // 表示下滑 Downwards Arrow: https://www.compart.com/en/unicode/U+2193
   static let _SlideLeft = "←" // 表示左滑 Leftwards Arrow: https://www.compart.com/en/unicode/U+2190

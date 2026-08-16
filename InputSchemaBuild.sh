@@ -100,8 +100,10 @@ mkdir -p $CI_PRIMARY_REPOSITORY_PATH/Resources/SharedSupport
 input_scheme_name=rime-ice
 
 rm -rf $OUTPUT/.$input_scheme_name && \
-  git clone --depth 1 https://github.com/iDvel/$input_scheme_name $OUTPUT/.$input_scheme_name && (
+  git clone https://github.com/iDvel/$input_scheme_name $OUTPUT/.$input_scheme_name && (
     cd $OUTPUT/.$input_scheme_name
+    # t9 v3 processors 官方 librime 不兼容，固定到已验证可用版本 v2.0.0
+    git checkout 5000d46e84
     # 提前编译
     # export DYLD_FALLBACK_LIBRARY_PATH=$DYLD_FALLBACK_LIBRARY_PATH:$WORK/.deps/dist/lib
     # $WORK/.deps/dist/bin/rime_deployer --build .

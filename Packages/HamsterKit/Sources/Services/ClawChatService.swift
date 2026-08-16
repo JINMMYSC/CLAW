@@ -1,4 +1,3 @@
-import AVFoundation
 import Combine
 import Foundation
 
@@ -33,7 +32,7 @@ public struct ClawChatMessage: Codable, Identifiable, Equatable {
 /// 带记忆的 AI 语音聊天服务（DeepSeek 对话 + 会话历史持久化 + TTS 朗读）
 ///
 /// - 记忆：会话历史写入 App Group，键盘扩展与主程序共享，关面板/重启不丢。
-/// - 语音：STT 由 ClawVoiceInputService 负责；TTS 在这里用 AVSpeechSynthesizer 朗读 AI 回复。
+/// - 语音：STT 由 ClawVoiceInputService 负责；TTS 用 ClawEdgeTTSService（Edge TTS 主链路，失败降级系统语音）朗读 AI 回复。
 public final class ClawChatService: NSObject {
   public static let shared = ClawChatService()
 
@@ -54,7 +53,6 @@ public final class ClawChatService: NSObject {
 
   private let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
   private let aiService = AIService.shared
-  private let synthesizer = AVSpeechSynthesizer()
 
   private let historyKey = "claw_chat_history_v1"
   private let autoSpeakKey = "claw_chat_auto_speak"
@@ -64,7 +62,10 @@ public final class ClawChatService: NSObject {
   private override init() {
     autoSpeak = defaults?.bool(forKey: autoSpeakKey) ?? true
     super.init()
-    synthesizer.delegate = self
+    // Edge TTS 播放状态同步到面板订阅（$isSpeaking）
+    ClawEdgeTTSService.shared.onSpeakingChange = { [weak self] speaking in
+      self?.isSpeaking = speaking
+    }
     loadHistory()
   }
 
@@ -99,7 +100,7 @@ public final class ClawChatService: NSObject {
   // MARK: - 发送（DeepSeek + 记忆）
 
   /// 发送用户消息并请求 AI，成功后自动朗读
-  public func send(_ text: String) {
+  public func send(_ text: String, forceSpeak: Bool = false) {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, !isSending else { return }
 
@@ -131,7 +132,7 @@ public final class ClawChatService: NSObject {
       case .success(let reply):
         self.messages.append(ClawChatMessage(role: "assistant", content: reply))
         self.saveHistory()
-        if self.autoSpeak { self.speak(reply) }
+        if self.autoSpeak || forceSpeak { self.speak(reply) }
       case .failure(let error):
         self.postAssistant("出错了：\(error.localizedDescription)")
       }
@@ -152,46 +153,17 @@ public final class ClawChatService: NSObject {
 
   // MARK: - TTS 朗读
 
-  /// 朗读一段文字（中文）
+  /// 朗读一段文字（Edge TTS 主链路，失败自动降级系统语音）
   public func speak(_ text: String) {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
     stopSpeaking()
-    // STT 录音后会话可能停留在 .record 类别，朗读前切回播放类别并激活，保证能出声
-    let session = AVAudioSession.sharedInstance()
-    try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-    try? session.setActive(true, options: [.notifyOthersOnDeactivation])
-    let utterance = AVSpeechUtterance(string: trimmed)
-    utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")
-    utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-    utterance.pitchMultiplier = 1.0
-    synthesizer.speak(utterance)
-    isSpeaking = true
+    ClawEdgeTTSService.shared.speak(trimmed)
   }
 
   /// 停止朗读
   public func stopSpeaking() {
-    if synthesizer.isSpeaking {
-      synthesizer.stopSpeaking(at: .immediate)
-    }
+    ClawEdgeTTSService.shared.stop()
     isSpeaking = false
-  }
-}
-
-// MARK: - AVSpeechSynthesizerDelegate
-
-extension ClawChatService: AVSpeechSynthesizerDelegate {
-  public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-    DispatchQueue.main.async { [weak self] in
-      self?.isSpeaking = false
-      try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
-    }
-  }
-
-  public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-    DispatchQueue.main.async { [weak self] in
-      self?.isSpeaking = false
-      try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
-    }
   }
 }

@@ -26,6 +26,8 @@ public enum SettingsSubView: String {
   
   /// 反馈设置页面
   case feedback
+  /// 语音设置页面
+  case voice
   
   /// iCloud页面
   case iCloud

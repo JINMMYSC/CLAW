@@ -215,6 +215,12 @@ public extension RimeContext {
       self.selectSchemas = [preferredSchema]
     }
 
+    // 自愈（FIX-HMSTR-026）：方案列表为空 = 部署异常/残留标记，重置部署标记，主程序下次启动强制重部署
+    if schemas.isEmpty {
+      UserDefaults.hamster.set(false, forKey: "clawTalk_rime_deployed")
+      Logger.statistics.error("RIME self-heal: no schemas, reset deploy flag")
+    }
+
     // 设置初始输入方案
     setupRimeInputSchema()
 

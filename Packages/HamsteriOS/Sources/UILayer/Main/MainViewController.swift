@@ -16,6 +16,7 @@ protocol SubViewControllerFactory {
   func makeKeyboardSettingsViewController() -> KeyboardSettingsViewController
   func makeKeyboardColorViewController() -> KeyboardColorViewController
   func makeKeyboardFeedbackViewController() -> KeyboardFeedbackViewController
+  func makeVoiceSettingsViewController() -> VoiceSettingsViewController
   func makeUploadInputSchemaViewController() -> UploadInputSchemaViewController
   func makeAppleCloudViewController() -> AppleCloudViewController
   func makeBackupViewController() -> BackupViewController
@@ -49,6 +50,9 @@ open class MainViewController: UISplitViewController {
 
   private lazy var keyboardFeedbackViewController: KeyboardFeedbackViewController
     = subViewControllerFactory.makeKeyboardFeedbackViewController()
+
+  private lazy var voiceSettingsViewController: VoiceSettingsViewController
+    = subViewControllerFactory.makeVoiceSettingsViewController()
 
   private lazy var uploadInputSchemaViewController: UploadInputSchemaViewController
     = subViewControllerFactory.makeUploadInputSchemaViewController()
@@ -180,6 +184,8 @@ extension MainViewController {
       presentKeyboardColorViewController()
     case .feedback:
       presentKeyboardFeedbackViewController()
+    case .voice:
+      presentVoiceSettingsViewController()
     case .rime:
       presentRimeViewController()
     case .backup:
@@ -235,6 +241,10 @@ extension MainViewController {
 
   func presentKeyboardFeedbackViewController() {
     presentViewController(keyboardFeedbackViewController)
+  }
+
+  func presentVoiceSettingsViewController() {
+    presentViewController(voiceSettingsViewController)
   }
 
   func presentRimeViewController() {

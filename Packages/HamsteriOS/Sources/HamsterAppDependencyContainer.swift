@@ -326,6 +326,10 @@ extension HamsterAppDependencyContainer: SubViewControllerFactory {
     KeyboardFeedbackViewController(keyboardFeedbackViewModelFactory: self)
   }
 
+  func makeVoiceSettingsViewController() -> VoiceSettingsViewController {
+    VoiceSettingsViewController()
+  }
+
   func makeAppleCloudViewController() -> AppleCloudViewController {
     let iCloudViewController = AppleCloudViewController(appleCloudViewModelFactory: self)
     return iCloudViewController

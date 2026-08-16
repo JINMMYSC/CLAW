@@ -21,6 +21,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
       window.tintColor = ClawTalkTheme.accent
       self.window = window
       window.makeKeyAndVisible()
+      // ClawTalk 品牌启动层：与 LaunchScreen 视觉一致，1.5s 淡出
+      SplashOverlayView().presentAndDismiss(in: window)
     }
 
     /// 外部导入 zip 文件

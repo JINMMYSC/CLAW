@@ -14,35 +14,30 @@ public final class ClawVoiceInputService: NSObject {
   /// 是否正在录音
   public private(set) var isRecording = false
 
+  private var streamingPartial: ((String) -> Void)?
+  private var streamingSegment: ((String) -> Void)?
+  private var streamingError: ((Error) -> Void)?
+  private var silenceWorkItem: DispatchWorkItem?
+
   private override init() {
     super.init()
   }
 
-  /// 请求麦克风 + 语音识别权限
-  public func requestAuthorization(completion: @escaping (Bool) -> Void) {
-    SFSpeechRecognizer.requestAuthorization { [weak self] status in
-      guard let self else {
-        completion(false)
-        return
-      }
-      guard status == .authorized else {
-        completion(false)
-        return
-      }
-      let session = AVAudioSession.sharedInstance()
-      switch session.recordPermission {
-      case .granted:
-        completion(true)
-      case .denied:
-        completion(false)
-      default:
-        session.requestRecordPermission { granted in
-          DispatchQueue.main.async {
-            completion(granted)
-          }
-        }
-      }
+  /// 语音权限状态（只读，不在键盘扩展里弹系统权限框，避免闪退）
+  public enum ClawVoiceAuth {
+    case authorized
+    case denied
+    case undetermined
+  }
+
+  public var authorizationStatus: ClawVoiceAuth {
+    let speech = SFSpeechRecognizer.authorizationStatus()
+    let mic = AVAudioSession.sharedInstance().recordPermission
+    if speech == .authorized, mic == .granted { return .authorized }
+    if speech == .denied || speech == .restricted || mic == .denied || mic == .restricted {
+      return .denied
     }
+    return .undetermined
   }
 
   /// 开始录音；停止后通过 completion 返回最终识别文本
@@ -96,8 +91,99 @@ public final class ClawVoiceInputService: NSObject {
     }
   }
 
+  /// 流式听写（实时通话模式）：持续收音，静音停顿自动断句
+  /// - onPartial: 实时转写中间结果（输入框预览）
+  /// - onSegment: 每段完整识别（静音停顿后触发），触发后本服务自动停止，由调用方决定是否续听
+  /// - onError: 识别失败
+  public func startStreaming(
+    onPartial: @escaping (String) -> Void,
+    onSegment: @escaping (String) -> Void,
+    onError: @escaping (Error) -> Void
+  ) {
+    stop()
+    streamingPartial = onPartial
+    streamingSegment = onSegment
+    streamingError = onError
+
+    guard let recognizer, recognizer.isAvailable else {
+      onError(ClawVoiceError.recognizerUnavailable)
+      return
+    }
+
+    let audioEngine = AVAudioEngine()
+    let inputNode = audioEngine.inputNode
+    let format = inputNode.outputFormat(forBus: 0)
+    guard format.sampleRate > 0 else {
+      onError(ClawVoiceError.audioUnavailable)
+      return
+    }
+    inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+      self?.recognitionRequest?.append(buffer)
+    }
+
+    do {
+      let session = AVAudioSession.sharedInstance()
+      try session.setCategory(.record, mode: .measurement, options: [])
+      try session.setActive(true, options: .notifyOthersOnDeactivation)
+      audioEngine.prepare()
+      try audioEngine.start()
+    } catch {
+      inputNode.removeTap(onBus: 0)
+      onError(error)
+      return
+    }
+
+    self.audioEngine = audioEngine
+    isRecording = true
+
+    let request = SFSpeechAudioBufferRecognitionRequest()
+    request.shouldReportPartialResults = true
+    request.requiresOnDeviceRecognition = false
+    recognitionRequest = request
+    recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+      guard let self else { return }
+      if let result {
+        let text = result.bestTranscription.formattedString
+        if result.isFinal {
+          self.silenceWorkItem?.cancel()
+          self.silenceWorkItem = nil
+          self.cleanup()
+          self.streamingSegment?(text)
+        } else {
+          self.restartSilenceTimer()
+          self.streamingPartial?(text)
+        }
+      } else if let error {
+        self.silenceWorkItem?.cancel()
+        self.silenceWorkItem = nil
+        self.cleanup()
+        self.streamingError?(error)
+      }
+    }
+  }
+
+  /// 静音停顿 1.2s 判定断句：结束当前段，触发 final 结果
+  private func restartSilenceTimer() {
+    silenceWorkItem?.cancel()
+    let item = DispatchWorkItem { [weak self] in
+      guard let self, self.isRecording else { return }
+      self.recognitionRequest?.endAudio()
+    }
+    silenceWorkItem = item
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: item)
+  }
+
+  private func clearStreamingCallbacks() {
+    streamingPartial = nil
+    streamingSegment = nil
+    streamingError = nil
+  }
+
   /// 停止录音，触发最终识别回调
   public func stop() {
+    silenceWorkItem?.cancel()
+    silenceWorkItem = nil
+    clearStreamingCallbacks()
     guard isRecording else { return }
     recognitionRequest?.endAudio()
     audioEngine?.stop()
@@ -109,6 +195,8 @@ public final class ClawVoiceInputService: NSObject {
   }
 
   private func cleanup() {
+    silenceWorkItem?.cancel()
+    silenceWorkItem = nil
     audioEngine?.stop()
     audioEngine?.inputNode.removeTap(onBus: 0)
     audioEngine = nil

@@ -43,6 +43,7 @@ public final class ClawPanelOverlayView: UIView {
   private let inputTextView = UITextView()
   private let micButton = UIButton(type: .system)
   private let actionButton = UIButton(type: .system)
+  private let phoneButton = UIButton(type: .system)
 
   // 结果展示：可滚动/可选中复制 + 复制按钮
   private let resultTextView = UITextView()
@@ -72,6 +73,8 @@ public final class ClawPanelOverlayView: UIView {
   private var heartHeightConstraint: NSLayoutConstraint!
   private var suggestionBottomToHeart: NSLayoutConstraint!
   private var suggestionHeightZero: NSLayoutConstraint!
+  private var micLeadingToPhone: NSLayoutConstraint!
+  private var micLeadingToText: NSLayoutConstraint!
 
   // 语音起伏动画条（录音中 / 空会话时显示）
   private let aiWaveContainer = UIView()
@@ -83,6 +86,9 @@ public final class ClawPanelOverlayView: UIView {
   // 语音状态
   private var isMicHeld = false
   private var isListening = false
+  // 实时通话（方案 A）状态
+  private var isCallActive = false
+  private var pendingCallSegments: [String] = []
 
   /// 当前面板是否为 AI 语音助手 tab
   private var isAITab: Bool { keyboardContext.clawPanelTab == PanelTab.ai.rawValue }
@@ -115,6 +121,7 @@ public final class ClawPanelOverlayView: UIView {
           self?.inputTextView.resignFirstResponder()
           ClawVoiceInputService.shared.stop()
           ClawChatService.shared.stopSpeaking()
+          self?.stopCallIfActive()
           self?.stopWaveAnimation()
           self?.aiWaveContainer.isHidden = true
         }
@@ -198,6 +205,13 @@ public final class ClawPanelOverlayView: UIView {
     micLongPress.minimumPressDuration = 0.3
     micButton.addGestureRecognizer(micLongPress)
 
+    phoneButton.setImage(UIImage(systemName: "phone.fill"), for: .normal)
+    phoneButton.setPreferredSymbolConfiguration(.init(font: .systemFont(ofSize: 15), scale: .default), forImageIn: .normal)
+    phoneButton.tintColor = ClawPanelPalette.brandBlue
+    phoneButton.backgroundColor = ClawPanelPalette.inputBackground
+    phoneButton.layer.cornerRadius = 18
+    phoneButton.addTarget(self, action: #selector(phoneTapped), for: .touchUpInside)
+
     actionButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
     actionButton.setTitleColor(.white, for: .normal)
     actionButton.backgroundColor = ClawPanelPalette.brandBlue
@@ -246,7 +260,7 @@ public final class ClawPanelOverlayView: UIView {
       $0.translatesAutoresizingMaskIntoConstraints = false
       addSubview($0)
     }
-    [inputTextView, micButton, actionButton].forEach {
+    [inputTextView, phoneButton, micButton, actionButton].forEach {
       $0.translatesAutoresizingMaskIntoConstraints = false
       inputRow.addSubview($0)
     }
@@ -303,7 +317,14 @@ public final class ClawPanelOverlayView: UIView {
       inputTextView.bottomAnchor.constraint(equalTo: inputRow.bottomAnchor),
       inputTextView.leadingAnchor.constraint(equalTo: inputRow.leadingAnchor),
 
-      micButton.leadingAnchor.constraint(equalTo: inputTextView.trailingAnchor, constant: 6),
+      phoneButton.leadingAnchor.constraint(equalTo: inputTextView.trailingAnchor, constant: 6),
+      phoneButton.centerYAnchor.constraint(equalTo: inputRow.centerYAnchor),
+      phoneButton.widthAnchor.constraint(equalToConstant: 36),
+      phoneButton.heightAnchor.constraint(equalToConstant: 36),
+
+      micLeadingToPhone = micButton.leadingAnchor.constraint(equalTo: phoneButton.trailingAnchor, constant: 6),
+      micLeadingToText = micButton.leadingAnchor.constraint(equalTo: inputTextView.trailingAnchor, constant: 6),
+      micLeadingToPhone,
       micButton.centerYAnchor.constraint(equalTo: inputRow.centerYAnchor),
       micButton.widthAnchor.constraint(equalToConstant: 36),
       micButton.heightAnchor.constraint(equalToConstant: 36),
@@ -370,12 +391,15 @@ public final class ClawPanelOverlayView: UIView {
       .receive(on: DispatchQueue.main)
       .sink { [weak self] _ in
         self?.rebuildChatBubbles()
+        self?.flushPendingCallSegments()
+        self?.resumeCallIfIdle()
       }
       .store(in: &subscriptions)
     ClawChatService.shared.$isSpeaking
       .receive(on: DispatchQueue.main)
       .sink { [weak self] _ in
         self?.updateSpeakToggleTitle()
+        self?.resumeCallIfIdle()
       }
       .store(in: &subscriptions)
   }
@@ -398,6 +422,15 @@ public final class ClawPanelOverlayView: UIView {
     inputRow.isHidden = false
     actionButton.setTitle(isAI ? "发送" : (isHelp ? "读懂TA" : "优化"), for: .normal)
     titleLabel.text = panelTab == .ai ? "AI语音助手" : (isHelp ? "帮你回" : "超会说")
+    if isCallActive { stopCall() }
+    phoneButton.isHidden = !isAI
+    if isAI {
+      NSLayoutConstraint.deactivate([micLeadingToText])
+      NSLayoutConstraint.activate([micLeadingToPhone])
+    } else {
+      NSLayoutConstraint.deactivate([micLeadingToPhone])
+      NSLayoutConstraint.activate([micLeadingToText])
+    }
     inputTextView.text = ""
     resultTextView.text = ""
     resultTextView.isHidden = true
@@ -432,19 +465,20 @@ public final class ClawPanelOverlayView: UIView {
       stopWaveAnimation()
       return
     }
-    let showWave = isListening || ClawChatService.shared.messages.isEmpty
+    let showWave = isListening || isCallActive || ClawChatService.shared.messages.isEmpty
     aiWaveContainer.isHidden = !showWave
     chatListView.isHidden = showWave
     if showWave {
       waveHeightConstraint.constant = AILayout.waveHeight
-      NSLayoutConstraint.deactivate([chatListBottomToInput])
+      // 波形条模式：输入行不挂聊天列表，避免三约束冲突导致重叠
+      NSLayoutConstraint.deactivate([chatListBottomToInput, inputRowTopToChatList])
       NSLayoutConstraint.activate([chatListHeightConstraint])
       layoutIfNeeded()
       startWaveAnimation()
     } else {
       waveHeightConstraint.constant = 0
       NSLayoutConstraint.deactivate([chatListHeightConstraint])
-      NSLayoutConstraint.activate([chatListBottomToInput])
+      NSLayoutConstraint.activate([chatListBottomToInput, inputRowTopToChatList])
       stopWaveAnimation()
     }
   }
@@ -654,6 +688,10 @@ public final class ClawPanelOverlayView: UIView {
   }
 
   @objc private func actionButtonTapped() {
+    if isCallActive {
+      stopCall()
+      return
+    }
     if isAITab {
       sendChatMessage()
       return
@@ -676,7 +714,7 @@ public final class ClawPanelOverlayView: UIView {
   @objc private func micLongPressed(_ sender: UILongPressGestureRecognizer) {
     switch sender.state {
     case .began:
-      guard !isListening else { return }
+      guard !isListening, !isCallActive else { return }
       isMicHeld = true
       startVoiceInput()
     case .ended, .cancelled, .failed:
@@ -692,47 +730,167 @@ public final class ClawPanelOverlayView: UIView {
   }
 
   /// 语音输入：按住说话 → STT（zh-Hans）转文字填入输入框
+  /// 权限只在主程序申请；键盘扩展只读状态，避免系统权限框在扩展进程闪退
   private func startVoiceInput() {
-    ClawVoiceInputService.shared.requestAuthorization { [weak self] granted in
+    switch ClawVoiceInputService.shared.authorizationStatus {
+    case .denied:
+      showResultMessage("麦克风/语音识别权限未开启，请到 ClawTalk 主程序或系统设置中开启")
+      return
+    case .undetermined:
+      showResultMessage("请先在 ClawTalk 主程序中授权麦克风与语音识别")
+      return
+    case .authorized:
+      break
+    }
+    guard isMicHeld else { return }
+    isListening = true
+    updateMicUI(recording: true)
+    ClawVoiceInputService.shared.start { [weak self] result in
       DispatchQueue.main.async {
-        guard let self, self.isMicHeld else { return }
-        guard granted else {
-          self.showResultMessage("需要麦克风和语音识别权限，请在系统设置中开启")
-          return
-        }
-        self.isListening = true
-        self.updateMicUI(recording: true)
-        ClawVoiceInputService.shared.start { [weak self] result in
-          DispatchQueue.main.async {
-            guard let self else { return }
-            self.isListening = false
-            self.updateMicUI(recording: false)
-            switch result {
-            case .success(let text):
-              let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-              if !trimmed.isEmpty {
-                if self.isAITab {
-                  ClawChatService.shared.send(trimmed)
-                  self.inputTextView.text = ""
-                } else {
-                  self.appendTextToInput(trimmed)
-                }
-              }
-            case .failure(let error):
-              if self.isAITab {
-                ClawChatService.shared.postAssistant("语音识别失败：\(error.localizedDescription)")
-              } else {
-                self.showResultMessage("语音识别失败：\(error.localizedDescription)")
-              }
+        guard let self else { return }
+        self.isListening = false
+        self.updateMicUI(recording: false)
+        switch result {
+        case .success(let text):
+          let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+          if !trimmed.isEmpty {
+            if self.isAITab {
+              ClawChatService.shared.send(trimmed)
+              self.inputTextView.text = ""
+            } else {
+              self.appendTextToInput(trimmed)
             }
+          }
+        case .failure(let error):
+          if self.isAITab {
+            ClawChatService.shared.postAssistant("语音识别失败：\(error.localizedDescription)")
+          } else {
+            self.showResultMessage("语音识别失败：\(error.localizedDescription)")
           }
         }
       }
     }
   }
 
+  // MARK: - 实时通话（方案 A：伪实时轮转，点按接通 / 再点挂断）
+
+  @objc private func phoneTapped() {
+    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    if isCallActive {
+      stopCall()
+    } else {
+      startCall()
+    }
+  }
+
+  private func startCall() {
+    guard !isCallActive else { return }
+    switch ClawVoiceInputService.shared.authorizationStatus {
+    case .denied:
+      ClawChatService.shared.postAssistant("麦克风/语音识别权限未开启，请到 ClawTalk 主程序或系统设置中开启")
+      return
+    case .undetermined:
+      ClawChatService.shared.postAssistant("请先在 ClawTalk 主程序中授权麦克风与语音识别")
+      return
+    case .authorized:
+      break
+    }
+    isCallActive = true
+    pendingCallSegments = []
+    ClawChatService.shared.stopSpeaking()
+    updateCallUI()
+    beginCallListening()
+  }
+
+  private func stopCall() {
+    guard isCallActive else { return }
+    isCallActive = false
+    pendingCallSegments = []
+    ClawVoiceInputService.shared.stop()
+    ClawChatService.shared.stopSpeaking()
+    if isListening { isListening = false }
+    updateMicUI(recording: false)
+    updateCallUI()
+    updateWaveVisibility()
+  }
+
+  private func stopCallIfActive() {
+    if isCallActive { stopCall() }
+  }
+
+  /// 接通后开始收音；每段静音停顿自动断句
+  private func beginCallListening() {
+    guard isCallActive, !isListening else { return }
+    isListening = true
+    updateMicUI(recording: true)
+    ClawVoiceInputService.shared.startStreaming(
+      onPartial: { [weak self] text in
+        DispatchQueue.main.async {
+          guard let self, self.isCallActive else { return }
+          self.inputTextView.text = text
+        }
+      },
+      onSegment: { [weak self] text in
+        DispatchQueue.main.async {
+          guard let self, self.isCallActive else { return }
+          self.isListening = false
+          self.updateMicUI(recording: false)
+          let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+          guard !trimmed.isEmpty else {
+            self.resumeCallIfIdle()
+            return
+          }
+          self.inputTextView.text = ""
+          self.handleCallSegment(trimmed)
+        }
+      },
+      onError: { [weak self] error in
+        DispatchQueue.main.async {
+          guard let self else { return }
+          self.isListening = false
+          self.updateMicUI(recording: false)
+          if self.isCallActive {
+            ClawChatService.shared.postAssistant("语音识别中断：\(error.localizedDescription)")
+            self.stopCall()
+          }
+        }
+      }
+    )
+  }
+
+  /// 通话期间收到一句话：AI 还在回复则排队，空闲后逐个发出
+  private func handleCallSegment(_ text: String) {
+    if ClawChatService.shared.isSending {
+      pendingCallSegments.append(text)
+      return
+    }
+    ClawChatService.shared.send(text, forceSpeak: true)
+  }
+
+  /// AI 回复读完且无排队 → 继续收音
+  private func resumeCallIfIdle() {
+    guard isCallActive, !isListening, !ClawChatService.shared.isSending, !ClawChatService.shared.isSpeaking else { return }
+    beginCallListening()
+  }
+
+  private func flushPendingCallSegments() {
+    guard isCallActive, !ClawChatService.shared.isSending, !ClawChatService.shared.isSpeaking, !pendingCallSegments.isEmpty else { return }
+    let next = pendingCallSegments.removeFirst()
+    ClawChatService.shared.send(next, forceSpeak: true)
+  }
+
+  private func updateCallUI() {
+    phoneButton.tintColor = isCallActive ? .white : ClawPanelPalette.brandBlue
+    phoneButton.backgroundColor = isCallActive ? .systemRed : ClawPanelPalette.inputBackground
+  }
+
   private func updateMicUI(recording: Bool) {
     micButton.tintColor = recording ? .systemRed : ClawPanelPalette.brandBlue
+    if isCallActive {
+      actionButton.setTitle("挂断", for: .normal)
+      updateWaveVisibility()
+      return
+    }
     let tab = keyboardContext.clawPanelTab
     if recording {
       actionButton.setTitle("松开发送…", for: .normal)
