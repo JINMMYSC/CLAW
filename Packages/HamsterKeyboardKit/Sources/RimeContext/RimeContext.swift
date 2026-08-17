@@ -1202,7 +1202,7 @@ public extension RimeContext {
   /// FIX-HMSTR-029：候选栏诊断日志。
   /// 写入 AppGroup/Rime/rime-diag.log（主程序可读）+ 当前进程沙盒 RIMELogger/rime-diag.log（App 内「RIME 日志」页可看）。
   private func writeRimeDiag(_ message: String) {
-    let line = "\(rimeDiagDateFormatter.string(from: Date())) \(message)\n"
+    let line = "\(Self.rimeDiagDateFormatter.string(from: Date())) \(message)\n"
     let targets = [
       FileManager.appGroupUserDataDirectoryURL.appendingPathComponent("rime-diag.log"),
       FileManager.sandboxRimeLogDirectory.appendingPathComponent("rime-diag.log"),
@@ -1214,7 +1214,7 @@ public extension RimeContext {
         }
         if let handle = try? FileHandle(forWritingTo: url) {
           handle.seekToEndOfFile()
-          if let data = line.data(using: .utf8) {
+          if let data = line.data(using: String.Encoding.utf8) {
             handle.write(data)
           }
           try? handle.close()
