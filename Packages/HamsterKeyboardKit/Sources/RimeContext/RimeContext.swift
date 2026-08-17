@@ -248,6 +248,36 @@ public extension RimeContext {
           self.latestSchema = nil
           self.selectSchemas = [preferred]
         }
+      } else {
+        // FIX-HMSTR-029：扩展内自愈仍无方案 = AppGroup 用户数据缺失/损坏，请求主程序下次启动强制重解压 + 全量重部署
+        UserDefaults.hamster.set(true, forKey: "clawTalk_rime_needs_app_redeploy")
+        writeRimeDiag("extension self-heal failed: still zero schemas after redeploy; set clawTalk_rime_needs_app_redeploy=true; userData=\(userDataPath)")
+      }
+    }
+
+    // 健康检查（FIX-HMSTR-029）：方案存在但当前方案 prism 缺失 = 部署编译未产出词库，
+    // 症状为「候选栏全空但空格能上屏」。直接在扩展内 maintenance fullCheck 强制重建一次。
+    let healthSchema = self.schemas.first(where: { $0.schemaId == "t9" })
+      ?? self.schemas.first(where: { $0.schemaId == "rime_ice" })
+      ?? self.schemas.first(where: { $0.schemaId == "luna_pinyin_simp" })
+    if let healthSchema {
+      let healthUserData = hasFullAccess ? FileManager.appGroupUserDataDirectoryURL.path : FileManager.sandboxUserDataDirectory.path
+      let prismPath = "\(healthUserData)/build/\(healthSchema.schemaId).prism.bin"
+      if !FileManager.default.fileExists(atPath: prismPath) {
+        Logger.statistics.error("RIME health check: prism missing = \(prismPath)")
+        writeRimeDiag("extension health: prism missing \(prismPath); forcing maintenance fullCheck")
+        Rime.shared.shutdown()
+        Rime.shared.start(Rime.createTraits(
+          sharedSupportDir: FileManager.appGroupSharedSupportDirectoryURL.path,
+          userDataDir: healthUserData
+        ), maintenance: true, fullCheck: true)
+        if FileManager.default.fileExists(atPath: prismPath) {
+          Logger.statistics.error("RIME health check: prism rebuilt OK")
+          writeRimeDiag("extension health: prism rebuilt OK \(prismPath)")
+        } else {
+          Logger.statistics.error("RIME health check: prism STILL missing after fullCheck")
+          writeRimeDiag("extension health: prism STILL missing after fullCheck \(prismPath)")
+        }
       }
     }
 
@@ -350,6 +380,31 @@ public extension RimeContext {
         schemas = Rime.shared.getAvailableRimeSchemas().sorted()
       }
       Logger.statistics.error("RIME deploy self-heal done, schema count = \(schemas.count)")
+    }
+
+    // FIX-HMSTR-029：方案存在但首选方案 prism 缺失 = 词库编译未产出，强制再全量重编译一次。
+    // 主程序部署发生在沙盒目录，随后 sync 到 AppGroup；这里先修好沙盒侧，避免把坏 build 同步过去。
+    let deployHealthSchema = schemas.first(where: { $0.schemaId == "t9" })
+      ?? schemas.first(where: { $0.schemaId == "rime_ice" })
+      ?? schemas.first(where: { $0.schemaId == "luna_pinyin_simp" })
+    if let deployHealthSchema {
+      let sandboxPrismPath = "\(FileManager.sandboxUserDataDirectory.path)/build/\(deployHealthSchema.schemaId).prism.bin"
+      if !FileManager.default.fileExists(atPath: sandboxPrismPath) {
+        Logger.statistics.error("RIME deploy health: prism missing = \(sandboxPrismPath), rebuild")
+        writeRimeDiag("deploy health: prism missing \(sandboxPrismPath); fullCheck rebuild")
+        Rime.shared.shutdown()
+        Rime.shared.start(Rime.createTraits(
+          sharedSupportDir: FileManager.sandboxSharedSupportDirectory.path,
+          userDataDir: FileManager.sandboxUserDataDirectory.path
+        ), maintenance: true, fullCheck: true)
+        if FileManager.default.fileExists(atPath: sandboxPrismPath) {
+          Logger.statistics.error("RIME deploy health: prism rebuilt OK")
+          writeRimeDiag("deploy health: prism rebuilt OK \(sandboxPrismPath)")
+        } else {
+          Logger.statistics.error("RIME deploy health: prism STILL missing after rebuild")
+          writeRimeDiag("deploy health: prism STILL missing after rebuild \(sandboxPrismPath)")
+        }
+      }
     }
 
     // 提前在部署阶段加载 RimeSwitch hotKey, 此步骤放在键盘启动阶段会减慢启动速度
@@ -1143,4 +1198,36 @@ public extension RimeContext {
       selectedSyllableIndex = 0
     }
   }
+
+  /// FIX-HMSTR-029：候选栏诊断日志。
+  /// 写入 AppGroup/Rime/rime-diag.log（主程序可读）+ 当前进程沙盒 RIMELogger/rime-diag.log（App 内「RIME 日志」页可看）。
+  private func writeRimeDiag(_ message: String) {
+    let line = "\(rimeDiagDateFormatter.string(from: Date())) \(message)\n"
+    let targets = [
+      FileManager.appGroupUserDataDirectoryURL.appendingPathComponent("rime-diag.log"),
+      FileManager.sandboxRimeLogDirectory.appendingPathComponent("rime-diag.log"),
+    ]
+    for url in targets {
+      do {
+        if !FileManager.default.fileExists(atPath: url.path) {
+          FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
+        if let handle = try? FileHandle(forWritingTo: url) {
+          handle.seekToEndOfFile()
+          if let data = line.data(using: .utf8) {
+            handle.write(data)
+          }
+          try? handle.close()
+        }
+      } catch {
+        Logger.statistics.error("RIME diag write failed \(url.path): \(error.localizedDescription)")
+      }
+    }
+  }
+
+  private static let rimeDiagDateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+    return formatter
+  }()
 }
