@@ -345,6 +345,14 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
           foreground: palette.textDark
         )
       }
+      // 拼音9键「，。？！ 」标点循环键：白色（P 图要求），按一次换一个标点
+      if currentPanel == .pinyin9, spec.displayText == "，。？！" {
+        return IOSNativeKeyColors(
+          normal: palette.char,
+          pressed: palette.charPressed,
+          foreground: palette.textDark
+        )
+      }
       // 英文大写 Shift 白、小写 Shift 灰
       if spec.displayText == "⬆" {
         if currentPanel == .enUpper {
@@ -620,7 +628,11 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     let keyFrameInContainer = convert(keyFrame, to: container)
     var x = keyFrameInContainer.midX - size.width / 2
     x = min(max(x, 2), max(2, container.bounds.width - size.width - 2))
-    let y = keyFrameInContainer.minY - size.height - 6
+    // 默认在按键上方弹出（官方行为）；顶部放不下（首行按键）时改为在按键下方弹出，
+    // 避免气泡跑出键盘顶部被裁切（FIX-HMSTR-028：9 键第一行长按看不见）
+    let aboveY = keyFrameInContainer.minY - size.height - 6
+    let fitsAbove = aboveY >= container.bounds.minY
+    let y = fitsAbove ? aboveY : keyFrameInContainer.maxY + 6
     bubble.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
     bubble.updateSelection(index: nil)
     container.addSubview(bubble)

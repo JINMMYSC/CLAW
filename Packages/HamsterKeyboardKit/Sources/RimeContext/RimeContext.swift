@@ -224,6 +224,31 @@ public extension RimeContext {
     if schemas.isEmpty {
       UserDefaults.hamster.set(false, forKey: "clawTalk_rime_deployed")
       Logger.statistics.error("RIME self-heal: no schemas, reset deploy flag")
+
+      // FIX-HMSTR-028：扩展进程内再尝试一次 maintenance 全量重部署（AppGroup 已有方案文件但 build 损坏时可直接修复）
+      let userDataPath = hasFullAccess ? FileManager.appGroupUserDataDirectoryURL.path : FileManager.sandboxUserDataDirectory.path
+      let existing = (try? FileManager.default.contentsOfDirectory(atPath: userDataPath)) ?? []
+      Logger.statistics.error("RIME self-heal: userData file count = \(existing.count), head = \(existing.prefix(8))")
+      Rime.shared.shutdown()
+      Rime.shared.start(Rime.createTraits(
+        sharedSupportDir: FileManager.appGroupSharedSupportDirectoryURL.path,
+        userDataDir: userDataPath
+      ), maintenance: true, fullCheck: true)
+      let healedSchemas = (Rime.shared.getSchemas().isEmpty
+        ? Rime.shared.getAvailableRimeSchemas()
+        : Rime.shared.getSchemas()).sorted()
+      Logger.statistics.error("RIME self-heal: after maintenance redeploy schema count = \(healedSchemas.count)")
+      if !healedSchemas.isEmpty {
+        self.schemas = healedSchemas
+        let preferred = healedSchemas.first(where: { $0.schemaId == "t9" })
+          ?? healedSchemas.first(where: { $0.schemaId == "rime_ice" })
+          ?? healedSchemas.first(where: { $0.schemaId == "luna_pinyin_simp" })
+        if let preferred {
+          self.currentSchema = preferred
+          self.latestSchema = nil
+          self.selectSchemas = [preferred]
+        }
+      }
     }
 
     // 设置初始输入方案
@@ -303,6 +328,28 @@ public extension RimeContext {
           ), maintenance: true, fullCheck: forceFullCheck)
         }
       }
+    }
+
+    // FIX-HMSTR-028：部署后仍无任何方案文件 = 资源解压缺失/残留，强制重新解压 + 全量重部署（任何调用路径都自愈）
+    if schemas.isEmpty {
+      let userDataFiles = (try? FileManager.default.contentsOfDirectory(atPath: FileManager.sandboxUserDataDirectory.path)) ?? []
+      Logger.statistics.error("RIME deploy self-heal: zero schemas, userData file count = \(userDataFiles.count), head = \(userDataFiles.prefix(8))")
+      do {
+        try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
+        try FileManager.initSandboxSharedSupportDirectory(override: true)
+      } catch {
+        Logger.statistics.error("RIME deploy self-heal re-extract error: \(error.localizedDescription)")
+      }
+      Rime.shared.shutdown()
+      Rime.shared.start(Rime.createTraits(
+        sharedSupportDir: FileManager.sandboxSharedSupportDirectory.path,
+        userDataDir: FileManager.sandboxUserDataDirectory.path
+      ), maintenance: true, fullCheck: true)
+      schemas = Rime.shared.getSchemas().sorted()
+      if schemas.isEmpty {
+        schemas = Rime.shared.getAvailableRimeSchemas().sorted()
+      }
+      Logger.statistics.error("RIME deploy self-heal done, schema count = \(schemas.count)")
     }
 
     // 提前在部署阶段加载 RimeSwitch hotKey, 此步骤放在键盘启动阶段会减慢启动速度

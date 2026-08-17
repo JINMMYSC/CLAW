@@ -46,7 +46,7 @@ public enum HamsterConstants {
   public static let appURLForGuru = "hamster://app.lgm.7517/clawTalk"
 
   /// Keyboard long-press AI opens the main app keyboard-settings page (ClawTalk deep link).
-  public static let appURLForKeyboardSettings = "clawtalk://keyboard-settings"
+  public static let appURLForKeyboardSettings = "hamster://keyboardSettings"
 
   // MARK: - Google Drive OAuth
   // 在 https://console.cloud.google.com/ 创建 iOS 类型 OAuth 2.0 Client
