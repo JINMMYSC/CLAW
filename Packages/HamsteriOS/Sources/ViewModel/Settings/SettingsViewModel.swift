@@ -294,7 +294,11 @@ extension SettingsViewModel {
       return
     }
 
-    // FIX-HMSTR-029：扩展请求强制重部署（AppGroup 用户数据损坏/方案缺失）→ 复用首启部署路径，强制重解压 + 全量重编译。
+    // FIX-HMSTR-029：主程序每次启动都做 Rime 健康检查（覆盖安装也会跑，不依赖首启标记）。
+    // 检查 AppGroup 用户数据 prism 是否健康：缺失则置 clawTalk_rime_needs_app_redeploy 并写 rime-diag.log。
+    rimeViewModel.rimeContext.runStartupRimeHealthCheck()
+
+    // FIX-HMSTR-029：扩展/健康检查请求强制重部署（AppGroup 用户数据损坏/方案缺失）→ 复用首启部署路径，强制重解压 + 全量重编译。
     // 部署成功后 deployment() 会清除 clawTalk_rime_needs_app_redeploy；失败保留标记下次启动重试。
     if UserDefaults.hamster.bool(forKey: "clawTalk_rime_needs_app_redeploy") {
       UserDefaults.hamster.set(false, forKey: "clawTalk_rime_deployed")

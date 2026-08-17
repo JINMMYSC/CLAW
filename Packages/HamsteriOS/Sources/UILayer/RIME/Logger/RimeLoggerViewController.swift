@@ -24,6 +24,15 @@ class RimeLoggerViewController: NibLessViewController {
   }
 
   override func loadView() {
+    // FIX-HMSTR-029：AppGroup 的 rime-diag.log 含键盘扩展诊断（App 进程看不到），
+    // 复制到沙盒 RIME 日志目录一并展示，便于定位「候选栏空白」断点。
+    try? FileManager.createDirectory(override: false, dst: FileManager.sandboxRimeLogDirectory)
+    let appGroupDiag = FileManager.appGroupUserDataDirectoryURL.appendingPathComponent("rime-diag.log")
+    let diagDest = FileManager.sandboxRimeLogDirectory.appendingPathComponent("rime-diag-appgroup.log")
+    if FileManager.default.fileExists(atPath: appGroupDiag.path),
+       let data = try? Data(contentsOf: appGroupDiag) {
+      try? data.write(to: diagDest)
+    }
     view = rimeLoggerFileBrowseView
     title = "RIME 日志"
   }

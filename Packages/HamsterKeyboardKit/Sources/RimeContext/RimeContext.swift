@@ -264,7 +264,9 @@ public extension RimeContext {
     let healthUserData = hasFullAccess ? FileManager.appGroupUserDataDirectoryURL.path : FileManager.sandboxUserDataDirectory.path
     let healthPrismPath = healthSchema.map { "\(healthUserData)/build/\($0.schemaId).prism.bin" }
     let prismState = healthPrismPath.map { FileManager.default.fileExists(atPath: $0) ? "exists" : "missing" } ?? "n/a"
-    writeRimeDiag("extension start: schemas=\(self.schemas.count), preferred=\(healthSchema?.schemaId ?? "nil"), prism=\(prismState)")
+    let healthBuildDir = "\(healthUserData)/build"
+    let healthBuildFiles = (try? FileManager.default.contentsOfDirectory(atPath: healthBuildDir)) ?? []
+    writeRimeDiag("extension start: schemas=\(self.schemas.count), preferred=\(healthSchema?.schemaId ?? "nil"), prism=\(prismState), buildFiles=\(healthBuildFiles.count), asciiMode=\(Rime.shared.isAsciiMode())")
     if let healthPrismPath, !FileManager.default.fileExists(atPath: healthPrismPath) {
       let healAttempted = UserDefaults.hamster.bool(forKey: "clawTalk_rime_prism_heal_attempted")
       if healAttempted {
@@ -1212,6 +1214,36 @@ public extension RimeContext {
       selectedSyllableIndex = index
     } else {
       selectedSyllableIndex = 0
+    }
+  }
+
+  /// FIX-HMSTR-029：主程序每次启动健康检查（覆盖安装也会跑，不依赖首启标记）。
+  /// 检查 AppGroup 用户数据（键盘扩展实际使用的数据目录）的方案/prism 是否健康：
+  /// - 缺首选方案或 prism → 置 clawTalk_rime_needs_app_redeploy，由 loadAppData() 消费触发强制重部署
+  /// - 总是写 rime-diag.log 诊断，供 App「RIME 日志」页排查
+  func runStartupRimeHealthCheck() {
+    let appGroupUserData = FileManager.appGroupUserDataDirectoryURL.path
+    let buildDir = "\(appGroupUserData)/build"
+    let schemaFiles = ((try? FileManager.default.contentsOfDirectory(atPath: appGroupUserData)) ?? [])
+      .filter { $0.hasSuffix(".schema.yaml") }
+      .sorted()
+    let buildFiles = (try? FileManager.default.contentsOfDirectory(atPath: buildDir)) ?? []
+    let healthSchema = self.schemas.first(where: { $0.schemaId == "t9" })
+      ?? self.schemas.first(where: { $0.schemaId == "rime_ice" })
+      ?? self.schemas.first(where: { $0.schemaId == "luna_pinyin_simp" })
+    if let healthSchema {
+      let prismPath = "\(buildDir)/\(healthSchema.schemaId).prism.bin"
+      let prismOK = FileManager.default.fileExists(atPath: prismPath)
+      writeRimeDiag("app startup health: schemas=\(self.schemas.count), schemaFiles=\(schemaFiles.count), preferred=\(healthSchema.schemaId), prism=\(prismOK ? "exists" : "missing"), buildFiles=\(buildFiles.count)")
+      if !prismOK {
+        Logger.statistics.error("RIME app startup health: AppGroup prism missing = \(prismPath)")
+        UserDefaults.hamster.set(true, forKey: "clawTalk_rime_needs_app_redeploy")
+      }
+    } else {
+      writeRimeDiag("app startup health: no preferred schema; schemas=\(self.schemas.count), schemaFiles=\(schemaFiles.count), buildFiles=\(buildFiles.count)")
+      if self.schemas.isEmpty {
+        UserDefaults.hamster.set(true, forKey: "clawTalk_rime_needs_app_redeploy")
+      }
     }
   }
 
