@@ -17,14 +17,60 @@ public class LogViewController: UIViewController {
       hosting.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
     ])
     hosting.didMove(toParent: self)
+
+    // FIX-HMSTR-031b：SwiftUI .toolbar 嵌在 UIKit 容器子 VC 时不会桥接到导航栏（030 的「复制全部」看不到就是此因），
+    // 分享/清除按钮直接放 UIKit navigationItem，与 RIME 日志页一致
+    navigationItem.rightBarButtonItems = [
+      UIBarButtonItem(
+        barButtonSystemItem: .action,
+        target: self,
+        action: #selector(shareLogs(_:))
+      ),
+      UIBarButtonItem(
+        image: UIImage(systemName: "trash"),
+        style: .plain,
+        target: self,
+        action: #selector(clearLogs(_:))
+      ),
+    ]
   }
+
+  /// 分享日志为 .txt 文件（微信等 App 只能接收文件），文件名带时间戳避免同名缓存
+  @objc private func shareLogs(_ sender: UIBarButtonItem) {
+    let text = LogService.shared.exportText()
+    guard !text.isEmpty else { return }
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyyMMdd-HHmmss"
+    let stamp = formatter.string(from: Date())
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("ClawTalk-调试日志-\(stamp).txt")
+    try? text.data(using: .utf8)?.write(to: url)
+    let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    if let popover = activity.popoverPresentationController {
+      popover.barButtonItem = sender
+    }
+    present(activity, animated: true)
+  }
+
+  /// 清除日志（带确认弹窗），完成后通知 SwiftUI 列表刷新
+  @objc private func clearLogs(_ sender: UIBarButtonItem) {
+    let alert = UIAlertController(title: "清除日志", message: "确定删除全部调试日志？", preferredStyle: .alert)
+    alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+    alert.addAction(UIAlertAction(title: "清除", style: .destructive) { _ in
+      LogService.shared.clear()
+      NotificationCenter.default.post(name: .clawDebugLogCleared, object: nil)
+    })
+    present(alert, animated: true)
+  }
+}
+
+extension Notification.Name {
+  static let clawDebugLogCleared = Notification.Name("clawDebugLogCleared")
 }
 
 // MARK: - SwiftUI View
 
 struct LogRootView: View {
   @State private var entries: [String] = []
-  @State private var showShareSheet = false
 
   var body: some View {
     Group {
@@ -54,26 +100,8 @@ struct LogRootView: View {
       }
     }
     .navigationBarTitleDisplayMode(.inline)
-    .toolbar {
-      ToolbarItemGroup(placement: .navigationBarTrailing) {
-        // 分享（TXT）
-        Button {
-          showShareSheet = true
-        } label: {
-          Image(systemName: "square.and.arrow.up")
-        }
-
-        // 清除
-        Button(role: .destructive) {
-          LogService.shared.clear()
-          DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { reload() }
-        } label: {
-          Image(systemName: "trash")
-        }
-      }
-    }
-    .sheet(isPresented: $showShareSheet) {
-      LogShareSheet(text: LogService.shared.exportText())
+    .onReceive(NotificationCenter.default.publisher(for: .clawDebugLogCleared)) { _ in
+      reload()
     }
     .onAppear { reload() }
   }
@@ -86,26 +114,5 @@ struct LogRootView: View {
     if line.contains("[ERROR]") { return .red }
     if line.contains("[WARN]")  { return .orange }
     return .primary
-  }
-}
-
-// MARK: - ShareSheet
-
-private struct LogShareSheet: UIViewControllerRepresentable {
-  let text: String
-  func makeUIViewController(context: Context) -> UIActivityViewController {
-    let url = Self.writeTemporaryTXT(text: text)
-    return UIActivityViewController(activityItems: [url], applicationActivities: nil)
-  }
-  func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
-
-  /// 日志文本写入临时 .txt 文件（微信等 App 只能接收文件），文件名带时间戳避免同名缓存
-  private static func writeTemporaryTXT(text: String) -> URL {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyyMMdd-HHmmss"
-    let stamp = formatter.string(from: Date())
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("ClawTalk-调试日志-\(stamp).txt")
-    try? text.data(using: .utf8)?.write(to: url)
-    return url
   }
 }
