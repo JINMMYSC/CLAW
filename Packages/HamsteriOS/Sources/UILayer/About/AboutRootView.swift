@@ -18,7 +18,7 @@ class AboutRootView: NibLessView {
     let imageView = UIImageView(frame: .zero)
     imageView.contentMode = .scaleAspectFit
     imageView.clipsToBounds = true
-    imageView.image = UIImage(named: "Hamster", in: .main, with: .none)
+    imageView.image = UIImage(named: "ClawTalkLogo", in: .main, with: .none)
     return imageView
   }()
 

@@ -51,7 +51,6 @@ public class SettingsViewModel: ObservableObject {
   func navigateToAutoInsight() { navigate(.autoInsight) }
   func navigateToSmartFreq() { navigate(.smartFreq) }
   func navigateToInputMethodSettings() { navigate(.inputMethodSettings) }
-  func navigateToGoogleDrive() { navigate(.googleDrive) }
   func navigateToDebugLog() { navigate(.debugLog) }
 
   var tableReloadSubject = PassthroughSubject<Bool, Never>()
@@ -217,16 +216,6 @@ public class SettingsViewModel: ObservableObject {
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
             self.navigate(.about)
-          }
-        ),
-      ]),
-      .init(title: "云同步", items: [
-        .init(
-          icon: UIImage(systemName: "arrow.triangle.2.circlepath")!.withTintColor(.systemGreen),
-          text: "Google Drive 同步",
-          accessoryType: .disclosureIndicator,
-          navigationAction: { [unowned self] in
-            self.navigate(.googleDrive)
           }
         ),
       ]),

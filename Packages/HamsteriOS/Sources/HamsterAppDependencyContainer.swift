@@ -365,9 +365,6 @@ extension HamsterAppDependencyContainer: SubViewControllerFactory {
     return SmartFreqViewController()
   }
 
-  func makeGoogleDriveViewController() -> GoogleDriveViewController {
-    return GoogleDriveViewController()
-  }
 
   func makeLogViewController() -> LogViewController {
     return LogViewController()

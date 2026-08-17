@@ -57,8 +57,6 @@ public enum SettingsSubView: String {
   /// 输入法设置汇总页面
   case inputMethodSettings
 
-  /// Google Drive 同步页面
-  case googleDrive
 
   /// 调试日志页面
   case debugLog

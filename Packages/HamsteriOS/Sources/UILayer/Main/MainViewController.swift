@@ -25,7 +25,6 @@ protocol SubViewControllerFactory {
   func makeClawTalkViewController() -> ClawTalkViewController
   func makeAutoInsightViewController() -> AutoInsightViewController
   func makeSmartFreqViewController() -> SmartFreqViewController
-  func makeGoogleDriveViewController() -> GoogleDriveViewController
   func makeLogViewController() -> LogViewController
   func makeInputMethodSettingsViewController() -> InputMethodSettingsViewController
     func makeHeartTargetSettingsViewController() -> HeartTargetSettingsViewController
@@ -74,9 +73,6 @@ open class MainViewController: UISplitViewController {
 
   private lazy var smartFreqViewController: SmartFreqViewController
     = subViewControllerFactory.makeSmartFreqViewController()
-
-  private lazy var googleDriveViewController: GoogleDriveViewController
-    = subViewControllerFactory.makeGoogleDriveViewController()
 
   private lazy var logViewController: LogViewController
     = subViewControllerFactory.makeLogViewController()
@@ -198,8 +194,6 @@ extension MainViewController {
       presentAutoInsightViewController()
     case .smartFreq:
       presentSmartFreqViewController()
-    case .googleDrive:
-      presentGoogleDriveViewController()
     case .debugLog:
       presentLogViewController()
     case .inputMethodSettings:
@@ -269,10 +263,6 @@ extension MainViewController {
 
   func presentSmartFreqViewController() {
     presentViewController(smartFreqViewController)
-  }
-
-  func presentGoogleDriveViewController() {
-    presentViewController(googleDriveViewController)
   }
 
   func presentLogViewController() {

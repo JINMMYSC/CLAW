@@ -48,11 +48,4 @@ public enum HamsterConstants {
   /// Keyboard long-press AI opens the main app keyboard-settings page (ClawTalk deep link).
   public static let appURLForKeyboardSettings = "hamster://keyboardSettings"
 
-  // MARK: - Google Drive OAuth
-  // 在 https://console.cloud.google.com/ 创建 iOS 类型 OAuth 2.0 Client
-  // Bundle ID: com.donglingyong.Hamster
-  // 填入后需在 Hamster/Info.plist 的 CFBundleURLTypes 中添加 googleRedirectScheme 作为 URL Scheme
-  public static let googleOAuthClientID = "YOUR_CLIENT_ID.apps.googleusercontent.com"
-  // 反转 client ID: com.googleusercontent.apps.YOUR_CLIENT_ID
-  public static let googleRedirectScheme = "com.googleusercontent.apps.YOUR_CLIENT_ID"
 }

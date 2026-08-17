@@ -439,7 +439,7 @@ struct ClawTalkRootView: View {
     VStack(alignment: .leading, spacing: 8) {
       Text("• ClawTalk输入法在使用过程中自动采集您的输入（RIME 上屏词汇及英文单词）")
       Text("• 数据保存在本机私有空间，不会自动上传")
-      Text("• 支持上传到 iCloud Drive / 同步到 Google Drive")
+      Text("• 支持上传到 iCloud Drive")
       Text("• 开启剪贴板监听后记录文字、图片、Emoji 类型")
       Text("• 选择日期后可一键发给 AI（OpenAI / OpenRouter / Claude）分析")
     }
