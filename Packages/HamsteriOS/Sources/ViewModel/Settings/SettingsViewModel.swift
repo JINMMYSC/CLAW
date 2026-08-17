@@ -294,6 +294,13 @@ extension SettingsViewModel {
       return
     }
 
+    // FIX-HMSTR-029：扩展请求强制重部署（AppGroup 用户数据损坏/方案缺失）→ 复用首启部署路径，强制重解压 + 全量重编译。
+    // 部署成功后 deployment() 会清除 clawTalk_rime_needs_app_redeploy；失败保留标记下次启动重试。
+    if UserDefaults.hamster.bool(forKey: "clawTalk_rime_needs_app_redeploy") {
+      UserDefaults.hamster.set(false, forKey: "clawTalk_rime_deployed")
+      UserDefaults.standard.isFirstRunning = true
+    }
+
     // 判断应用是否首次运行
     guard UserDefaults.standard.isFirstRunning else { return }
 

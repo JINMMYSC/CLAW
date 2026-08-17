@@ -256,27 +256,35 @@ public extension RimeContext {
     }
 
     // 健康检查（FIX-HMSTR-029）：方案存在但当前方案 prism 缺失 = 部署编译未产出词库，
-    // 症状为「候选栏全空但空格能上屏」。直接在扩展内 maintenance fullCheck 强制重建一次。
+    // 症状为「候选栏全空但空格能上屏」。每次启动写诊断；缺失时扩展内 fullCheck 重建一次，
+    // 失败不重复阻塞（避免每次开键盘被系统杀扩展），升级请求主程序强制重部署。
     let healthSchema = self.schemas.first(where: { $0.schemaId == "t9" })
       ?? self.schemas.first(where: { $0.schemaId == "rime_ice" })
       ?? self.schemas.first(where: { $0.schemaId == "luna_pinyin_simp" })
-    if let healthSchema {
-      let healthUserData = hasFullAccess ? FileManager.appGroupUserDataDirectoryURL.path : FileManager.sandboxUserDataDirectory.path
-      let prismPath = "\(healthUserData)/build/\(healthSchema.schemaId).prism.bin"
-      if !FileManager.default.fileExists(atPath: prismPath) {
-        Logger.statistics.error("RIME health check: prism missing = \(prismPath)")
-        writeRimeDiag("extension health: prism missing \(prismPath); forcing maintenance fullCheck")
+    let healthUserData = hasFullAccess ? FileManager.appGroupUserDataDirectoryURL.path : FileManager.sandboxUserDataDirectory.path
+    let healthPrismPath = healthSchema.map { "\(healthUserData)/build/\($0.schemaId).prism.bin" }
+    let prismState = healthPrismPath.map { FileManager.default.fileExists(atPath: $0) ? "exists" : "missing" } ?? "n/a"
+    writeRimeDiag("extension start: schemas=\(self.schemas.count), preferred=\(healthSchema?.schemaId ?? "nil"), prism=\(prismState)")
+    if let healthPrismPath, !FileManager.default.fileExists(atPath: healthPrismPath) {
+      let healAttempted = UserDefaults.hamster.bool(forKey: "clawTalk_rime_prism_heal_attempted")
+      if healAttempted {
+        writeRimeDiag("extension health: prism still missing; heal already attempted once, skip blocking rebuild (wait for app redeploy)")
+      } else {
+        UserDefaults.hamster.set(true, forKey: "clawTalk_rime_prism_heal_attempted")
+        Logger.statistics.error("RIME health check: prism missing = \(healthPrismPath)")
+        writeRimeDiag("extension health: prism missing \(healthPrismPath); forcing maintenance fullCheck")
         Rime.shared.shutdown()
         Rime.shared.start(Rime.createTraits(
           sharedSupportDir: FileManager.appGroupSharedSupportDirectoryURL.path,
           userDataDir: healthUserData
         ), maintenance: true, fullCheck: true)
-        if FileManager.default.fileExists(atPath: prismPath) {
+        if FileManager.default.fileExists(atPath: healthPrismPath) {
           Logger.statistics.error("RIME health check: prism rebuilt OK")
-          writeRimeDiag("extension health: prism rebuilt OK \(prismPath)")
+          writeRimeDiag("extension health: prism rebuilt OK \(healthPrismPath)")
         } else {
           Logger.statistics.error("RIME health check: prism STILL missing after fullCheck")
-          writeRimeDiag("extension health: prism STILL missing after fullCheck \(prismPath)")
+          writeRimeDiag("extension health: prism STILL missing after fullCheck \(healthPrismPath); request app redeploy")
+          UserDefaults.hamster.set(true, forKey: "clawTalk_rime_needs_app_redeploy")
         }
       }
     }
@@ -405,6 +413,14 @@ public extension RimeContext {
           writeRimeDiag("deploy health: prism STILL missing after rebuild \(sandboxPrismPath)")
         }
       }
+    }
+
+    // FIX-HMSTR-029：部署健康（prism 存在，初始或重建成功）→ 清除扩展请求的重部署/重建标记
+    if let deployHealthSchema,
+       FileManager.default.fileExists(atPath: "\(FileManager.sandboxUserDataDirectory.path)/build/\(deployHealthSchema.schemaId).prism.bin") {
+      UserDefaults.hamster.set(false, forKey: "clawTalk_rime_needs_app_redeploy")
+      UserDefaults.hamster.set(false, forKey: "clawTalk_rime_prism_heal_attempted")
+      writeRimeDiag("deploy health: prism OK, cleared repair flags")
     }
 
     // 提前在部署阶段加载 RimeSwitch hotKey, 此步骤放在键盘启动阶段会减慢启动速度
