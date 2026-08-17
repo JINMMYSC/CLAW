@@ -57,13 +57,13 @@ struct LogRootView: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItemGroup(placement: .navigationBarTrailing) {
-        // 复制
+        // 复制全部
         Button {
           UIPasteboard.general.string = LogService.shared.exportText()
           copiedFeedback = true
           DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copiedFeedback = false }
         } label: {
-          Image(systemName: copiedFeedback ? "checkmark" : "doc.on.doc")
+          Text(copiedFeedback ? "已复制 ✓" : "复制全部")
             .foregroundColor(copiedFeedback ? .green : .primary)
         }
 

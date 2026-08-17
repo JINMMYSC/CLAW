@@ -35,22 +35,23 @@ class RimeLoggerViewController: NibLessViewController {
     }
     view = rimeLoggerFileBrowseView
     title = "RIME 日志"
-    // FIX-HMSTR-029：一键分享全部日志（含扩展侧 rime-diag-appgroup.log），方便发回排查
+    // FIX-HMSTR-029：一键复制全部日志（含扩展侧 rime-diag-appgroup.log），方便发回排查
     navigationItem.rightBarButtonItem = UIBarButtonItem(
-      barButtonSystemItem: .action,
+      title: "复制全部",
+      style: .plain,
       target: self,
-      action: #selector(shareAllLogs(_:))
+      action: #selector(copyAllLogs(_:))
     )
   }
 
-  @objc private func shareAllLogs(_ sender: UIBarButtonItem) {
+  @objc private func copyAllLogs(_ sender: UIBarButtonItem) {
     let text = Self.collectAllLogs()
     guard !text.isEmpty else { return }
-    let activity = UIActivityViewController(activityItems: [text], applicationActivities: nil)
-    if let popover = activity.popoverPresentationController {
-      popover.barButtonItem = sender
+    UIPasteboard.general.string = text
+    sender.title = "已复制 ✓"
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+      self?.navigationItem.rightBarButtonItem?.title = "复制全部"
     }
-    present(activity, animated: true)
   }
 
   /// 收集 RIME 日志目录下所有文件内容（含扩展侧 rime-diag-appgroup.log），合并为一段文本
