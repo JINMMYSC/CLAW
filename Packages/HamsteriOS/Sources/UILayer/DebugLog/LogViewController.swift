@@ -25,7 +25,6 @@ public class LogViewController: UIViewController {
 struct LogRootView: View {
   @State private var entries: [String] = []
   @State private var showShareSheet = false
-  @State private var copiedFeedback = false
 
   var body: some View {
     Group {
@@ -57,17 +56,7 @@ struct LogRootView: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItemGroup(placement: .navigationBarTrailing) {
-        // 复制全部
-        Button {
-          UIPasteboard.general.string = LogService.shared.exportText()
-          copiedFeedback = true
-          DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copiedFeedback = false }
-        } label: {
-          Text(copiedFeedback ? "已复制 ✓" : "复制全部")
-            .foregroundColor(copiedFeedback ? .green : .primary)
-        }
-
-        // 分享
+        // 分享（TXT）
         Button {
           showShareSheet = true
         } label: {
@@ -105,7 +94,18 @@ struct LogRootView: View {
 private struct LogShareSheet: UIViewControllerRepresentable {
   let text: String
   func makeUIViewController(context: Context) -> UIActivityViewController {
-    UIActivityViewController(activityItems: [text], applicationActivities: nil)
+    let url = Self.writeTemporaryTXT(text: text)
+    return UIActivityViewController(activityItems: [url], applicationActivities: nil)
   }
   func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
+
+  /// 日志文本写入临时 .txt 文件（微信等 App 只能接收文件），文件名带时间戳避免同名缓存
+  private static func writeTemporaryTXT(text: String) -> URL {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyyMMdd-HHmmss"
+    let stamp = formatter.string(from: Date())
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("ClawTalk-调试日志-\(stamp).txt")
+    try? text.data(using: .utf8)?.write(to: url)
+    return url
+  }
 }

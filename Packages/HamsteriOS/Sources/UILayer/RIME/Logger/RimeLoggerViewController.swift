@@ -35,23 +35,72 @@ class RimeLoggerViewController: NibLessViewController {
     }
     view = rimeLoggerFileBrowseView
     title = "RIME 日志"
-    // FIX-HMSTR-029：一键复制全部日志（含扩展侧 rime-diag-appgroup.log），方便发回排查
-    navigationItem.rightBarButtonItem = UIBarButtonItem(
-      title: "复制全部",
-      style: .plain,
-      target: self,
-      action: #selector(copyAllLogs(_:))
-    )
+    // FIX-HMSTR-031：分享（TXT）+ 清除直接显示，分享比复制更快；不用宽文字按钮避免被折叠进「…」
+    navigationItem.rightBarButtonItems = [
+      UIBarButtonItem(
+        barButtonSystemItem: .action,
+        target: self,
+        action: #selector(shareAllLogs(_:))
+      ),
+      UIBarButtonItem(
+        image: UIImage(systemName: "trash"),
+        style: .plain,
+        target: self,
+        action: #selector(clearLogs(_:))
+      ),
+    ]
   }
 
-  @objc private func copyAllLogs(_ sender: UIBarButtonItem) {
+  /// 分享全部日志（含扩展侧 rime-diag-appgroup.log）为 .txt 文件，微信可直接接收
+  @objc private func shareAllLogs(_ sender: UIBarButtonItem) {
     let text = Self.collectAllLogs()
     guard !text.isEmpty else { return }
-    UIPasteboard.general.string = text
-    sender.title = "已复制 ✓"
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-      self?.navigationItem.rightBarButtonItem?.title = "复制全部"
+    let url = Self.writeTemporaryLogTXT(text: text, baseName: "ClawTalk-RIME日志")
+    let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    if let popover = activity.popoverPresentationController {
+      popover.barButtonItem = sender
     }
+    present(activity, animated: true)
+  }
+
+  /// 清除 RIME 日志目录下全部文件（含 AppGroup 扩展侧日志），带确认弹窗
+  @objc private func clearLogs(_ sender: UIBarButtonItem) {
+    let alert = UIAlertController(title: "清除日志", message: "确定删除全部 RIME 日志文件？", preferredStyle: .alert)
+    alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+    alert.addAction(UIAlertAction(title: "清除", style: .destructive) { [weak self] _ in
+      self?.deleteAllLogs()
+      self?.reloadFileBrowser()
+    })
+    present(alert, animated: true)
+  }
+
+  private func deleteAllLogs() {
+    let fm = FileManager.default
+    let sandboxDir = FileManager.sandboxRimeLogDirectory
+    for name in (try? fm.contentsOfDirectory(atPath: sandboxDir.path)) ?? [] {
+      try? fm.removeItem(at: sandboxDir.appendingPathComponent(name))
+    }
+    let appGroupDiag = FileManager.appGroupUserDataDirectoryURL.appendingPathComponent("rime-diag.log")
+    try? fm.removeItem(at: appGroupDiag)
+  }
+
+  private func reloadFileBrowser() {
+    try? FileManager.createDirectory(override: false, dst: FileManager.sandboxRimeLogDirectory)
+    rimeLoggerFileBrowseView = FileBrowserView(
+      finderViewModel: finderViewModel,
+      fileBrowserViewModel: FileBrowserViewModel(rootURL: FileManager.sandboxRimeLogDirectory, enableEditorState: false)
+    )
+    view = rimeLoggerFileBrowseView
+  }
+
+  /// 将日志文本写入临时 .txt 文件（微信等 App 只能接收文件，不能接收纯文本）
+  private static func writeTemporaryLogTXT(text: String, baseName: String) -> URL {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyyMMdd-HHmmss"
+    let stamp = formatter.string(from: Date())
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(baseName)-\(stamp).txt")
+    try? text.data(using: .utf8)?.write(to: url)
+    return url
   }
 
   /// 收集 RIME 日志目录下所有文件内容（含扩展侧 rime-diag-appgroup.log），合并为一段文本
