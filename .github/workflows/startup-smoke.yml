@@ -1,0 +1,106 @@
+name: iOS Startup Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "Hamster/**"
+      - "HamsterKeyboard/**"
+      - "Packages/HamsterKeyboardKit/**"
+      - "Packages/HamsteriOS/**"
+      - "Hamster.xcodeproj/**"
+      - ".github/workflows/startup-smoke.yml"
+
+jobs:
+  launch:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Rime frameworks
+        run: |
+          set -euo pipefail
+          mkdir -p Frameworks
+          cd Frameworks
+          base="https://github.com/zhanggenlove/LibrimeKit/releases/download/v0.1.0"
+          for name in librime libleveldb libmarisa libopencc libyaml-cpp; do
+            curl -fL -o "$name.xcframework.zip" "$base/$name.xcframework.zip"
+            unzip -oq "$name.xcframework.zip"
+            rm "$name.xcframework.zip"
+          done
+
+      - name: Build Rime schemas
+        run: bash InputSchemaBuild.sh
+
+      - name: Select and boot simulator
+        run: |
+          set -euo pipefail
+          device=$(xcrun simctl list devices available -j | python3 -c '
+          import json,sys
+          data=json.load(sys.stdin)["devices"]
+          for runtime in reversed(list(data.values())):
+              for device in runtime:
+                  if device.get("isAvailable") and device["name"].startswith("iPhone"):
+                      print(device["udid"])
+                      raise SystemExit
+          raise SystemExit("No available iPhone simulator")')
+          echo "SIMULATOR_UDID=$device" >> "$GITHUB_ENV"
+          xcrun simctl boot "$device" || true
+          xcrun simctl bootstatus "$device" -b
+
+      - name: Build simulator app
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Hamster.xcodeproj \
+            -scheme Hamster \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            -derivedDataPath smoke-dd \
+            CODE_SIGNING_ALLOWED=NO | tee smoke-build.log
+
+      - name: Install and launch
+        run: |
+          set -euo pipefail
+          app=$(find smoke-dd/Build/Products -maxdepth 2 -name Hamster.app | head -1)
+          test -n "$app"
+          xcrun simctl install "$SIMULATOR_UDID" "$app"
+          rm -f smoke-console.log
+          xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
+            >smoke-console.log 2>&1 &
+          monitor=$!
+          sleep 12
+          if ! kill -0 "$monitor" 2>/dev/null; then
+            echo "App exited during the 12-second startup window"
+            cat smoke-console.log
+            exit 1
+          fi
+          kill "$monitor" || true
+          xcrun simctl terminate "$SIMULATOR_UDID" app.lgm.7517 || true
+
+      - name: Capture diagnostics
+        if: always()
+        run: |
+          xcrun simctl spawn "$SIMULATOR_UDID" log show --last 3m \
+            --style compact \
+            --predicate 'process == "Hamster" OR eventMessage CONTAINS "app.lgm.7517"' \
+            > smoke-system.log || true
+          find "$HOME/Library/Logs/DiagnosticReports" -type f \
+            \( -name 'Hamster*.crash' -o -name 'Hamster*.ips' \) \
+            -mmin -10 -exec cp {} . \; 2>/dev/null || true
+
+      - name: Upload smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-startup-smoke-logs
+          path: |
+            smoke-build.log
+            smoke-console.log
+            smoke-system.log
+            Hamster*.crash
+            Hamster*.ips
+          if-no-files-found: warn
