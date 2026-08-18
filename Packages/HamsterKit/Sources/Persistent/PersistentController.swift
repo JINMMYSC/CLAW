@@ -14,8 +14,7 @@ struct PersistentController {
   init() {
     let name = "HamsterApp"
 
-    let storeURL = FileManager.default.containerURL(
-      forSecurityApplicationGroupIdentifier: HamsterConstants.appGroupName)!
+    let storeURL = FileManager.appGroupContainerURL
       .appendingPathComponent("\(name).sqlite")
 
     let storeDescription = NSPersistentStoreDescription(url: storeURL)

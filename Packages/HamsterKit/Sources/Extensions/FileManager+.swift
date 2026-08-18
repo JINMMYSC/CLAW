@@ -247,13 +247,30 @@ public extension FileManager {
 
 // MARK: 应用内文件路径及操作
 
+extension FileManager {
+  static func resolveAppGroupContainerURL(_ containerURL: URL?, fallbackURL: URL) -> URL {
+    containerURL ?? fallbackURL
+  }
+}
+
 public extension FileManager {
+  /// App Group is unavailable in unsigned builds and can also be missing after third-party signing.
+  /// Keep the app usable in its own sandbox instead of crashing during startup.
+  static var appGroupContainerURL: URL {
+    let containerURL = FileManager.default.containerURL(
+      forSecurityApplicationGroupIdentifier: HamsterConstants.appGroupName
+    )
+    if containerURL == nil {
+      NSLog("App Group %@ is unavailable; using the app sandbox", HamsterConstants.appGroupName)
+    }
+    return resolveAppGroupContainerURL(containerURL, fallbackURL: sandboxDirectory)
+  }
+
   // AppGroup共享目录
   // 注意：AppGroup已变为Keyboard复制方案使用的中转站
   // App内部使用位置在 Document 和 iCloud 下
   static var shareURL: URL {
-    FileManager.default.containerURL(
-      forSecurityApplicationGroupIdentifier: HamsterConstants.appGroupName)!
+    appGroupContainerURL
       .appendingPathComponent("InputSchema")
   }
 
