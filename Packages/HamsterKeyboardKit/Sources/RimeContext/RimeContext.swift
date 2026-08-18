@@ -796,6 +796,7 @@ public extension RimeContext {
     self.pageIndex = 0
     self.rimeContext = Rime.shared.context()
     let userInputText = rimeContext?.composition?.preedit ?? ""
+    let inputKeys = Rime.shared.getInputKeys()
     let commitText = Rime.shared.getCommitText()
     var candidates = [CandidateSuggestion]()
     if !useContextPaging {
@@ -815,14 +816,18 @@ public extension RimeContext {
     // 因为 userInputKey 是 @Published，观测其值时会用到 commitText，所以如果 commitText 值修改滞后，会造成读取 commitText 不正确
 
     // 如果输入状态不是待组字阶段, 则重置输入法
-    if !status.isComposing {
+    // RIME status and context can briefly disagree while a T9 key is processed.
+    // Preserve a real input/candidate state instead of clearing the candidate bar.
+    let visibleInput = userInputText.isEmpty ? inputKeys : userInputText
+    let hasCompositionEvidence = !visibleInput.isEmpty || !candidates.isEmpty
+    if !status.isComposing && !hasCompositionEvidence {
       self.commitText = commitText
       self.reset()
       return
     }
 
     // 注意赋值顺序
-    self.userInputKey = userInputText
+    self.userInputKey = visibleInput
     self.commitText = commitText
     self.suggestions = candidates
     self.refreshSelectedSyllableIndex()
@@ -1180,8 +1185,10 @@ public extension RimeContext {
     guard let menu = rimeContext?.menu, let rawCandidates = menu.candidates else { return [] }
     var groups: [(pinyin: String, candidates: [CandidateSuggestion])] = []
     let offset = self.candidateIndex
+    let fallbackPinyin = t9UserInputKey.trimmingCharacters(in: .whitespacesAndNewlines)
     for (index, candidate) in rawCandidates.enumerated() {
-      let pinyin = (candidate.comment ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+      let comment = (candidate.comment ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+      let pinyin = comment.isEmpty ? fallbackPinyin : comment
       guard !pinyin.isEmpty else { continue }
       let suggestion = CandidateSuggestion(
         index: offset + index,
