@@ -118,25 +118,23 @@ open class HamsterAppDependencyContainer {
     // 判断应用是否首次运行
     // 注意: 首次运行标志（UserDefaults.standard.isFirstRunning）在 SettingsViewModel 的 loadAppData() 方法内重置
     if UserDefaults.standard.isFirstRunning {
-      do {
-        // 首次运行解压 zip 文件（包含应用内置输入方案及配置文件）
-        // 若上次已解压过（部署重试情况）则不再删除重解压，避免每次启动卡黑屏
-        let sharedSupportYaml = FileManager.sandboxSharedSupportDirectory.appendingPathComponent("hamster.yaml")
-        let alreadyExtracted = FileManager.default.fileExists(atPath: sharedSupportYaml.path)
-        try FileManager.initSandboxSharedSupportDirectory(override: !alreadyExtracted)
-
-        // 读取 SharedSupport/hamster.yaml, 生成默认应用配置
-        let hamsterConfiguration = try HamsterConfigurationRepositories.shared.loadFromYAML(FileManager.hamsterConfigFileOnSandboxSharedSupport)
-
-        // 作为应用的默认配置，可从默认值中恢复
-        try HamsterConfigurationRepositories.shared.saveToUserDefaultsOnDefault(hamsterConfiguration)
-
-        self.configuration = hamsterConfiguration
-
-      } catch {
-        self.configuration = HamsterConfiguration()
-        Logger.statistics.error("init SharedSupport error: \(error.localizedDescription)")
+      // FIX-HMSTR-034: SharedSupport 解压统一放到 loadAppData() 后台线程执行，
+      // 避免首次启动在主线程解压词库导致启动黑屏。
+      // 重试场景下沙盒已有解压结果，这里直接读取配置；没有则先用默认配置，
+      // 部署完成后由 loadAppData() 刷新。
+      if FileManager.default.fileExists(atPath: FileManager.hamsterConfigFileOnSandboxSharedSupport.path) {
+        do {
+          let hamsterConfiguration = try HamsterConfigurationRepositories.shared.loadFromYAML(
+            FileManager.hamsterConfigFileOnSandboxSharedSupport
+          )
+          try HamsterConfigurationRepositories.shared.saveToUserDefaultsOnDefault(hamsterConfiguration)
+          self.configuration = hamsterConfiguration
+          return
+        } catch {
+          Logger.statistics.error("init SharedSupport error: \(error.localizedDescription)")
+        }
       }
+      self.configuration = HamsterConfiguration()
       return
     }
 

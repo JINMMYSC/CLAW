@@ -322,6 +322,9 @@ extension SettingsViewModel {
           do {
             var config = HamsterConfigurationStore.shared.configuration
             if !alreadyDeployed {
+              // FIX-HMSTR-034: 首次启动的 SharedSupport 解压也放到后台线程，
+              // 避免主线程解压词库期间启动层无法淡出（黑屏）。
+              try FileManager.initSandboxSharedSupportDirectory(override: true)
               try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
               try FileManager.initSandboxBackupDirectory(override: true)
             }

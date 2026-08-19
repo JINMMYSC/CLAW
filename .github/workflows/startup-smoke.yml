@@ -70,6 +70,7 @@ jobs:
           test -n "$app"
           xcrun simctl install "$SIMULATOR_UDID" "$app"
           rm -f smoke-console.log
+          rm -f smoke-screen-12s.png smoke-screen-45s.png
           xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
             >smoke-console.log 2>&1 &
           monitor=$!
@@ -79,6 +80,41 @@ jobs:
             cat smoke-console.log
             exit 1
           fi
+          xcrun simctl io "$SIMULATOR_UDID" screenshot smoke-screen-12s.png
+          sleep 33
+          if ! kill -0 "$monitor" 2>/dev/null; then
+            echo "App exited during the 45-second startup window"
+            cat smoke-console.log
+            exit 1
+          fi
+          xcrun simctl io "$SIMULATOR_UDID" screenshot smoke-screen-45s.png
+          python3 -m pip install --user --quiet pillow || true
+          python3 - <<'PY'
+          import sys
+          try:
+              from PIL import Image
+          except ImportError:
+              print("PIL unavailable; skipping black-screen check")
+              sys.exit(0)
+          def dark_ratio(path):
+              img = Image.open(path).convert("L")
+              px = img.load()
+              w, h = img.size
+              dark = 0
+              total = 0
+              for y in range(0, h, 4):
+                  for x in range(0, w, 4):
+                      total += 1
+                      if px[x, y] < 24:
+                          dark += 1
+              return dark / total
+          r12 = dark_ratio("smoke-screen-12s.png")
+          r45 = dark_ratio("smoke-screen-45s.png")
+          print(f"dark_ratio 12s={r12:.3f} 45s={r45:.3f}")
+          if r45 > 0.97:
+              print("SCREEN IS BLACK: launch overlay did not dismiss within 45s")
+              sys.exit(1)
+          PY
           kill "$monitor" || true
           xcrun simctl terminate "$SIMULATOR_UDID" app.lgm.7517 || true
 
@@ -102,6 +138,8 @@ jobs:
             smoke-build.log
             smoke-console.log
             smoke-system.log
+            smoke-screen-12s.png
+            smoke-screen-45s.png
             Hamster*.crash
             Hamster*.ips
           if-no-files-found: warn
