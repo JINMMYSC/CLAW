@@ -69,7 +69,7 @@ class CandidateWordCell: UICollectionViewCell {
 
     var backgroundConfiguration = UIBackgroundConfiguration.clear()
     if (state.candidateSuggestion?.isAutocomplete ?? false) || state.isSelected || state.isHighlighted {
-      backgroundConfiguration.cornerRadius = 5
+      backgroundConfiguration.cornerRadius = style?.preferredCandidateCornerRadius ?? 5
       backgroundConfiguration.backgroundColor = style?.preferredCandidateBackgroundColor
     }
 

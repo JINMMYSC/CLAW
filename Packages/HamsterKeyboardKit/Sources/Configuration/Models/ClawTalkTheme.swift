@@ -1,9 +1,9 @@
 //
 //  ClawTalkTheme.swift
-//  ClawTalk 键盘 7 套主题预设
+//  ClawTalk 键盘 8 套主题预设
 //
 //  默认（系统）= 苹果原生配色：浅色白底浅灰键 / 深色黑底深灰键，跟随系统，无品牌强调。
-//  7 套主题：红 / 白 / 黑 / 黑金 / 海盐蓝 / 森林绿 / 樱花粉。
+//  8 套主题：红 / 白 / 黑 / 黑金 / 海盐蓝 / 森林绿 / 樱花粉 / WeType 玻璃。
 //  每套定义：键帽底 / 键帽字 / 键盘底色 / 强调色 / 选中高亮（含浅、深两套变体）。
 //
 
@@ -14,17 +14,32 @@ import UIKit
 
 /// 将 "#RRGGBB" 转为 RIME 配色字符串 "0xBBGGRR"（24 位 BGR 顺序）
 public func rimeBGRString(_ rgbHex: String) -> String {
+  rimeBGRString(rgbHex, alpha: 1)
+}
+
+/// 将 "#RRGGBB" + alpha 转为 RIME 配色字符串 "0xAABBGGRR"
+public func rimeBGRString(_ rgbHex: String, alpha: CGFloat) -> String {
   var hex = rgbHex
   if hex.hasPrefix("#") { hex.removeFirst() }
   guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return "0x000000" }
   let r = (value >> 16) & 0xFF
   let g = (value >> 8) & 0xFF
   let b = value & 0xFF
-  return String(format: "0x%02X%02X%02X", b, g, r)
+  let clampedAlpha = min(max(alpha, 0), 1)
+  let a = UInt32((clampedAlpha * 255).rounded())
+  if clampedAlpha >= 0.999 {
+    return String(format: "0x%02X%02X%02X", b, g, r)
+  }
+  return String(format: "0x%02X%02X%02X%02X", a, b, g, r)
 }
 
 /// 将 "#RRGGBB" 转为 UIColor
 public func uiColorFromHex(_ rgbHex: String) -> UIColor {
+  uiColorFromHex(rgbHex, alpha: 1)
+}
+
+/// 将 "#RRGGBB" + alpha 转为 UIColor
+public func uiColorFromHex(_ rgbHex: String, alpha: CGFloat) -> UIColor {
   var hex = rgbHex
   if hex.hasPrefix("#") { hex.removeFirst() }
   guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return .clear }
@@ -32,13 +47,13 @@ public func uiColorFromHex(_ rgbHex: String) -> UIColor {
     red: CGFloat((value >> 16) & 0xFF) / 255,
     green: CGFloat((value >> 8) & 0xFF) / 255,
     blue: CGFloat(value & 0xFF) / 255,
-    alpha: 1
+    alpha: min(max(alpha, 0), 1)
   )
 }
 
 // MARK: - 主题枚举
 
-/// ClawTalk 键盘主题（7 套，索引 0 为系统默认/苹果原生）
+/// ClawTalk 键盘主题（8 套，索引 0 为系统默认/苹果原生）
 public enum ClawTalkTheme: String, CaseIterable, Codable {
   case red = "clawtalk_red"
   case white = "clawtalk_white"
@@ -47,6 +62,7 @@ public enum ClawTalkTheme: String, CaseIterable, Codable {
   case seaSaltBlue = "clawtalk_sea_blue"
   case forestGreen = "clawtalk_forest"
   case cherryBlossom = "clawtalk_sakura"
+  case weTypeEnhanced = "clawtalk_wetype_enhanced"
 
   /// 设置页展示名称
   public var displayName: String {
@@ -58,6 +74,7 @@ public enum ClawTalkTheme: String, CaseIterable, Codable {
     case .seaSaltBlue: return "海盐蓝"
     case .forestGreen: return "森林绿"
     case .cherryBlossom: return "樱花粉"
+    case .weTypeEnhanced: return "WeType 玻璃"
     }
   }
 
@@ -71,6 +88,7 @@ public enum ClawTalkTheme: String, CaseIterable, Codable {
     case .seaSaltBlue: return "清爽海盐蓝"
     case .forestGreen: return "自然森林绿"
     case .cherryBlossom: return "温柔樱花粉"
+    case .weTypeEnhanced: return "半透明圆角 · iOS 27 高光"
     }
   }
 }
@@ -85,6 +103,9 @@ public struct ClawTalkThemeRGB {
   public let keycapText: String // 键帽字
   public let accent: String // 强调色
   public let accentForeground: String // 强调色上的前景文字
+  public let keyboardBackgroundAlpha: CGFloat
+  public let keycapBaseAlpha: CGFloat
+  public let keycapPressedAlpha: CGFloat
 
   public init(
     keyboardBackground: String,
@@ -92,7 +113,10 @@ public struct ClawTalkThemeRGB {
     keycapPressed: String,
     keycapText: String,
     accent: String,
-    accentForeground: String
+    accentForeground: String,
+    keyboardBackgroundAlpha: CGFloat = 1,
+    keycapBaseAlpha: CGFloat = 1,
+    keycapPressedAlpha: CGFloat = 1
   ) {
     self.keyboardBackground = keyboardBackground
     self.keycapBase = keycapBase
@@ -100,10 +124,32 @@ public struct ClawTalkThemeRGB {
     self.keycapText = keycapText
     self.accent = accent
     self.accentForeground = accentForeground
+    self.keyboardBackgroundAlpha = keyboardBackgroundAlpha
+    self.keycapBaseAlpha = keycapBaseAlpha
+    self.keycapPressedAlpha = keycapPressedAlpha
   }
 }
 
 // MARK: - 主题预设
+
+/// WeType UI Enhanced 的 iOS 视觉参数
+public struct WeTypeEnhancedStyle {
+  public let windowCornerRadius: CGFloat
+  public let keyCornerRadius: CGFloat
+  public let candidateCornerRadius: CGFloat
+  public let candidateBackgroundOpacity: CGFloat
+  public let edgeHighlightEnabled: Bool
+  public let edgeHighlightIntensity: CGFloat
+
+  public static let standard = WeTypeEnhancedStyle(
+    windowCornerRadius: 28,
+    keyCornerRadius: 10,
+    candidateCornerRadius: 16,
+    candidateBackgroundOpacity: CGFloat(150) / 255,
+    edgeHighlightEnabled: true,
+    edgeHighlightIntensity: 0.8
+  )
+}
 
 /// 主题预设：浅/深两套 KeyboardColorSchema + 面板取色用 RGB
 public struct ClawTalkThemePreset {
@@ -113,6 +159,7 @@ public struct ClawTalkThemePreset {
   public let darkRGB: ClawTalkThemeRGB
   public let lightSchema: KeyboardColorSchema
   public let darkSchema: KeyboardColorSchema
+  public let weTypeStyle: WeTypeEnhancedStyle?
 
   public var lightSchemaName: String { lightSchema.schemaName ?? "" }
   public var darkSchemaName: String { darkSchema.schemaName ?? "" }
@@ -132,7 +179,7 @@ public struct ClawPanelThemeColors {
 // MARK: - 预设表
 
 public enum ClawTalkThemePresets {
-  /// 7 套主题全部预设（顺序 = 设置页选项顺序 1...7）
+  /// 8 套主题全部预设（顺序 = 设置页选项顺序 1...8）
   public static let all: [ClawTalkThemePreset] = ClawTalkTheme.allCases.map { preset(for: $0) }
 
   /// 按主题取预设
@@ -222,6 +269,21 @@ public enum ClawTalkThemePresets {
           keycapText: "#F6E3E9", accent: "#F58BB0", accentForeground: "#2A151C"
         )
       )
+    case .weTypeEnhanced:
+      return makePreset(
+        theme: theme,
+        light: ClawTalkThemeRGB(
+          keyboardBackground: "#D4D4D4", keycapBase: "#FFFFFF", keycapPressed: "#E8ECF0",
+          keycapText: "#111111", accent: "#FB7299", accentForeground: "#FFFFFF",
+          keyboardBackgroundAlpha: 0.74, keycapBaseAlpha: 0.67, keycapPressedAlpha: 0.72
+        ),
+        dark: ClawTalkThemeRGB(
+          keyboardBackground: "#000000", keycapBase: "#EDEDED", keycapPressed: "#EDEDED",
+          keycapText: "#FFFFFF", accent: "#FB7299", accentForeground: "#FFFFFF",
+          keyboardBackgroundAlpha: 0.25, keycapBaseAlpha: 0.17, keycapPressedAlpha: 0.26
+        ),
+        weTypeStyle: .standard
+      )
     }
   }
 
@@ -237,19 +299,40 @@ public enum ClawTalkThemePresets {
     return all.flatMap { [$0.lightSchema, $0.darkSchema] }.first { $0.schemaName == name }
   }
 
-  private static func makePreset(theme: ClawTalkTheme, light: ClawTalkThemeRGB, dark: ClawTalkThemeRGB) -> ClawTalkThemePreset {
+  private static func makePreset(
+    theme: ClawTalkTheme,
+    light: ClawTalkThemeRGB,
+    dark: ClawTalkThemeRGB,
+    weTypeStyle: WeTypeEnhancedStyle? = nil
+  ) -> ClawTalkThemePreset {
     ClawTalkThemePreset(
       theme: theme,
       displayName: theme.displayName,
       lightRGB: light,
       darkRGB: dark,
-      lightSchema: makeSchema(schemaName: "\(theme.rawValue)", name: "\(theme.displayName)（浅色）", rgb: light),
-      darkSchema: makeSchema(schemaName: "\(theme.rawValue)_dark", name: "\(theme.displayName)（深色）", rgb: dark)
+      lightSchema: makeSchema(
+        schemaName: "\(theme.rawValue)",
+        name: "\(theme.displayName)（浅色）",
+        rgb: light,
+        weTypeStyle: weTypeStyle
+      ),
+      darkSchema: makeSchema(
+        schemaName: "\(theme.rawValue)_dark",
+        name: "\(theme.displayName)（深色）",
+        rgb: dark,
+        weTypeStyle: weTypeStyle
+      ),
+      weTypeStyle: weTypeStyle
     )
   }
 
   /// 由 RGB 定义构建 RIME KeyboardColorSchema
-  private static func makeSchema(schemaName: String, name: String, rgb: ClawTalkThemeRGB) -> KeyboardColorSchema {
+  private static func makeSchema(
+    schemaName: String,
+    name: String,
+    rgb: ClawTalkThemeRGB,
+    weTypeStyle: WeTypeEnhancedStyle?
+  ) -> KeyboardColorSchema {
     let keyText = rimeBGRString(rgb.keycapText)
     let accent = rimeBGRString(rgb.accent)
     let accentFront = rimeBGRString(rgb.accentForeground)
@@ -257,19 +340,22 @@ public enum ClawTalkThemePresets {
       schemaName: schemaName,
       name: name,
       author: "ClawTalk",
-      backColor: rimeBGRString(rgb.keyboardBackground),
-      buttonBackColor: rimeBGRString(rgb.keycapBase),
-      buttonPressedBackColor: rimeBGRString(rgb.keycapPressed),
+      backColor: rimeBGRString(rgb.keyboardBackground, alpha: rgb.keyboardBackgroundAlpha),
+      buttonBackColor: rimeBGRString(rgb.keycapBase, alpha: rgb.keycapBaseAlpha),
+      buttonPressedBackColor: rimeBGRString(rgb.keycapPressed, alpha: rgb.keycapPressedAlpha),
       buttonFrontColor: keyText,
       buttonPressedFrontColor: keyText,
       buttonSwipeFrontColor: keyText,
-      cornerRadius: 5,
+      cornerRadius: Int(weTypeStyle?.keyCornerRadius ?? 5),
       borderColor: "0x00000000",
       textColor: keyText,
       hilitedTextColor: keyText,
       hilitedBackColor: rimeBGRString(rgb.keycapBase),
       hilitedCandidateTextColor: accentFront,
-      hilitedCandidateBackColor: accent,
+      hilitedCandidateBackColor: rimeBGRString(
+        rgb.accent,
+        alpha: weTypeStyle?.candidateBackgroundOpacity ?? 1
+      ),
       hilitedCommentTextColor: accentFront,
       hilitedCandidateLabelColor: accentFront,
       candidateTextColor: keyText,
@@ -286,10 +372,10 @@ public extension ClawTalkThemePreset {
   func panelColors(userInterfaceStyle: UIUserInterfaceStyle) -> ClawPanelThemeColors {
     let rgb = userInterfaceStyle == .dark ? darkRGB : lightRGB
     return ClawPanelThemeColors(
-      keycapBase: uiColorFromHex(rgb.keycapBase),
-      keycapPressed: uiColorFromHex(rgb.keycapPressed),
+      keycapBase: uiColorFromHex(rgb.keycapBase, alpha: rgb.keycapBaseAlpha),
+      keycapPressed: uiColorFromHex(rgb.keycapPressed, alpha: rgb.keycapPressedAlpha),
       keycapText: uiColorFromHex(rgb.keycapText),
-      keyboardBackground: uiColorFromHex(rgb.keyboardBackground),
+      keyboardBackground: uiColorFromHex(rgb.keyboardBackground, alpha: rgb.keyboardBackgroundAlpha),
       accent: uiColorFromHex(rgb.accent),
       accentForeground: uiColorFromHex(rgb.accentForeground),
       selectedHighlight: uiColorFromHex(rgb.accent)

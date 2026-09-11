@@ -1,6 +1,6 @@
 //
 //  KeyboardColorRootView.swift
-//  键盘配色页：系统默认 + 7 套主题（红/白/黑/黑金/海盐蓝/森林绿/樱花粉）8 选 1（互斥开关）
+//  键盘配色页：系统默认 + 8 套主题（含 WeType 玻璃）9 选 1（互斥开关）
 //  样式按 ClawTalk 红黑白主题 + 深浅色适配
 //
 
@@ -116,6 +116,13 @@ class KeyboardColorRootView: NibLessView {
     return stack
   }()
 
+  private lazy var scrollView: UIScrollView = {
+    let view = UIScrollView()
+    view.alwaysBounceVertical = true
+    view.translatesAutoresizingMaskIntoConstraints = false
+    return view
+  }()
+
   private lazy var footerLabel: UILabel = {
     let label = UILabel()
     label.text = "选择后自动应用到键盘配色，可随时在此切换。"
@@ -145,17 +152,25 @@ class KeyboardColorRootView: NibLessView {
   private func setupSubview() {
     backgroundColor = ClawTalkPalette.void
 
-    addSubview(stackView)
-    addSubview(footerLabel)
+    addSubview(scrollView)
+    scrollView.addSubview(stackView)
+    scrollView.addSubview(footerLabel)
 
     NSLayoutConstraint.activate([
-      stackView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 16),
-      stackView.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor, constant: 8),
-      stackView.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor, constant: -8),
+      scrollView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+      scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+      stackView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 16),
+      stackView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 24),
+      stackView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -24),
+      stackView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -48),
 
       footerLabel.topAnchor.constraint(equalTo: stackView.bottomAnchor, constant: 12),
       footerLabel.leadingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 4),
       footerLabel.trailingAnchor.constraint(equalTo: stackView.trailingAnchor, constant: -4),
+      footerLabel.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -24),
     ])
   }
 

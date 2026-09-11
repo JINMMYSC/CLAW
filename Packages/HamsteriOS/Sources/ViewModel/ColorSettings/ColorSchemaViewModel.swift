@@ -9,7 +9,7 @@ import Combine
 import HamsterKeyboardKit
 import UIKit
 
-/// 键盘配色 ViewModel：8 选 1（系统默认 / 红 / 白 / 黑 / 黑金 / 海盐蓝 / 森林绿 / 樱花粉）
+/// 键盘配色 ViewModel：9 选 1（系统默认 / 红 / 白 / 黑 / 黑金 / 海盐蓝 / 森林绿 / 樱花粉 / WeType 玻璃）
 class KeyboardColorViewModel {
   public var enableColorSchema: Bool {
     get {
@@ -41,10 +41,10 @@ class KeyboardColorViewModel {
     }
   }
 
-  /// 设置页可选项：0=系统默认，1...7 = ClawTalk 7 套主题（顺序固定）
+  /// 设置页可选项：0=系统默认，1...8 = ClawTalk 8 套主题（顺序固定）
   static let themeOptions: [ClawTalkTheme] = ClawTalkTheme.allCases
 
-  /// 当前选项：0=系统默认（苹果原生），1-7 = 对应主题
+  /// 当前选项：0=系统默认（苹果原生），1-8 = 对应主题
   public var selectedIndex: Int {
     get {
       guard enableColorSchema else { return 0 }
