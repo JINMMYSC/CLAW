@@ -42,15 +42,4 @@ final class StanderKeyboardAppearanceTest: XCTestCase {
       // Put the code you want to measure the time of here.
     }
   }
-
-  func testWeTypeEnhancedPresetKeepsTransparencyAndRoundedKeys() throws {
-    let preset = ClawTalkThemePresets.preset(for: .weTypeEnhanced)
-
-    XCTAssertEqual(preset.lightSchema.backColor, "0xBDD4D4D4")
-    XCTAssertEqual(preset.lightSchema.buttonBackColor, "0xABFFFFFF")
-    XCTAssertEqual(preset.darkSchema.backColor, "0x40000000")
-    XCTAssertEqual(preset.lightSchema.cornerRadius, 10)
-    XCTAssertEqual(preset.weTypeStyle?.candidateCornerRadius, 16)
-    XCTAssertEqual(preset.weTypeStyle?.edgeHighlightEnabled, true)
-  }
 }

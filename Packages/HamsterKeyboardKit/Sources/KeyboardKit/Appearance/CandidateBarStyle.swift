@@ -24,9 +24,6 @@ public struct CandidateBarStyle: Equatable {
   /// 候选栏：首选区域背景色
   public var preferredCandidateBackgroundColor: UIColor
 
-  /// 候选栏：首选区域圆角
-  public var preferredCandidateCornerRadius: CGFloat
-
   /// 候选栏：首选文字序号颜色
   public var preferredCandidateLabelColor: UIColor
 
@@ -72,8 +69,7 @@ public struct CandidateBarStyle: Equatable {
     candidateCommentFont: UIFont,
     toolbarButtonFrontColor: UIColor,
     toolbarButtonBackgroundColor: UIColor,
-    toolbarButtonPressedBackgroundColor: UIColor,
-    preferredCandidateCornerRadius: CGFloat = 5)
+    toolbarButtonPressedBackgroundColor: UIColor)
   {
     self.phoneticTextColor = phoneticTextColor
     self.phoneticTextFont = phoneticTextFont
@@ -90,6 +86,5 @@ public struct CandidateBarStyle: Equatable {
     self.toolbarButtonFrontColor = toolbarButtonFrontColor
     self.toolbarButtonBackgroundColor = toolbarButtonBackgroundColor
     self.toolbarButtonPressedBackgroundColor = toolbarButtonPressedBackgroundColor
-    self.preferredCandidateCornerRadius = preferredCandidateCornerRadius
   }
 }

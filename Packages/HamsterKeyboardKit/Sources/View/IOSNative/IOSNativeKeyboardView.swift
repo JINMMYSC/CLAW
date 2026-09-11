@@ -82,9 +82,6 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   private var selectPinyinEntry: KeyEntry?
   private var selectPinyinIndex = 0
   private var userInterfaceStyle: UIUserInterfaceStyle = .unspecified
-  private let backgroundMaterialView = UIVisualEffectView(effect: nil)
-  private let edgeHighlightLayer = CAGradientLayer()
-  private let edgeBorderLayer = CAShapeLayer()
   /// 9 键长按选字母：当前触摸跟踪（同一时刻只能一个键弹出）
   private final class T9Track {
     let touch: UITouch
@@ -153,64 +150,8 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   }
 
   override public func setupAppearance() {
-    let currentPalette = palette
-    backgroundColor = currentPalette.board
-    layer.cornerRadius = currentPalette.windowCornerRadius
-    layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-    layer.masksToBounds = true
-    setupBackgroundMaterial(palette: currentPalette)
-    setupEdgeHighlight(palette: currentPalette)
+    backgroundColor = palette.board
     contentMode = .redraw
-  }
-
-  private func setupBackgroundMaterial(palette: IOSNativePalette) {
-    if palette.isWeTypeEnhanced, !UIAccessibility.isReduceTransparencyEnabled {
-      let style: UIBlurEffect.Style = keyboardContext.hasDarkColorScheme
-        ? .systemUltraThinMaterialDark
-        : .systemUltraThinMaterialLight
-      backgroundMaterialView.effect = UIBlurEffect(style: style)
-      backgroundMaterialView.isUserInteractionEnabled = false
-      backgroundMaterialView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-      if backgroundMaterialView.superview == nil {
-        insertSubview(backgroundMaterialView, at: 0)
-      } else {
-        sendSubviewToBack(backgroundMaterialView)
-      }
-    } else {
-      backgroundMaterialView.effect = nil
-      backgroundMaterialView.removeFromSuperview()
-    }
-  }
-
-  private func setupEdgeHighlight(palette: IOSNativePalette) {
-    guard palette.edgeHighlightEnabled else {
-      edgeHighlightLayer.removeFromSuperlayer()
-      edgeBorderLayer.removeFromSuperlayer()
-      return
-    }
-
-    let intensity = palette.edgeHighlightIntensity
-    edgeHighlightLayer.colors = [
-      UIColor.white.withAlphaComponent(0.62 * intensity).cgColor,
-      UIColor.white.withAlphaComponent(0.14 * intensity).cgColor,
-      UIColor.clear.cgColor,
-      UIColor.black.withAlphaComponent(0.10 * intensity).cgColor,
-    ]
-    edgeHighlightLayer.locations = [0, 0.025, 0.12, 1]
-    edgeHighlightLayer.startPoint = CGPoint(x: 0.5, y: 0)
-    edgeHighlightLayer.endPoint = CGPoint(x: 0.5, y: 1)
-    edgeHighlightLayer.zPosition = 1000
-    if edgeHighlightLayer.superlayer == nil {
-      layer.addSublayer(edgeHighlightLayer)
-    }
-
-    edgeBorderLayer.fillColor = UIColor.clear.cgColor
-    edgeBorderLayer.strokeColor = UIColor.white.withAlphaComponent(0.28 * intensity).cgColor
-    edgeBorderLayer.lineWidth = 0.75
-    edgeBorderLayer.zPosition = 1001
-    if edgeBorderLayer.superlayer == nil {
-      layer.addSublayer(edgeBorderLayer)
-    }
   }
 
   /// 高度按当前面板纵向几何（9键族 4+3*(50+6)+50=222；紧凑族 4+3*(46+10)+46=218）
@@ -264,7 +205,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     selectPinyinEntry = entries.first { $0.spec.displayText == "选拼音" }
     // 修复 P 图圆角：底色层显式设置圆角（appearance.style 未配时默认直角）
     for entry in entries {
-      entry.button.buttonContentView.layer.cornerRadius = palette.keyCornerRadius
+      entry.button.buttonContentView.layer.cornerRadius = IOSNativeDesign.radius
       entry.button.buttonContentView.layer.masksToBounds = true
     }
     refreshOverlays()
@@ -522,7 +463,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
         view.isUserInteractionEnabled = false
         view.translatesAutoresizingMaskIntoConstraints = false
         view.backgroundColor = colors.normal
-        view.layer.cornerRadius = palette.keyCornerRadius
+        view.layer.cornerRadius = IOSNativeDesign.radius
         view.layer.masksToBounds = true
         button.addSubview(view)
       NSLayoutConstraint.activate([
@@ -550,7 +491,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     label.font = UIFont.systemFont(ofSize: overlayFontSize(for: spec))
     label.textColor = colors.foreground
     label.backgroundColor = colors.normal
-    label.layer.cornerRadius = palette.keyCornerRadius
+    label.layer.cornerRadius = IOSNativeDesign.radius
     label.layer.masksToBounds = true
     button.addSubview(label)
     NSLayoutConstraint.activate([
@@ -813,19 +754,6 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   override public func layoutSubviews() {
     super.layoutSubviews()
     guard bounds.width > 0, bounds.height > 0 else { return }
-
-    let currentPalette = palette
-    backgroundMaterialView.frame = bounds
-    edgeHighlightLayer.frame = bounds
-    edgeBorderLayer.path = UIBezierPath(
-      roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
-      byRoundingCorners: [.topLeft, .topRight],
-      cornerRadii: CGSize(
-        width: currentPalette.windowCornerRadius,
-        height: currentPalette.windowCornerRadius
-      )
-    ).cgPath
-
     if userInterfaceStyle != traitCollection.userInterfaceStyle {
       userInterfaceStyle = traitCollection.userInterfaceStyle
       setupAppearance()

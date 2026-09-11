@@ -35,13 +35,6 @@ struct IOSNativePalette {
   let textDark: UIColor
   let textWhite: UIColor
   let separator: UIColor
-  let candidateBackground: UIColor
-  let windowCornerRadius: CGFloat
-  let keyCornerRadius: CGFloat
-  let candidateCornerRadius: CGFloat
-  let edgeHighlightEnabled: Bool
-  let edgeHighlightIntensity: CGFloat
-  let isWeTypeEnhanced: Bool
 
   init(dark: Bool) {
     if dark {
@@ -54,7 +47,6 @@ struct IOSNativePalette {
       textDark = UIColor.white
       textWhite = UIColor.white
       separator = iosRGB(0x48484A)
-      candidateBackground = iosRGB(0x2C2C2E)
     } else {
       board = iosRGB(0xD1D4D9)
       char = UIColor.white
@@ -65,84 +57,10 @@ struct IOSNativePalette {
       textDark = UIColor.black
       textWhite = UIColor.white
       separator = iosRGB(0xC7C7CC)
-      candidateBackground = .white
     }
-    windowCornerRadius = 0
-    keyCornerRadius = 8
-    candidateCornerRadius = 5
-    edgeHighlightEnabled = false
-    edgeHighlightIntensity = 0
-    isWeTypeEnhanced = false
   }
 
   static func current(dark: Bool) -> IOSNativePalette {
-    let keyboard = HamsterConfigurationStore.shared.configuration.keyboard
-    let schemaName = dark
-      ? (keyboard?.useColorSchemaForDark ?? "")
-      : (keyboard?.useColorSchemaForLight ?? "")
-
-    if keyboard?.enableColorSchema == true,
-       ClawTalkThemePresets.theme(forSchemaName: schemaName) == .weTypeEnhanced,
-       let preset = ClawTalkThemePresets.preset(for: .weTypeEnhanced).weTypeStyle
-    {
-      let colors = ClawTalkThemePresets.preset(for: .weTypeEnhanced)
-        .panelColors(userInterfaceStyle: dark ? .dark : .light)
-      return IOSNativePalette(
-        board: colors.keyboardBackground,
-        char: colors.keycapBase,
-        charPressed: colors.keycapPressed,
-        funcGray: colors.keycapPressed,
-        lightGray: colors.keycapPressed,
-        sendBlue: colors.accent,
-        textDark: colors.keycapText,
-        textWhite: colors.accentForeground,
-        separator: colors.accent.withAlphaComponent(0.18),
-        candidateBackground: colors.accent.withAlphaComponent(preset.candidateBackgroundOpacity),
-        windowCornerRadius: preset.windowCornerRadius,
-        keyCornerRadius: preset.keyCornerRadius,
-        candidateCornerRadius: preset.candidateCornerRadius,
-        edgeHighlightEnabled: preset.edgeHighlightEnabled,
-        edgeHighlightIntensity: preset.edgeHighlightIntensity,
-        isWeTypeEnhanced: true
-      )
-    }
-
-    return IOSNativePalette(dark: dark)
-  }
-
-  private init(
-    board: UIColor,
-    char: UIColor,
-    charPressed: UIColor,
-    funcGray: UIColor,
-    lightGray: UIColor,
-    sendBlue: UIColor,
-    textDark: UIColor,
-    textWhite: UIColor,
-    separator: UIColor,
-    candidateBackground: UIColor,
-    windowCornerRadius: CGFloat,
-    keyCornerRadius: CGFloat,
-    candidateCornerRadius: CGFloat,
-    edgeHighlightEnabled: Bool,
-    edgeHighlightIntensity: CGFloat,
-    isWeTypeEnhanced: Bool
-  ) {
-    self.board = board
-    self.char = char
-    self.charPressed = charPressed
-    self.funcGray = funcGray
-    self.lightGray = lightGray
-    self.sendBlue = sendBlue
-    self.textDark = textDark
-    self.textWhite = textWhite
-    self.separator = separator
-    self.candidateBackground = candidateBackground
-    self.windowCornerRadius = windowCornerRadius
-    self.keyCornerRadius = keyCornerRadius
-    self.candidateCornerRadius = candidateCornerRadius
-    self.edgeHighlightEnabled = edgeHighlightEnabled
-    self.edgeHighlightIntensity = edgeHighlightIntensity
-    self.isWeTypeEnhanced = isWeTypeEnhanced
+    IOSNativePalette(dark: dark)
   }
 }

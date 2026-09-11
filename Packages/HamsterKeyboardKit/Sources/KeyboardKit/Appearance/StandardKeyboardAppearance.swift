@@ -205,12 +205,13 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
     // ClawTalk IOS 原生布局：候选栏 P 图配色，底色/文字跟随系统深浅色（与键盘板同色）
     if keyboardContext.useIOSNativeLayout {
       let dark = keyboardContext.hasDarkColorScheme
-      let palette = IOSNativePalette.current(dark: dark)
       // 候选栏底色统一取键盘按钮间隙色（palette.board），与键盘板完全同色
-      let boardColor = palette.board
+      let boardColor = IOSNativePalette.current(dark: dark).board
       let textColor = dark ? UIColor.white : UIColor(red: 17/255, green: 17/255, blue: 17/255, alpha: 1)
       let grayColor = UIColor(red: 142/255, green: 142/255, blue: 147/255, alpha: 1)
-      let preferredBackground = palette.candidateBackground
+      let preferredBackground = dark
+        ? UIColor(red: 44/255, green: 44/255, blue: 46/255, alpha: 1)
+        : UIColor.white
       return CandidateBarStyle(
         phoneticTextColor: textColor,
         phoneticTextFont: UIFont.systemFont(ofSize: 15),
@@ -226,8 +227,7 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
         candidateCommentFont: UIFont.systemFont(ofSize: 12),
         toolbarButtonFrontColor: textColor,
         toolbarButtonBackgroundColor: .clear,
-        toolbarButtonPressedBackgroundColor: boardColor,
-        preferredCandidateCornerRadius: palette.candidateCornerRadius
+        toolbarButtonPressedBackgroundColor: boardColor
       )
     }
 
