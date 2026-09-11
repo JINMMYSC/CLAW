@@ -107,7 +107,7 @@ struct IOSNativePalette {
       )
     }
 
-    IOSNativePalette(dark: dark)
+    return IOSNativePalette(dark: dark)
   }
 
   private init(

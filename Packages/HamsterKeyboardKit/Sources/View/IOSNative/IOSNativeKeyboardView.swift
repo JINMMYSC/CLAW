@@ -163,20 +163,6 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     contentMode = .redraw
   }
 
-  override public func layoutSubviews() {
-    super.layoutSubviews()
-
-    let currentPalette = palette
-    backgroundMaterialView.frame = bounds
-    edgeHighlightLayer.frame = bounds
-    let borderPath = UIBezierPath(
-      roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
-      byRoundingCorners: [.topLeft, .topRight],
-      cornerRadii: CGSize(width: currentPalette.windowCornerRadius, height: currentPalette.windowCornerRadius)
-    )
-    edgeBorderLayer.path = borderPath.cgPath
-  }
-
   private func setupBackgroundMaterial(palette: IOSNativePalette) {
     if palette.isWeTypeEnhanced, !UIAccessibility.isReduceTransparencyEnabled {
       let style: UIBlurEffect.Style = keyboardContext.hasDarkColorScheme
@@ -827,6 +813,19 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   override public func layoutSubviews() {
     super.layoutSubviews()
     guard bounds.width > 0, bounds.height > 0 else { return }
+
+    let currentPalette = palette
+    backgroundMaterialView.frame = bounds
+    edgeHighlightLayer.frame = bounds
+    edgeBorderLayer.path = UIBezierPath(
+      roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
+      byRoundingCorners: [.topLeft, .topRight],
+      cornerRadii: CGSize(
+        width: currentPalette.windowCornerRadius,
+        height: currentPalette.windowCornerRadius
+      )
+    ).cgPath
+
     if userInterfaceStyle != traitCollection.userInterfaceStyle {
       userInterfaceStyle = traitCollection.userInterfaceStyle
       setupAppearance()

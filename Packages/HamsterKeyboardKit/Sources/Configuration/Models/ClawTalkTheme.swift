@@ -334,7 +334,6 @@ public enum ClawTalkThemePresets {
     weTypeStyle: WeTypeEnhancedStyle?
   ) -> KeyboardColorSchema {
     let keyText = rimeBGRString(rgb.keycapText)
-    let accent = rimeBGRString(rgb.accent)
     let accentFront = rimeBGRString(rgb.accentForeground)
     return KeyboardColorSchema(
       schemaName: schemaName,
