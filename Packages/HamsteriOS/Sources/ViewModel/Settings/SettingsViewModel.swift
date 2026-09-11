@@ -235,6 +235,12 @@ public class SettingsViewModel: ObservableObject {
 }
 
 extension SettingsViewModel {
+#if DEBUG
+  private func writeStartupSmokeMarker(_ message: String) {
+    FileHandle.standardError.write(Data("\(message)\n".utf8))
+  }
+#endif
+
   /// 宿主首启申请麦克风 + 语音识别权限（仅未决定时弹一次）
   private func requestVoicePermissionsIfNeeded() async {
     let speech = SFSpeechRecognizer.authorizationStatus()
@@ -258,28 +264,79 @@ extension SettingsViewModel {
     if let v1FirstRunning = UserDefaults.hamster._firstRunningForV1, v1FirstRunning == false {
       await ProgressHUD.animate("迁移 1.0 配置中……", interaction: false)
 
-      var appConfig = HamsterConfigurationStore.shared.applicationConfiguration
+      do {
+        // FIX-HMSTR-035: 旧版迁移同样包含解压和全量 RIME 编译。放到后台线程执行，
+        // 避免主线程被阻塞后启动层无法淡出，真机出现永久黑屏。
+#if DEBUG
+        writeStartupSmokeMarker("clawtalk-v1-migration: start")
+#endif
+        typealias MigrationResult = (configuration: HamsterConfiguration, appConfig: HamsterConfiguration)
+        let migrationResult: MigrationResult = try await withCheckedThrowingContinuation {
+          (continuation: CheckedContinuation<MigrationResult, Error>) in
+          DispatchQueue.global(qos: .userInitiated).async {
+            do {
+              // 兼容旧版数据不完整或覆盖安装后沙盒目录缺失的场景。
+              // 仅在目录缺失/为空时重新释放内置资源，绝不覆盖非空的 1.0 用户数据。
+              let fileManager = FileManager.default
+              let sharedSupportIsEmpty = !fileManager.fileExists(
+                atPath: FileManager.sandboxSharedSupportDirectory.path
+              ) || ((try? fileManager.contentsOfDirectory(
+                atPath: FileManager.sandboxSharedSupportDirectory.path
+              ).isEmpty) ?? true)
+              if sharedSupportIsEmpty {
+                try FileManager.initSandboxSharedSupportDirectory(override: true)
+              }
 
-      // 读取 1.0 配置参数
-      _setupConfigurationForV1Update(configuration: &appConfig)
+              let userDataIsEmpty = !fileManager.fileExists(
+                atPath: FileManager.sandboxUserDataDirectory.path
+              ) || ((try? fileManager.contentsOfDirectory(
+                atPath: FileManager.sandboxUserDataDirectory.path
+              ).isEmpty) ?? true)
+              if userDataIsEmpty {
+                try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
+                try FileManager.initSandboxBackupDirectory(override: true)
+              }
 
-      // merge 1.0 配置参数
-      var configuration = HamsterConfigurationStore.shared.configuration
-      configuration = try configuration.merge(with: appConfig, uniquingKeysWith: { _, appConfig in appConfig })
+              var appConfig = HamsterConfigurationStore.shared.applicationConfiguration
 
-      // 部署 RIME
-      try rimeViewModel.rimeContext.deployment(configuration: &configuration)
+              // 读取 1.0 配置参数
+              self._setupConfigurationForV1Update(configuration: &appConfig)
 
-      // 修改应用首次运行标志
-      UserDefaults.standard.isFirstRunning = false
+              // merge 1.0 配置参数
+              var configuration = HamsterConfigurationStore.shared.configuration
+              configuration = try configuration.merge(
+                with: appConfig,
+                uniquingKeysWith: { _, appConfig in appConfig }
+              )
 
-      /// 删除 V1 标识
-      UserDefaults.hamster._removeFirstRunningForV1()
+              // 部署 RIME
+              try self.rimeViewModel.rimeContext.deployment(configuration: &configuration)
+              continuation.resume(returning: (configuration: configuration, appConfig: appConfig))
+            } catch {
+              continuation.resume(throwing: error)
+            }
+          }
+        }
 
-      HamsterConfigurationStore.shared.configuration = configuration
-      HamsterConfigurationStore.shared.applicationConfiguration = appConfig
+        HamsterConfigurationStore.shared.configuration = migrationResult.configuration
+        HamsterConfigurationStore.shared.applicationConfiguration = migrationResult.appConfig
 
-      await ProgressHUD.success("迁移完成", interaction: false, delay: 1.5)
+        // 部署成功后清理旧标记；失败保留标记，下次启动仍会安全重试。
+        UserDefaults.standard.isFirstRunning = false
+        UserDefaults.hamster._removeFirstRunningForV1()
+
+#if DEBUG
+        writeStartupSmokeMarker("clawtalk-v1-migration: finished")
+#endif
+        await ProgressHUD.success("迁移完成", interaction: false, delay: 1.5)
+#if DEBUG
+        writeStartupSmokeMarker("[clawTalk] v1 migration completed")
+#endif
+      } catch {
+        Logger.statistics.error("v1 migration error: \(error)")
+        await ProgressHUD.failed("数据迁移异常", interaction: false, delay: 2)
+        throw error
+      }
       return
     }
 
@@ -353,10 +410,16 @@ extension SettingsViewModel {
       // 修改应用首次运行标志
       UserDefaults.standard.isFirstRunning = false
 
+      HamsterConfigurationStore.shared.configuration = configuration
+
+#if DEBUG
+      writeStartupSmokeMarker(
+        alreadyDeployed ? "[clawTalk] first-launch ready" : "[clawTalk] first-launch deployment completed"
+      )
+#endif
+
       // 首次启动在宿主上下文申请语音权限（键盘扩展不弹权限框，避免闪退）
       await requestVoicePermissionsIfNeeded()
-
-      HamsterConfigurationStore.shared.configuration = configuration
 
       await ProgressHUD.success(alreadyDeployed ? "已就绪" : "部署完成", interaction: false, delay: 1.5)
     } catch {

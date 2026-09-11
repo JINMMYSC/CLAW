@@ -20,6 +20,10 @@ public extension UserDefaults {
     removeObject(forKey: Self._appFirstLaunchForV1)
   }
 
+  func _setFirstRunningForV1(_ value: Bool) {
+    set(value, forKey: Self._appFirstLaunchForV1)
+  }
+
   /// 应用首次运行检测（仓 1.0 版本）
   var _firstRunningForV1: Bool? {
     if object(forKey: Self._appFirstLaunchForV1) != nil {

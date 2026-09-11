@@ -63,20 +63,55 @@ jobs:
             -derivedDataPath smoke-dd \
             CODE_SIGNING_ALLOWED=NO | tee smoke-build.log
 
-      - name: Install and launch
+      - name: Seed first-launch data
         run: |
           set -euo pipefail
           app=$(find smoke-dd/Build/Products -maxdepth 2 -name Hamster.app | head -1)
           test -n "$app"
           xcrun simctl install "$SIMULATOR_UDID" "$app"
+          rm -f smoke-first-launch-console.log
+          xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
+            >smoke-first-launch-console.log 2>&1 &
+          monitor=$!
+          ready=0
+          for _ in $(seq 1 18); do
+            sleep 5
+            if grep -q "\[clawTalk\] first-launch" smoke-first-launch-console.log; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$monitor" 2>/dev/null; then
+              echo "App exited while seeding first-launch data"
+              cat smoke-first-launch-console.log
+              exit 1
+            fi
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "First-launch deployment did not complete within 90 seconds"
+            cat smoke-first-launch-console.log
+            exit 1
+          fi
+          kill "$monitor" 2>/dev/null || true
+          xcrun simctl terminate "$SIMULATOR_UDID" app.lgm.7517 || true
+          wait "$monitor" 2>/dev/null || true
+
+      - name: Launch legacy migration regression
+        run: |
+          set -euo pipefail
           rm -f smoke-console.log
           rm -f smoke-screen-12s.png smoke-screen-45s.png
           xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
+            -clawTalkForceV1Migration \
             >smoke-console.log 2>&1 &
           monitor=$!
           sleep 12
           if ! kill -0 "$monitor" 2>/dev/null; then
             echo "App exited during the 12-second startup window"
+            cat smoke-console.log
+            exit 1
+          fi
+          if ! grep -q "clawtalk-v1-migration: start" smoke-console.log; then
+            echo "Legacy v1 migration path was not exercised"
             cat smoke-console.log
             exit 1
           fi
@@ -115,8 +150,14 @@ jobs:
               print("SCREEN IS BLACK: launch overlay did not dismiss within 45s")
               sys.exit(1)
           PY
+          if ! grep -q "\[clawTalk\] v1 migration completed" smoke-console.log; then
+            echo "Legacy v1 migration did not complete"
+            cat smoke-console.log
+            exit 1
+          fi
           kill "$monitor" || true
           xcrun simctl terminate "$SIMULATOR_UDID" app.lgm.7517 || true
+          wait "$monitor" 2>/dev/null || true
 
       - name: Capture diagnostics
         if: always()
@@ -136,6 +177,7 @@ jobs:
           name: ios-startup-smoke-logs
           path: |
             smoke-build.log
+            smoke-first-launch-console.log
             smoke-console.log
             smoke-system.log
             smoke-screen-12s.png

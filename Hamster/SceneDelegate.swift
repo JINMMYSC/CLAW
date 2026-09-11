@@ -16,6 +16,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
     guard let windowScene = (scene as? UIWindowScene) else { return }
 
     if window == nil {
+#if DEBUG
+      // Startup smoke regression hook: exercise the legacy v1 migration path.
+      if ProcessInfo.processInfo.arguments.contains("-clawTalkForceV1Migration") {
+        UserDefaults.hamster._setFirstRunningForV1(false)
+      }
+#endif
       let window = UIWindow(windowScene: windowScene)
       window.rootViewController = HamsterAppDependencyContainer.shared.makeRootController()
       window.tintColor = ClawTalkTheme.accent
