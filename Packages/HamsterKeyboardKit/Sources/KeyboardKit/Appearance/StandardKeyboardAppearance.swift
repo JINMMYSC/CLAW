@@ -61,7 +61,7 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
   /// 应用于整个键盘的背景样式。
   open var backgroundStyle: KeyboardBackgroundStyle {
     var style = KeyboardBackgroundStyle.standard
-    style.backgroundColor = UIColor.white.withAlphaComponent(0.001)
+    style.backgroundColor = ClawPanelPalette.keyboardBackground
 
     // 中文九宫格：跟随主题（默认=苹果原生）键盘底色
     if keyboardContext.keyboardType.isChineseNineGrid {

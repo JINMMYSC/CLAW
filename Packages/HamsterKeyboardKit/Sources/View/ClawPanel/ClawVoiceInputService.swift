@@ -10,6 +10,7 @@ public final class ClawVoiceInputService: NSObject {
   private var audioEngine: AVAudioEngine?
   private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
   private var recognitionTask: SFSpeechRecognitionTask?
+  private var sessionGeneration: UInt = 0
 
   /// 是否正在录音
   public private(set) var isRecording = false
@@ -18,6 +19,7 @@ public final class ClawVoiceInputService: NSObject {
   private var streamingSegment: ((String) -> Void)?
   private var streamingError: ((Error) -> Void)?
   private var silenceWorkItem: DispatchWorkItem?
+  private var pendingCleanupWorkItem: DispatchWorkItem?
 
   private override init() {
     super.init()
@@ -40,9 +42,18 @@ public final class ClawVoiceInputService: NSObject {
     return .undetermined
   }
 
+  private var isKeyboardExtensionRuntime: Bool {
+    Bundle.main.bundleURL.pathExtension.lowercased() == "appex"
+  }
+
   /// 开始录音；停止后通过 completion 返回最终识别文本
   public func start(completion: @escaping (Result<String, Error>) -> Void) {
-    stop()
+    guard !isKeyboardExtensionRuntime else {
+      completion(.failure(ClawVoiceError.keyboardExtensionUnsupported))
+      return
+    }
+
+    let generation = resetForNewSession()
     guard let recognizer, recognizer.isAvailable else {
       completion(.failure(ClawVoiceError.recognizerUnavailable))
       return
@@ -59,8 +70,23 @@ public final class ClawVoiceInputService: NSObject {
       completion(.failure(ClawVoiceError.audioUnavailable))
       return
     }
+
+    self.audioEngine = audioEngine
+    self.recognitionRequest = request
     inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
       request.append(buffer)
+    }
+
+    recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+      guard let self, self.sessionGeneration == generation else { return }
+      if let result, result.isFinal {
+        let text = result.bestTranscription.formattedString
+        self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
+        completion(.success(text))
+      } else if let error {
+        self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
+        completion(.failure(error))
+      }
     }
 
     do {
@@ -69,25 +95,10 @@ public final class ClawVoiceInputService: NSObject {
       try session.setActive(true, options: .notifyOthersOnDeactivation)
       audioEngine.prepare()
       try audioEngine.start()
+      isRecording = true
     } catch {
-      inputNode.removeTap(onBus: 0)
+      finishSession(generation, cancelTask: true, clearStreamingCallbacks: true)
       completion(.failure(error))
-      return
-    }
-
-    self.audioEngine = audioEngine
-    self.recognitionRequest = request
-    isRecording = true
-
-    recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-      guard let self else { return }
-      if let result, result.isFinal {
-        self.cleanup()
-        completion(.success(result.bestTranscription.formattedString))
-      } else if error != nil {
-        self.cleanup()
-        completion(.failure(error ?? ClawVoiceError.unknown))
-      }
     }
   }
 
@@ -100,25 +111,58 @@ public final class ClawVoiceInputService: NSObject {
     onSegment: @escaping (String) -> Void,
     onError: @escaping (Error) -> Void
   ) {
-    stop()
+    guard !isKeyboardExtensionRuntime else {
+      onError(ClawVoiceError.keyboardExtensionUnsupported)
+      return
+    }
+
+    let generation = resetForNewSession()
     streamingPartial = onPartial
     streamingSegment = onSegment
     streamingError = onError
 
     guard let recognizer, recognizer.isAvailable else {
+      clearStreamingCallbacks()
       onError(ClawVoiceError.recognizerUnavailable)
       return
     }
 
     let audioEngine = AVAudioEngine()
+    let request = SFSpeechAudioBufferRecognitionRequest()
+    request.shouldReportPartialResults = true
+    request.requiresOnDeviceRecognition = false
+
     let inputNode = audioEngine.inputNode
     let format = inputNode.outputFormat(forBus: 0)
     guard format.sampleRate > 0 else {
+      clearStreamingCallbacks()
       onError(ClawVoiceError.audioUnavailable)
       return
     }
-    inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-      self?.recognitionRequest?.append(buffer)
+
+    self.audioEngine = audioEngine
+    self.recognitionRequest = request
+    inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+      request.append(buffer)
+    }
+
+    recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+      guard let self, self.sessionGeneration == generation else { return }
+      if let result {
+        let text = result.bestTranscription.formattedString
+        if result.isFinal {
+let onSegment = self.streamingSegment
+self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
+onSegment?(text)
+        } else {
+self.restartSilenceTimer(for: generation)
+self.streamingPartial?(text)
+        }
+      } else if let error {
+        let onError = self.streamingError
+        self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
+        onError?(error)
+      }
     }
 
     do {
@@ -127,47 +171,22 @@ public final class ClawVoiceInputService: NSObject {
       try session.setActive(true, options: .notifyOthersOnDeactivation)
       audioEngine.prepare()
       try audioEngine.start()
+      isRecording = true
     } catch {
-      inputNode.removeTap(onBus: 0)
-      onError(error)
-      return
-    }
-
-    self.audioEngine = audioEngine
-    isRecording = true
-
-    let request = SFSpeechAudioBufferRecognitionRequest()
-    request.shouldReportPartialResults = true
-    request.requiresOnDeviceRecognition = false
-    recognitionRequest = request
-    recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-      guard let self else { return }
-      if let result {
-        let text = result.bestTranscription.formattedString
-        if result.isFinal {
-          self.silenceWorkItem?.cancel()
-          self.silenceWorkItem = nil
-          self.cleanup()
-          self.streamingSegment?(text)
-        } else {
-          self.restartSilenceTimer()
-          self.streamingPartial?(text)
-        }
-      } else if let error {
-        self.silenceWorkItem?.cancel()
-        self.silenceWorkItem = nil
-        self.cleanup()
-        self.streamingError?(error)
-      }
+      let callback = streamingError
+      finishSession(generation, cancelTask: true, clearStreamingCallbacks: true)
+      callback?(error)
     }
   }
 
-  /// 静音停顿 1.2s 判定断句：结束当前段，触发 final 结果
-  private func restartSilenceTimer() {
+  /// 静音停顿 1.2s 判定断句：结束当前段，等待 final 结果
+  private func restartSilenceTimer(for generation: UInt) {
     silenceWorkItem?.cancel()
     let item = DispatchWorkItem { [weak self] in
-      guard let self, self.isRecording else { return }
-      self.recognitionRequest?.endAudio()
+      guard let self,
+  self.sessionGeneration == generation,
+  self.isRecording else { return }
+      self.stop()
     }
     silenceWorkItem = item
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: item)
@@ -179,30 +198,78 @@ public final class ClawVoiceInputService: NSObject {
     streamingError = nil
   }
 
-  /// 停止录音，触发最终识别回调
+  /// 停止采集并 endAudio，但保留 recognition task/callback，给 Speech final result 收尾机会。
   public func stop() {
     silenceWorkItem?.cancel()
     silenceWorkItem = nil
-    clearStreamingCallbacks()
-    guard isRecording else { return }
+    pendingCleanupWorkItem?.cancel()
+    pendingCleanupWorkItem = nil
+
+    guard recognitionRequest != nil || recognitionTask != nil || audioEngine != nil else {
+      isRecording = false
+      clearStreamingCallbacks()
+      return
+    }
+
+    let generation = sessionGeneration
     recognitionRequest?.endAudio()
-    audioEngine?.stop()
-    audioEngine?.inputNode.removeTap(onBus: 0)
-    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    if let audioEngine {
+      audioEngine.stop()
+      audioEngine.inputNode.removeTap(onBus: 0)
+    }
     audioEngine = nil
-    recognitionRequest = nil
     isRecording = false
+    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+
+    // 正常情况下 Speech 会很快返回 final；兜底避免无 final 时 task/callback 长期滞留。
+    let cleanup = DispatchWorkItem { [weak self] in
+      guard let self, self.sessionGeneration == generation else { return }
+      self.finishSession(generation, cancelTask: true, clearStreamingCallbacks: true)
+    }
+    pendingCleanupWorkItem = cleanup
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: cleanup)
   }
 
-  private func cleanup() {
+  /// 新会话开始前强制取消上一会话；generation 让上一 task 的迟到 callback 自动失效。
+  @discardableResult
+  private func resetForNewSession() -> UInt {
+    sessionGeneration &+= 1
+    teardown(cancelTask: true, clearStreamingCallbacks: true)
+    return sessionGeneration
+  }
+
+  private func finishSession(
+    _ generation: UInt,
+    cancelTask: Bool,
+    clearStreamingCallbacks: Bool
+  ) {
+    guard sessionGeneration == generation else { return }
+    sessionGeneration &+= 1
+    teardown(cancelTask: cancelTask, clearStreamingCallbacks: clearStreamingCallbacks)
+  }
+
+  private func teardown(cancelTask: Bool, clearStreamingCallbacks: Bool) {
     silenceWorkItem?.cancel()
     silenceWorkItem = nil
-    audioEngine?.stop()
-    audioEngine?.inputNode.removeTap(onBus: 0)
+    pendingCleanupWorkItem?.cancel()
+    pendingCleanupWorkItem = nil
+
+    recognitionRequest?.endAudio()
+    if let audioEngine {
+      audioEngine.stop()
+      audioEngine.inputNode.removeTap(onBus: 0)
+    }
+    if cancelTask {
+      recognitionTask?.cancel()
+    }
+
     audioEngine = nil
     recognitionRequest = nil
     recognitionTask = nil
     isRecording = false
+    if clearStreamingCallbacks {
+      self.clearStreamingCallbacks()
+    }
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
 }
@@ -210,12 +277,14 @@ public final class ClawVoiceInputService: NSObject {
 public enum ClawVoiceError: LocalizedError {
   case recognizerUnavailable
   case audioUnavailable
+  case keyboardExtensionUnsupported
   case unknown
 
   public var errorDescription: String? {
     switch self {
     case .recognizerUnavailable: return "语音识别不可用，请检查系统设置"
     case .audioUnavailable: return "麦克风不可用"
+    case .keyboardExtensionUnsupported: return "键盘扩展无法直接使用麦克风，请切换到系统键盘使用听写"
     case .unknown: return "语音识别失败"
     }
   }

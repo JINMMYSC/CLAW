@@ -205,6 +205,7 @@ public final class ClawPanelOverlayView: UIView {
     micButton.tintColor = ClawPanelPalette.brandBlue
     micButton.backgroundColor = ClawPanelPalette.inputBackground
     micButton.layer.cornerRadius = 18
+    micButton.addTarget(self, action: #selector(micTapped), for: .touchUpInside)
     let micLongPress = UILongPressGestureRecognizer(target: self, action: #selector(micLongPressed(_:)))
     micLongPress.minimumPressDuration = 0.3
     micButton.addGestureRecognizer(micLongPress)
@@ -717,7 +718,41 @@ public final class ClawPanelOverlayView: UIView {
     presentPhotoPicker()
   }
 
-  @objc private func micLongPressed(_ sender: UILongPressGestureRecognizer) {
+  private var isKeyboardExtensionRuntime: Bool {
+  Bundle.main.bundleURL.pathExtension.lowercased() == "appex"
+}
+
+/// 自定义键盘扩展不能可靠直接占用麦克风；切到系统输入法，让用户使用系统听写。
+private func fallbackToSystemDictation() {
+  isMicHeld = false
+  isListening = false
+  ClawVoiceInputService.shared.stop()
+  updateMicUI(recording: false)
+  if let controller = clawParentViewController as? KeyboardInputViewController {
+    controller.selectNextKeyboard()
+    return
+  }
+  showResultMessage("键盘扩展无法直接使用麦克风，请切换到系统键盘后使用听写")
+}
+
+@objc private func micTapped() {
+  guard !isCallActive else { return }
+  if isKeyboardExtensionRuntime {
+    fallbackToSystemDictation()
+    return
+  }
+  if isListening {
+    isMicHeld = false
+    ClawVoiceInputService.shared.stop()
+    isListening = false
+    updateMicUI(recording: false)
+  } else {
+    isMicHeld = true
+    startVoiceInput()
+  }
+}
+
+@objc private func micLongPressed(_ sender: UILongPressGestureRecognizer) {
     switch sender.state {
     case .began:
       guard !isListening, !isCallActive else { return }
@@ -738,11 +773,17 @@ public final class ClawPanelOverlayView: UIView {
   /// 语音输入：按住说话 → STT（zh-Hans）转文字填入输入框
   /// 权限只在主程序申请；键盘扩展只读状态，避免系统权限框在扩展进程闪退
   private func startVoiceInput() {
+    if isKeyboardExtensionRuntime {
+      fallbackToSystemDictation()
+      return
+    }
     switch ClawVoiceInputService.shared.authorizationStatus {
     case .denied:
+      isMicHeld = false
       showResultMessage("麦克风/语音识别权限未开启，请到 ClawTalk 主程序或系统设置中开启")
       return
     case .undetermined:
+      isMicHeld = false
       showResultMessage("请先在 ClawTalk 主程序中授权麦克风与语音识别")
       return
     case .authorized:
@@ -754,6 +795,7 @@ public final class ClawPanelOverlayView: UIView {
     ClawVoiceInputService.shared.start { [weak self] result in
       DispatchQueue.main.async {
         guard let self else { return }
+        self.isMicHeld = false
         self.isListening = false
         self.updateMicUI(recording: false)
         switch result {
@@ -791,6 +833,10 @@ public final class ClawPanelOverlayView: UIView {
 
   private func startCall() {
     guard !isCallActive else { return }
+    if isKeyboardExtensionRuntime {
+      fallbackToSystemDictation()
+      return
+    }
     switch ClawVoiceInputService.shared.authorizationStatus {
     case .denied:
       ClawChatService.shared.postAssistant("麦克风/语音识别权限未开启，请到 ClawTalk 主程序或系统设置中开启")
