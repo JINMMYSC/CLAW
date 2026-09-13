@@ -43,7 +43,7 @@ jobs:
           tar -acf Hamster.xcarchive.tgz Hamster.xcarchive
 
       - name: Upload xcarchive
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Hamster-ios-arm64-xcarchive
           path: Hamster.xcarchive.tgz
