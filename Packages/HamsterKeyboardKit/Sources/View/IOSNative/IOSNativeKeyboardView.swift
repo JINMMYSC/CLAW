@@ -23,8 +23,8 @@ private struct IOSNativeKeyColors {
   let pressed: UIColor
   let foreground: UIColor
 
-  static func solid(_ normal: UIColor, _ foreground: UIColor) -> IOSNativeKeyColors {
-    IOSNativeKeyColors(normal: normal, pressed: iosDarker(normal), foreground: foreground)
+  static func solid(_ normal: UIColor, _ foreground: UIColor, pressed: UIColor? = nil) -> IOSNativeKeyColors {
+    IOSNativeKeyColors(normal: normal, pressed: pressed ?? iosDarker(normal), foreground: foreground)
   }
 }
 
@@ -73,6 +73,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   private var currentPanel: IOSNativePanel = .pinyin9
   private var layoutConstraints: [NSLayoutConstraint] = []
   private var lastLayoutBounds: CGRect = .zero
+  private var lastSafeAreaBottom: CGFloat = -1
   private var subscriptions = Set<AnyCancellable>()
   /// p1 拼音9键 行1第5键：^_^ / 分隔 双态键
   private var separatorEntry: KeyEntry?
@@ -247,8 +248,8 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     guard spec.isSend, spec.tintOverride == nil else { return }
     let hasText = keyboardContext.textDocumentProxy.hasText
     let colors = hasText
-      ? IOSNativeKeyColors.solid(palette.sendBlue, palette.textWhite)
-      : IOSNativeKeyColors.solid(palette.funcGray, palette.textDark)
+      ? IOSNativeKeyColors.solid(palette.sendBlue, palette.textWhite, pressed: palette.sendPressed)
+      : IOSNativeKeyColors.solid(palette.funcGray, palette.textDark, pressed: palette.funcPressed)
     label.text = spec.displayText ?? ""
     entry.button.overlayNormalBG = colors.normal
     entry.button.overlayPressedBG = colors.pressed
@@ -297,32 +298,22 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     spec.displayText != nil
   }
 
-  /// 发送键蓝/灰分界（按 P 图）：03/06/07/08/09 蓝；01/02/04/05 灰
-  private func isBlueSendPanel() -> Bool {
-    [.numberMore, .enUpper, .enLower, .enNumber, .enSymbol].contains(currentPanel)
-  }
-
   /// 按面板 + 按键类型返回固定配色
   private func keyColors(for spec: IOSNativeKey) -> IOSNativeKeyColors {
     // return 键强制配色：搜索/前往/继续=蓝，完成/换行=灰；nil 走面板规则
     if let tint = spec.tintOverride {
       switch tint {
       case .blue:
-        return .solid(palette.sendBlue, palette.textWhite)
+        return .solid(palette.sendBlue, palette.textWhite, pressed: palette.sendPressed)
       case .gray:
-        return .solid(palette.funcGray, palette.textDark)
+        return .solid(palette.funcGray, palette.textDark, pressed: palette.funcPressed)
       }
     }
     if spec.isSend {
-      if isBlueSendPanel() {
-        return .solid(palette.sendBlue, palette.textWhite)
-      }
-      // 灰底黑字
-      return IOSNativeKeyColors(
-        normal: palette.funcGray,
-        pressed: iosDarker(palette.funcGray),
-        foreground: palette.textDark
-      )
+      let active = keyboardContext.textDocumentProxy.hasText
+      return active
+        ? .solid(palette.sendBlue, palette.textWhite, pressed: palette.sendPressed)
+        : .solid(palette.funcGray, palette.textDark, pressed: palette.funcPressed)
     }
     switch spec.action {
     case .space:
@@ -332,13 +323,13 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
         foreground: palette.textDark
       )
     case .backspace:
-      return .solid(palette.funcGray, palette.textDark)
+      return .solid(palette.funcGray, palette.textDark, pressed: palette.funcPressed)
     case .keyboardType, .custom:
       // 03 数字更多第2行第5键「更多」浅灰
       if currentPanel == .numberMore, spec.displayText == "更多" {
         return IOSNativeKeyColors(
           normal: palette.lightGray,
-          pressed: iosDarker(palette.lightGray),
+          pressed: palette.lightGrayPressed,
           foreground: palette.textDark
         )
       }
@@ -367,9 +358,9 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
             foreground: palette.textDark
           )
         }
-        return .solid(palette.funcGray, palette.textDark)
+        return .solid(palette.funcGray, palette.textDark, pressed: palette.funcPressed)
       }
-      return .solid(palette.funcGray, palette.textDark)
+      return .solid(palette.funcGray, palette.textDark, pressed: palette.funcPressed)
     case .character, .chineseNineGrid:
       return IOSNativeKeyColors(
         normal: palette.char,
@@ -377,7 +368,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
         foreground: palette.textDark
       )
     default:
-      return .solid(palette.funcGray, palette.textDark)
+      return .solid(palette.funcGray, palette.textDark, pressed: palette.funcPressed)
     }
   }
 
@@ -405,6 +396,19 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     return 15
   }
 
+  private func overlayFontWeight(for spec: IOSNativeKey) -> UIFont.Weight {
+    if spec.isSend || spec.action == .primary(.return) { return .regular }
+    if spec.isInputAction {
+      return currentPanel.geometry == .nineGrid ? .medium : .regular
+    }
+    switch spec.action {
+    case .keyboardType, .custom, .backspace:
+      return .medium
+    default:
+      return .regular
+    }
+  }
+
   private func isEnglishPanelLanguage() -> Bool {
     switch keyboardContext.keyboardType {
     case .alphabetic, .numeric, .symbolic:
@@ -430,18 +434,18 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
 
   private func iconSpec(for spec: IOSNativeKey) -> IOSNativeIconSpec? {
     if spec.action == .backspace {
-      return IOSNativeIconSpec(asset: "clawIconBackspace", size: CGSize(width: 25, height: 22))
+      return IOSNativeIconSpec(systemName: "delete.left", size: CGSize(width: 24, height: 20))
     }
     let text = spec.displayText ?? ""
     if text == "\u{2B06}" || text == "⬆" {
-      // 双击 Shift 进入大写锁定：P 图为实心箭头+底部横线（SF Symbol capslock.fill 兜底）
       if isCapsLocked {
-        return IOSNativeIconSpec(systemName: "capslock.fill", size: CGSize(width: 20, height: 23))
+        return IOSNativeIconSpec(systemName: "capslock.fill", size: CGSize(width: 20, height: 22))
       }
-      return IOSNativeIconSpec(asset: "clawIconShift", size: CGSize(width: 20, height: 23))
+      let symbol = currentPanel == .enUpper ? "shift.fill" : "shift"
+      return IOSNativeIconSpec(systemName: symbol, size: CGSize(width: 20, height: 22))
     }
     if text == "😀" {
-      return IOSNativeIconSpec(asset: "clawIconEmoji", size: CGSize(width: 24, height: 24))
+      return IOSNativeIconSpec(systemName: "face.smiling", size: CGSize(width: 22, height: 22))
     }
     return nil
   }
@@ -454,7 +458,9 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
       if let asset = icon.asset {
         image = UIImage(named: asset, in: .hamsterKeyboard, with: .none)
       } else if let systemName = icon.systemName {
-        image = UIImage(systemName: systemName)
+        let pointSize = min(icon.size.width, icon.size.height)
+        let configuration = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .regular, scale: .medium)
+        image = UIImage(systemName: systemName, withConfiguration: configuration)
       }
       if let image = image {
         let view: UIImageView
@@ -493,7 +499,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     label.numberOfLines = 1
     label.isUserInteractionEnabled = false
     label.translatesAutoresizingMaskIntoConstraints = false
-    label.font = UIFont.systemFont(ofSize: overlayFontSize(for: spec), weight: .regular)
+    label.font = UIFont.systemFont(ofSize: overlayFontSize(for: spec), weight: overlayFontWeight(for: spec))
     label.textColor = colors.foreground
     label.backgroundColor = colors.normal
     label.layer.cornerRadius = IOSNativeDesign.radius
@@ -519,7 +525,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   private func refreshKeyShadows() {
     for entry in entries {
       entry.button.layer.shadowColor = palette.keyShadow.cgColor
-      entry.button.layer.shadowOpacity = IOSNativeDesign.keyShadowOpacity
+      entry.button.layer.shadowOpacity = palette.keyShadowOpacity
       entry.button.layer.shadowOffset = CGSize(width: 0, height: IOSNativeDesign.keyShadowOffsetY)
       entry.button.layer.shadowRadius = IOSNativeDesign.keyShadowRadius
     }
@@ -776,8 +782,10 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
       updateSeparatorKeyState()
       updateChatSendKeyState()
     }
-    if lastLayoutBounds == bounds { return }
+    let safeBottom = safeAreaInsets.bottom
+    if lastLayoutBounds == bounds, abs(lastSafeAreaBottom - safeBottom) < 0.5 { return }
     lastLayoutBounds = bounds
+    lastSafeAreaBottom = safeBottom
     applyLayoutConstraints()
     updateLabelFonts()
   }
@@ -789,31 +797,37 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     NSLayoutConstraint.deactivate(layoutConstraints)
     layoutConstraints.removeAll()
 
-    let sx = bounds.width / IOSNativeDesign.width
+    let metrics = IOSNativeSystemMetrics(viewWidth: bounds.width, safeAreaBottom: safeAreaInsets.bottom)
     let designH = IOSNativeDesign.height(for: currentPanel)
 
     for entry in entries {
       let r = entry.spec.rect
       let b = entry.button
-      layoutConstraints.append(b.leadingAnchor.constraint(equalTo: leadingAnchor, constant: r.minX * sx))
-      layoutConstraints.append(b.widthAnchor.constraint(equalToConstant: r.width * sx))
+      layoutConstraints.append(b.leadingAnchor.constraint(equalTo: leadingAnchor, constant: metrics.x(r.minX)))
+      layoutConstraints.append(b.widthAnchor.constraint(equalToConstant: metrics.width(r.width)))
       if r.maxY >= designH - 0.01 {
-        // 末行/跨行按键：顶部固定 + 底部贴视图底（决定总高度）
         layoutConstraints.append(b.topAnchor.constraint(equalTo: topAnchor, constant: r.minY))
-        layoutConstraints.append(b.bottomAnchor.constraint(equalTo: bottomAnchor))
+        layoutConstraints.append(b.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -metrics.bottomKeyInset))
       } else {
         layoutConstraints.append(b.topAnchor.constraint(equalTo: topAnchor, constant: r.minY))
         layoutConstraints.append(b.heightAnchor.constraint(equalToConstant: r.height))
       }
+      b.buttonContentView.layer.cornerRadius = metrics.cornerRadius
+      b.layer.cornerRadius = metrics.cornerRadius
+      entry.label?.layer.cornerRadius = metrics.cornerRadius
+      entry.icon?.layer.cornerRadius = metrics.cornerRadius
     }
     NSLayoutConstraint.activate(layoutConstraints)
   }
 
   private func updateLabelFonts() {
-    let sx = bounds.width / IOSNativeDesign.width
+    let metrics = IOSNativeSystemMetrics(viewWidth: bounds.width, safeAreaBottom: safeAreaInsets.bottom)
     for entry in entries {
       guard let label = entry.label else { continue }
-      label.font = UIFont.systemFont(ofSize: overlayFontSize(for: entry.spec) * sx, weight: .regular)
+      label.font = UIFont.systemFont(
+        ofSize: metrics.fontSize(overlayFontSize(for: entry.spec)),
+        weight: overlayFontWeight(for: entry.spec)
+      )
     }
   }
 }

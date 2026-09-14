@@ -23,7 +23,7 @@ public enum IOSNativeDesign {
   public static let width: CGFloat = 375
   /// Stock iOS keeps the outer edge tight and uses a near-6pt gutter between key caps.
   public static let paddingH: CGFloat = 3
-  public static let paddingV: CGFloat = 6
+  public static let paddingV: CGFloat = 5.5
   public static let gapH: CGFloat = 6
   public static let radius: CGFloat = 5.5
 
@@ -33,11 +33,11 @@ public enum IOSNativeDesign {
   public static let keyShadowRadius: CGFloat = 0
 
   public static func rowH(for panel: IOSNativePanel) -> CGFloat {
-    panel.geometry == .nineGrid ? 48 : 42
+    panel.geometry == .nineGrid ? 48 : 43
   }
 
   public static func gapV(for panel: IOSNativePanel) -> CGFloat {
-    panel.geometry == .nineGrid ? 7 : 11
+    panel.geometry == .nineGrid ? 7 : 10
   }
 
   public static func height(for panel: IOSNativePanel) -> CGFloat {

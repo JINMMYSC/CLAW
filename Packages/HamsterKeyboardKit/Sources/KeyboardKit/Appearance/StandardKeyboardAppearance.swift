@@ -61,18 +61,20 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
   /// 应用于整个键盘的背景样式。
   open var backgroundStyle: KeyboardBackgroundStyle {
     var style = KeyboardBackgroundStyle.standard
-    style.backgroundColor = ClawPanelPalette.keyboardBackground
 
-    // 中文九宫格：跟随主题（默认=苹果原生）键盘底色
+    // Existing “iOS 原生布局” stays system-like even when a custom Hamster theme is enabled.
+    if keyboardContext.useIOSNativeLayout {
+      style.backgroundColor = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme).board
+      return style
+    }
+
+    style.backgroundColor = ClawPanelPalette.keyboardBackground
     if keyboardContext.keyboardType.isChineseNineGrid {
       style.backgroundColor = ClawPanelPalette.keyboardBackground
     }
-
-    // 开启键盘配色
     if let hamsterColor = hamsterColor() {
       style.backgroundColor = hamsterColor.backColor
     }
-
     return style
   }
 
@@ -204,30 +206,23 @@ open class StandardKeyboardAppearance: KeyboardAppearance {
   open var candidateBarStyle: CandidateBarStyle {
     // ClawTalk IOS 原生布局：候选栏 P 图配色，底色/文字跟随系统深浅色（与键盘板同色）
     if keyboardContext.useIOSNativeLayout {
-      let dark = keyboardContext.hasDarkColorScheme
-      // 候选栏底色统一取键盘按钮间隙色（palette.board），与键盘板完全同色
-      let boardColor = IOSNativePalette.current(dark: dark).board
-      let textColor = dark ? UIColor.white : UIColor(red: 17/255, green: 17/255, blue: 17/255, alpha: 1)
-      let grayColor = UIColor(red: 142/255, green: 142/255, blue: 147/255, alpha: 1)
-      let preferredBackground = dark
-        ? UIColor(red: 44/255, green: 44/255, blue: 46/255, alpha: 1)
-        : UIColor.white
+      let palette = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme)
       return CandidateBarStyle(
-        phoneticTextColor: textColor,
-        phoneticTextFont: UIFont.systemFont(ofSize: 15),
-        preferredCandidateTextColor: textColor,
-        preferredCandidateCommentTextColor: grayColor,
-        preferredCandidateBackgroundColor: preferredBackground,
-        preferredCandidateLabelColor: grayColor,
-        candidateTextColor: textColor,
-        candidateCommentTextColor: grayColor,
-        candidateLabelColor: grayColor,
-        candidateLabelFont: UIFont.systemFont(ofSize: 11),
-        candidateTextFont: UIFont.systemFont(ofSize: 17),
-        candidateCommentFont: UIFont.systemFont(ofSize: 12),
-        toolbarButtonFrontColor: textColor,
+        phoneticTextColor: palette.secondaryText,
+        phoneticTextFont: UIFont.systemFont(ofSize: 13, weight: .regular),
+        preferredCandidateTextColor: palette.textDark,
+        preferredCandidateCommentTextColor: palette.secondaryText,
+        preferredCandidateBackgroundColor: palette.candidateSelected,
+        preferredCandidateLabelColor: palette.secondaryText,
+        candidateTextColor: palette.textDark,
+        candidateCommentTextColor: palette.secondaryText,
+        candidateLabelColor: palette.secondaryText,
+        candidateLabelFont: UIFont.systemFont(ofSize: 10, weight: .regular),
+        candidateTextFont: UIFont.systemFont(ofSize: 18, weight: .regular),
+        candidateCommentFont: UIFont.systemFont(ofSize: 11, weight: .regular),
+        toolbarButtonFrontColor: palette.textDark,
         toolbarButtonBackgroundColor: .clear,
-        toolbarButtonPressedBackgroundColor: boardColor
+        toolbarButtonPressedBackgroundColor: palette.funcPressed
       )
     }
 
