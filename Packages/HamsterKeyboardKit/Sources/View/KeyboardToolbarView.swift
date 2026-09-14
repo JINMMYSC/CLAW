@@ -303,9 +303,16 @@ class KeyboardToolbarView: NibLessView {
     self.style = appearance.candidateBarStyle
     // 工具栏/功能行背景跟随主题（IOS 原生布局时与键盘板同色）
     if keyboardContext.useIOSNativeLayout {
-      backgroundColor = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme).board
+      let palette = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme)
+      backgroundColor = palette.board
+      commonFunctionBar.backgroundColor = palette.board
+      candidateBarView.backgroundColor = palette.board
+      eyeButton.tintColor = palette.textDark
+      emojiButton.tintColor = palette.textDark
+      dismissKeyboardButton.tintColor = palette.textDark
     } else {
       backgroundColor = ClawPanelPalette.toolbarBackground
+      commonFunctionBar.backgroundColor = .clear
     }
     candidateBarView.setStyle(self.style)
     candidateBarView.backgroundColor = backgroundColor
@@ -317,6 +324,24 @@ class KeyboardToolbarView: NibLessView {
   /// 三入口按钮选中态（跟随当前面板 + 主题取色）
   func updateEntryButtonStates() {
     let tab = keyboardContext.clawPanelTab
+    if keyboardContext.useIOSNativeLayout {
+      let palette = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme)
+      let aiSelected = tab == 0
+      aiButton.glassTintColor = aiSelected ? palette.toolbarControlSelected : palette.toolbarControl
+      aiButton.setTitleColor(palette.textDark, for: .normal)
+
+      let helpSelected = tab == 1
+      helpReplyButton.backgroundColor = helpSelected ? palette.toolbarControlSelected : palette.toolbarControl
+      helpReplyButton.setTitleColor(palette.textDark, for: .normal)
+
+      let superSelected = tab == 2
+      superTalkButton.backgroundColor = superSelected ? palette.toolbarControlSelected : palette.toolbarControl
+      superTalkButton.setTitleColor(palette.textDark, for: .normal)
+      eyeButton.tintColor = palette.textDark
+      emojiButton.tintColor = palette.textDark
+      dismissKeyboardButton.tintColor = palette.textDark
+      return
+    }
     let aiSelected = tab == 0
     aiButton.glassTintColor = aiSelected ? ClawPanelPalette.brandBlue : ClawPanelPalette.aiCircle
     aiButton.setTitleColor(aiSelected ? .white : ClawPanelPalette.deepBlue, for: .normal)
@@ -334,7 +359,12 @@ class KeyboardToolbarView: NibLessView {
   func updateEyeButtonState() {
     let collecting = ClawTalkPrivacyService.shared.isCollectionEnabled
     eyeButton.setImage(UIImage(systemName: collecting ? "eye" : "eye.slash"), for: .normal)
-    eyeButton.tintColor = collecting ? ClawPanelPalette.deepBlue : .systemOrange
+    if keyboardContext.useIOSNativeLayout {
+      let palette = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme)
+      eyeButton.tintColor = collecting ? palette.textDark : .systemOrange
+    } else {
+      eyeButton.tintColor = collecting ? ClawPanelPalette.deepBlue : .systemOrange
+    }
   }
 
   /// 实时建议条显隐：有建议 + 面板收起 + 有输入时显示

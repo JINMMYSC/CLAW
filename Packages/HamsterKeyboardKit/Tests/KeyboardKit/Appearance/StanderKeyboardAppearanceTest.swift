@@ -36,7 +36,12 @@ final class StanderKeyboardAppearanceTest: XCTestCase {
     print("\(key.labelText) fontSize: \(fontSize), fontWeight: \(String(describing: fontWeight))")
   }
 
-  func testPerformanceExample() throws {
+  func testDefaultBackgroundStyleIsOpaque() throws {
+  let appearance = StandardKeyboardAppearance(keyboardContext: .preview)
+  XCTAssertEqual(appearance.backgroundStyle.backgroundColor.cgColor.alpha, 1, accuracy: 0.001)
+}
+
+func testPerformanceExample() throws {
     // This is an example of a performance test case.
     self.measure {
       // Put the code you want to measure the time of here.

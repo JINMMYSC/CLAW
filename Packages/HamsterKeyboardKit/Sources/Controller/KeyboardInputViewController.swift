@@ -44,6 +44,7 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
     // setupNextKeyboardBehavior()
     // KeyboardUrlOpener.shared.controller = self
     setupCombineRIMEInput()
+    syncKeyboardBackgroundColor()
 
     // ClawTalk: 面板输入桥接（面板输入框聚焦时按键直输进面板，否则直接上屏）
     ClawPanelInputBridge.shared.sendText = { [weak self] text in
@@ -174,6 +175,7 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
   open func viewWillSyncWithContext() {
     keyboardContext.sync(with: self)
     keyboardTextContext.sync(with: self)
+    syncKeyboardBackgroundColor()
   }
 
   // MARK: - Combine
@@ -652,7 +654,7 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
   }
 
   open func selectNextKeyboard() {
-    // advanceToNextInputMode()
+    advanceToNextInputMode()
   }
 
   open func selectNextLocale() {
@@ -891,6 +893,18 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
 // MARK: - Private Functions
 
 private extension KeyboardInputViewController {
+  /// 同步系统 input view / safe area 与当前键盘主题背景，避免底部透出系统颜色。
+  func syncKeyboardBackgroundColor() {
+    let backgroundColor: UIColor
+    if keyboardContext.useIOSNativeLayout {
+      backgroundColor = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme).board
+    } else {
+      backgroundColor = keyboardAppearance.backgroundStyle.backgroundColor ?? ClawPanelPalette.keyboardBackground
+    }
+    view.backgroundColor = backgroundColor
+    inputView?.backgroundColor = backgroundColor
+  }
+
   /// 刷新属性
   func refreshProperties() {
     refreshLayoutProvider()

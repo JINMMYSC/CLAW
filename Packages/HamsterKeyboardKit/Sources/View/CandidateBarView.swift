@@ -174,8 +174,12 @@ public class CandidateBarView: NibLessView {
 
   /// 激活视图约束
   override public func activateViewConstraints() {
-    let buttonInsets = layoutConfig.buttonInsets
-    let codingAreaHeight: CGFloat = keyboardContext.useIOSNativeLayout ? 15 : keyboardContext.heightOfCodingArea
+    var buttonInsets = layoutConfig.buttonInsets
+    if keyboardContext.useIOSNativeLayout {
+      buttonInsets.left = 8
+      buttonInsets.right = 4
+    }
+    let codingAreaHeight: CGFloat = keyboardContext.useIOSNativeLayout ? 20 : keyboardContext.heightOfCodingArea
     let controlStateHeight: CGFloat = keyboardContext.heightOfToolbar - ((keyboardContext.enableEmbeddedInputMode && !keyboardContext.useIOSNativeLayout) ? 0 : codingAreaHeight)
     let candidatesView = keyboardContext.swipePaging ? candidatesArea : candidatesPagingArea
 
@@ -215,7 +219,7 @@ public class CandidateBarView: NibLessView {
           separatorLine.topAnchor.constraint(equalTo: syllableChipsView.bottomAnchor),
           separatorLine.leadingAnchor.constraint(equalTo: leadingAnchor),
           separatorLine.trailingAnchor.constraint(equalTo: trailingAnchor),
-          separatorLine.heightAnchor.constraint(equalToConstant: 1)
+          separatorLine.heightAnchor.constraint(equalToConstant: 0.5)
         ])
       }
       if keyboardContext.swipePaging {
@@ -257,12 +261,11 @@ public class CandidateBarView: NibLessView {
     stateImageView.tintColor = style.candidateTextColor
 
     if keyboardContext.useIOSNativeLayout {
-      // 分隔线：浅色 #C7C7CC / 深色 #48484A
-      separatorLine.backgroundColor = UIColor { trait in
-        trait.userInterfaceStyle == .dark
-          ? UIColor(red: 72 / 255, green: 72 / 255, blue: 74 / 255, alpha: 1)
-          : UIColor(red: 199 / 255, green: 199 / 255, blue: 204 / 255, alpha: 1)
-      }
+      let palette = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme)
+      backgroundColor = palette.board
+      separatorLine.backgroundColor = palette.separator
+      verticalLine.backgroundColor = palette.separator
+      stateImageView.tintColor = palette.secondaryText
       updateSyllableChips()
     }
 
@@ -401,9 +404,9 @@ final class SyllableChipsView: UIScrollView {
       button.setTitleColor(textColor, for: .normal)
       button.setTitleColor(textColor, for: .highlighted)
       button.backgroundColor = isSelected ? selectedBackgroundColor : .clear
-      button.layer.cornerRadius = 6
+      button.layer.cornerRadius = 5
       button.clipsToBounds = true
-      button.contentEdgeInsets = UIEdgeInsets(top: 2, left: 8, bottom: 2, right: 8)
+      button.contentEdgeInsets = UIEdgeInsets(top: 1.5, left: 7, bottom: 1.5, right: 7)
       button.tag = index
       button.addTarget(self, action: #selector(chipTapped(_:)), for: .touchUpInside)
       button.translatesAutoresizingMaskIntoConstraints = false

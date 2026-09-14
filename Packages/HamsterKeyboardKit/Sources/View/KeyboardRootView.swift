@@ -239,7 +239,11 @@ class KeyboardRootView: NibLessView {
   }
 
   override func setupAppearance() {
-    backgroundColor = appearance.backgroundStyle.backgroundColor
+    if keyboardContext.useIOSNativeLayout {
+      backgroundColor = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme).board
+    } else {
+      backgroundColor = appearance.backgroundStyle.backgroundColor
+    }
     contentMode = .redraw
   }
 
