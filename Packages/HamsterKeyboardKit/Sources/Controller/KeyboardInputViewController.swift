@@ -899,7 +899,7 @@ private extension KeyboardInputViewController {
     if keyboardContext.useIOSNativeLayout {
       backgroundColor = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme).board
     } else {
-      backgroundColor = keyboardAppearance.backgroundStyle.backgroundColor
+      backgroundColor = keyboardAppearance.backgroundStyle.backgroundColor ?? ClawPanelPalette.keyboardBackground
     }
     view.backgroundColor = backgroundColor
     inputView?.backgroundColor = backgroundColor
