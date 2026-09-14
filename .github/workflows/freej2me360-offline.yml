@@ -1,0 +1,76 @@
+name: Build FreeJ2ME 360x360 Offline EXE
+
+on:
+  push:
+    branches:
+      - tool/freej2me360-offline
+    paths:
+      - 'tools/freej2me360/**'
+      - '.github/workflows/freej2me360-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: tools/freej2me360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+
+      - name: Download FreeJ2ME-Plus 1.52
+        run: |
+          New-Item -ItemType Directory -Force -Path assets | Out-Null
+          $zip = Join-Path $PWD 'freej2me-v1.52.zip'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/TASEmulators/freej2me-plus/releases/download/1.52/freej2me-v1.52.zip' -OutFile $zip
+          $unpack = Join-Path $PWD 'fj2me-unpack'
+          if (Test-Path $unpack) { Remove-Item -Recurse -Force $unpack }
+          Expand-Archive -LiteralPath $zip -DestinationPath $unpack -Force
+          $jar = Get-ChildItem -Path $unpack -Recurse -File -Filter '*.jar' | Where-Object { $_.Name -notmatch 'lr|libretro' } | Select-Object -First 1
+          if (-not $jar) { throw 'Could not find standalone FreeJ2ME jar in release archive.' }
+          Copy-Item -LiteralPath $jar.FullName -Destination 'assets/freej2me_plus.jar' -Force
+          if ((Get-Item 'assets/freej2me_plus.jar').Length -lt 500000) { throw 'FreeJ2ME jar is unexpectedly small.' }
+
+      - name: Download Eclipse Temurin 17 Windows x64 JRE
+        run: |
+          $jre = Join-Path $PWD 'assets/temurin17-jre-win64.zip'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jre/hotspot/normal/eclipse' -OutFile $jre
+          if ((Get-Item $jre).Length -lt 30000000) { throw 'Temurin JRE archive is unexpectedly small.' }
+          $test = Join-Path $PWD 'jre-test'
+          if (Test-Path $test) { Remove-Item -Recurse -Force $test }
+          Expand-Archive -LiteralPath $jre -DestinationPath $test -Force
+          $javaw = Get-ChildItem -Path $test -Recurse -File -Filter 'javaw.exe' | Select-Object -First 1
+          if (-not $javaw) { throw 'Downloaded JRE does not contain javaw.exe.' }
+          Remove-Item -Recurse -Force $test
+
+      - name: Build single-file Windows GUI executable
+        run: |
+          go build -trimpath -ldflags '-H=windowsgui -s -w' -o FreeJ2ME-360x360-Offline.exe .
+          if (-not (Test-Path 'FreeJ2ME-360x360-Offline.exe')) { throw 'EXE build failed.' }
+          $size = (Get-Item 'FreeJ2ME-360x360-Offline.exe').Length
+          if ($size -lt 30000000) { throw "EXE is unexpectedly small: $size bytes" }
+          $hash = (Get-FileHash 'FreeJ2ME-360x360-Offline.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  FreeJ2ME-360x360-Offline.exe" | Set-Content -Encoding ascii 'FreeJ2ME-360x360-Offline.sha256.txt'
+          Write-Host "Built $size bytes SHA256 $hash"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreeJ2ME-360x360-Offline-Windows-x64
+          path: |
+            tools/freej2me360/FreeJ2ME-360x360-Offline.exe
+            tools/freej2me360/FreeJ2ME-360x360-Offline.sha256.txt
+          if-no-files-found: error
+          retention-days: 7
