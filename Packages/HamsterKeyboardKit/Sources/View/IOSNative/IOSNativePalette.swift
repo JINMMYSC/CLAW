@@ -62,8 +62,11 @@ struct IOSNativePalette {
       candidateSelected = iosRGB(0x2C2C2E)
       toolbarControl = iosRGB(0x2C2C2E)
       toolbarControlSelected = iosRGB(0x48484A)
-      keyShadow = UIColor.black
-      keyShadowOpacity = 0.22
+      // IOSNativeButton restores the legacy 0.32 layer opacity after a press.
+      // Keep that layer opacity stable and encode the calibrated dark/light
+      // difference in the shadow color alpha so the shadow does not jump.
+      keyShadow = UIColor.black.withAlphaComponent(0.6875)
+      keyShadowOpacity = 0.32
     } else {
       board = iosRGB(0xD1D4DA)
       char = UIColor.white
@@ -81,8 +84,8 @@ struct IOSNativePalette {
       candidateSelected = UIColor.white
       toolbarControl = iosRGB(0xE4E7EB)
       toolbarControlSelected = UIColor.white
-      keyShadow = iosRGB(0x7A7F87)
-      keyShadowOpacity = 0.28
+      keyShadow = iosRGB(0x7A7F87).withAlphaComponent(0.875)
+      keyShadowOpacity = 0.32
     }
   }
 
