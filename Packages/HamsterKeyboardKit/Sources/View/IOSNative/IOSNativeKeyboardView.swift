@@ -39,6 +39,7 @@ private class IOSNativeButton: KeyboardButton {
 
   override func updateButtonStyle(isPressed: Bool) {
     super.updateButtonStyle(isPressed: isPressed)
+    layer.shadowOpacity = isPressed ? 0.10 : IOSNativeDesign.keyShadowOpacity
     if let label = overlayLabel {
       label.backgroundColor = isPressed ? (overlayPressedBG ?? overlayNormalBG) : overlayNormalBG
       label.textColor = isPressed ? (overlayPressedFG ?? overlayNormalFG) : overlayNormalFG
@@ -152,9 +153,10 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   override public func setupAppearance() {
     backgroundColor = palette.board
     contentMode = .redraw
+    refreshKeyShadows()
   }
 
-  /// 高度按当前面板纵向几何（9键族 4+3*(50+6)+50=222；紧凑族 4+3*(46+10)+46=218）
+  /// 高度按当前面板纵向几何，并保留与系统键盘一致的上下留白。
   /// 与 EmojisKeyboard 相同策略，让系统按内容高度撑起键盘（否则键盘高度崩溃为空白）
   override public var intrinsicContentSize: CGSize {
     CGSize(width: UIView.noIntrinsicMetric, height: IOSNativeDesign.height(for: currentPanel))
@@ -203,11 +205,14 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     separatorEntry = entries.first { $0.spec.displayText == "^_^" }
     sendReturnEntry = entries.first { $0.spec.isSend }
     selectPinyinEntry = entries.first { $0.spec.displayText == "选拼音" }
-    // 修复 P 图圆角：底色层显式设置圆角（appearance.style 未配时默认直角）
+    // iOS 键帽：固定圆角 + 1pt 底部阴影，避免第三方主题覆盖原生模式的层次感。
     for entry in entries {
       entry.button.buttonContentView.layer.cornerRadius = IOSNativeDesign.radius
       entry.button.buttonContentView.layer.masksToBounds = true
+      entry.button.layer.cornerRadius = IOSNativeDesign.radius
+      entry.button.layer.masksToBounds = false
     }
+    refreshKeyShadows()
     refreshOverlays()
     setNeedsLayout()
   }
@@ -377,27 +382,27 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   }
 
   private func overlayFontSize(for spec: IOSNativeKey) -> CGFloat {
-    if spec.isSend { return 14 }
-    if spec.action == .primary(.return) { return 14 }
+    if spec.isSend { return 16 }
+    if spec.action == .primary(.return) { return 16 }
     let text = spec.displayText ?? ""
     switch text {
-    case "⌫": return 16
-    case "空格", "space": return 13
+    case "⌫": return 17
+    case "空格", "space": return 16
     case "😀": return 20
-    case "⬆": return 16
-    case "，。？！": return 14
-    case ". , :", ". . :": return 15
-    case "^_^": return 15
+    case "⬆": return 17
+    case "，。？！": return 15
+    case ". , :", ". . :": return 16
+    case "^_^": return 16
     default: break
     }
     if spec.isInputAction {
-      // 9键面板小字号；英文/10列符号面板大字号
+      // Apple 10-key labels are smaller than QWERTY, while QWERTY letters use the large system-key cap size.
       if currentPanel == .pinyin9 || currentPanel == .number || currentPanel == .numberMore {
-        return 14
+        return 17
       }
-      return 18
+      return 22
     }
-    return 14
+    return 15
   }
 
   private func isEnglishPanelLanguage() -> Bool {
@@ -488,7 +493,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     label.numberOfLines = 1
     label.isUserInteractionEnabled = false
     label.translatesAutoresizingMaskIntoConstraints = false
-    label.font = UIFont.systemFont(ofSize: overlayFontSize(for: spec))
+    label.font = UIFont.systemFont(ofSize: overlayFontSize(for: spec), weight: .regular)
     label.textColor = colors.foreground
     label.backgroundColor = colors.normal
     label.layer.cornerRadius = IOSNativeDesign.radius
@@ -509,6 +514,16 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
   }
 
   // MARK: - 覆盖层配色刷新
+
+  /// 系统键盘键帽有一条非常轻的底部阴影；原生模式统一由这里维护，深浅色切换时同步更新。
+  private func refreshKeyShadows() {
+    for entry in entries {
+      entry.button.layer.shadowColor = palette.keyShadow.cgColor
+      entry.button.layer.shadowOpacity = IOSNativeDesign.keyShadowOpacity
+      entry.button.layer.shadowOffset = CGSize(width: 0, height: IOSNativeDesign.keyShadowOffsetY)
+      entry.button.layer.shadowRadius = IOSNativeDesign.keyShadowRadius
+    }
+  }
 
   /// 统一刷新所有覆盖层配色（深浅色切换 / rebuild 后调用）
   /// send / 分隔 两键有独立动态配色，跳过不覆盖
@@ -798,7 +813,7 @@ public class IOSNativeKeyboardView: KeyboardTouchView {
     let sx = bounds.width / IOSNativeDesign.width
     for entry in entries {
       guard let label = entry.label else { continue }
-      label.font = UIFont.systemFont(ofSize: overlayFontSize(for: entry.spec) * sx)
+      label.font = UIFont.systemFont(ofSize: overlayFontSize(for: entry.spec) * sx, weight: .regular)
     }
   }
 }

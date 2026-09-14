@@ -35,28 +35,31 @@ struct IOSNativePalette {
   let textDark: UIColor
   let textWhite: UIColor
   let separator: UIColor
+  let keyShadow: UIColor
 
   init(dark: Bool) {
     if dark {
       board = iosRGB(0x1C1C1E)
       char = iosRGB(0x636366)
-      charPressed = iosRGB(0x48484A)
+      charPressed = iosRGB(0x4A4A4D)
       funcGray = iosRGB(0x3A3A3C)
       lightGray = iosRGB(0x48484A)
       sendBlue = iosRGB(0x0A84FF)
       textDark = UIColor.white
       textWhite = UIColor.white
       separator = iosRGB(0x48484A)
+      keyShadow = UIColor.black
     } else {
-      board = iosRGB(0xD1D4D9)
+      board = iosRGB(0xD1D3D9)
       char = UIColor.white
-      charPressed = iosRGB(0xE8ECF0)
-      funcGray = iosRGB(0xAAB0BA)
-      lightGray = iosRGB(0xE8ECF0)
+      charPressed = iosRGB(0xB8BDC6)
+      funcGray = iosRGB(0xADB3BC)
+      lightGray = iosRGB(0xE2E5E9)
       sendBlue = iosRGB(0x007AFF)
       textDark = UIColor.black
       textWhite = UIColor.white
       separator = iosRGB(0xC7C7CC)
+      keyShadow = iosRGB(0x868B93)
     }
   }
 

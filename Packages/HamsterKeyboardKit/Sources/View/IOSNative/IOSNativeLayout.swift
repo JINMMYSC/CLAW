@@ -19,22 +19,29 @@ public enum IOSNativeGeometry {
 }
 
 public enum IOSNativeDesign {
+  /// Apple iPhone keyboard reference canvas. Horizontal values scale with the real input-view width.
   public static let width: CGFloat = 375
-  public static let paddingH: CGFloat = 3.5
-  public static let paddingV: CGFloat = 4
-  public static let gapH: CGFloat = 5.5
-  public static let radius: CGFloat = 6
+  /// Stock iOS keeps the outer edge tight and uses a near-6pt gutter between key caps.
+  public static let paddingH: CGFloat = 3
+  public static let paddingV: CGFloat = 6
+  public static let gapH: CGFloat = 6
+  public static let radius: CGFloat = 5.5
+
+  /// Subtle one-point key shadow used by the system keyboard to separate caps from the board.
+  public static let keyShadowOffsetY: CGFloat = 1
+  public static let keyShadowOpacity: Float = 0.32
+  public static let keyShadowRadius: CGFloat = 0
 
   public static func rowH(for panel: IOSNativePanel) -> CGFloat {
-    panel.geometry == .nineGrid ? 50 : 46
+    panel.geometry == .nineGrid ? 48 : 42
   }
 
   public static func gapV(for panel: IOSNativePanel) -> CGFloat {
-    panel.geometry == .nineGrid ? 6 : 10
+    panel.geometry == .nineGrid ? 7 : 11
   }
 
   public static func height(for panel: IOSNativePanel) -> CGFloat {
-    paddingV + 3 * (rowH(for: panel) + gapV(for: panel)) + rowH(for: panel)
+    paddingV + 3 * (rowH(for: panel) + gapV(for: panel)) + rowH(for: panel) + paddingV
   }
 }
 

@@ -895,7 +895,12 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
 private extension KeyboardInputViewController {
   /// 同步系统 input view / safe area 与当前键盘主题背景，避免底部透出系统颜色。
   func syncKeyboardBackgroundColor() {
-    let backgroundColor = keyboardAppearance.backgroundStyle.backgroundColor
+    let backgroundColor: UIColor
+    if keyboardContext.useIOSNativeLayout {
+      backgroundColor = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme).board
+    } else {
+      backgroundColor = keyboardAppearance.backgroundStyle.backgroundColor
+    }
     view.backgroundColor = backgroundColor
     inputView?.backgroundColor = backgroundColor
   }
