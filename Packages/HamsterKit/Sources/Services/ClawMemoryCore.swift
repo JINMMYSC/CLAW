@@ -169,6 +169,8 @@ public struct ClawSkillDefinition: Codable, Identifiable, Equatable {
   public var version: Int
   public var enabled: Bool
   public var permissions: [String]
+  /// 手机端 Evolution Engine 从真实采用结果中学习出的附加规则。
+  public var learnedDirective: String?
   public var acceptedCount: Int
   public var regeneratedCount: Int
   public var editedCount: Int
@@ -181,6 +183,7 @@ public struct ClawSkillDefinition: Codable, Identifiable, Equatable {
     version: Int = 1,
     enabled: Bool = true,
     permissions: [String] = [],
+    learnedDirective: String? = nil,
     acceptedCount: Int = 0,
     regeneratedCount: Int = 0,
     editedCount: Int = 0
@@ -192,9 +195,15 @@ public struct ClawSkillDefinition: Codable, Identifiable, Equatable {
     self.version = version
     self.enabled = enabled
     self.permissions = permissions
+    self.learnedDirective = learnedDirective
     self.acceptedCount = acceptedCount
     self.regeneratedCount = regeneratedCount
     self.editedCount = editedCount
+  }
+
+  public var effectivePrompt: String {
+    guard let learnedDirective, !learnedDirective.isEmpty else { return systemPrompt }
+    return systemPrompt + "\n\n用户长期反馈学习规则：\n" + learnedDirective
   }
 }
 
@@ -633,6 +642,31 @@ public final class ClawMemoryStore {
       }
       try saveSkill(skill)
     }
+  }
+
+  public func feedback(skillID: String, limit: Int = 200) throws -> [ClawEvolutionFeedback] {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("SELECT id,skill_id,contact_id,action,original_text,final_text,created_at FROM evolution_feedback WHERE skill_id = ? ORDER BY created_at DESC LIMIT ?;")
+    defer { sqlite3_finalize(statement) }
+    bindText(skillID, at: 1, in: statement)
+    sqlite3_bind_int(statement, 2, Int32(max(1, limit)))
+    var result: [ClawEvolutionFeedback] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      guard let idText = text(statement, 0), let id = UUID(uuidString: idText),
+            let storedSkillID = text(statement, 1),
+            let actionText = text(statement, 3), let action = ClawFeedbackAction(rawValue: actionText)
+      else { continue }
+      result.append(ClawEvolutionFeedback(
+        id: id,
+        skillID: storedSkillID,
+        contactID: text(statement, 2).flatMap(UUID.init(uuidString:)),
+        action: action,
+        originalText: text(statement, 4),
+        finalText: text(statement, 5),
+        createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6))
+      ))
+    }
+    return result
   }
 
   private func seedBuiltInSkillsIfNeeded() {

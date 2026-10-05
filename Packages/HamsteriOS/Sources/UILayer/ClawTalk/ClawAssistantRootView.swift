@@ -361,7 +361,9 @@ private struct ClawMemoryCenterView: View {
   @State private var memories: [ClawMemoryItem] = []
   @State private var skills: [ClawSkillDefinition] = []
   @State private var showingImporter = false
+  @State private var showingSkillImporter = false
   @State private var importPreview: ClawMemoryImportPreview?
+  @State private var skillPreview: [ClawSkillDefinition] = []
   @State private var status = ""
 
   var body: some View {
@@ -405,12 +407,27 @@ private struct ClawMemoryCenterView: View {
         }
 
         Section {
+          Button { showingSkillImporter = true } label: {
+            Label("安装 Skill（.clawskill / JSON）", systemImage: "plus.square.on.square")
+          }
+          if !skillPreview.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+              Text("待安装 Skill：\(skillPreview.map(\.name).joined(separator: "、"))")
+                .font(.subheadline)
+              Button("确认安装") { installSkills() }
+                .buttonStyle(.borderedProminent)
+            }
+          }
           ForEach(skills) { skill in
             VStack(alignment: .leading, spacing: 4) {
               HStack { Text(skill.name); Spacer(); Text("v\(skill.version)").font(.caption).foregroundColor(.secondary) }
               Text(skill.summary).font(.caption).foregroundColor(.secondary)
               Text("采用 \(skill.acceptedCount) · 修改 \(skill.editedCount) · 重生成 \(skill.regeneratedCount)")
                 .font(.caption2).foregroundColor(.secondary)
+              if let learned = skill.learnedDirective, !learned.isEmpty {
+                Text("已进化：\(learned)")
+                  .font(.caption2).foregroundColor(.accentColor).lineLimit(3)
+              }
             }
           }
         } header: {
@@ -431,6 +448,17 @@ private struct ClawMemoryCenterView: View {
           }
         }
       }
+      .sheet(isPresented: $showingSkillImporter) {
+        ClawMemoryDocumentPicker { url in
+          showingSkillImporter = false
+          do {
+            skillPreview = try ClawSkillImportService.shared.preview(data: Data(contentsOf: url))
+            status = "Skill 包已通过声明式校验，请确认安装。"
+          } catch {
+            status = "Skill 解析失败：\(error.localizedDescription)"
+          }
+        }
+      }
     }
   }
 
@@ -446,6 +474,17 @@ private struct ClawMemoryCenterView: View {
       status = "已导入 \(count) 条记忆。"
       reload()
     } catch { status = "导入失败：\(error.localizedDescription)" }
+  }
+
+  private func installSkills() {
+    do {
+      let count = try ClawSkillImportService.shared.install(skillPreview)
+      skillPreview = []
+      status = "已安装 \(count) 个 Skill。Skill 只能调用 CLAW 内置受控能力，不执行任意 Swift/脚本。"
+      reload()
+    } catch {
+      status = "Skill 安装失败：\(error.localizedDescription)"
+    }
   }
 
   private func exportMarkdown() {

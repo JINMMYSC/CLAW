@@ -729,13 +729,14 @@ public final class ClawPanelOverlayView: UIView {
       return
     }
     guard !isLoading else { return }
+    let previousResult = resultTextView.isHidden ? "" : (resultTextView.text ?? "")
     let text = inputTextView.text ?? ""
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else {
       showResultMessage("请先输入或粘贴内容")
       return
     }
-    runAnalysis(text: trimmed)
+    runAnalysis(text: trimmed, isRegeneration: !previousResult.isEmpty && previousResult != "分析中…")
   }
 
   @objc private func actionButtonLongPressed(_ sender: UILongPressGestureRecognizer) {
@@ -996,7 +997,7 @@ private func fallbackToSystemDictation() {
   }
 
   /// AI 分析（帮你回 / 超会说），统一注入 Memory Core 检索出的相关上下文。
-  private func runAnalysis(text: String) {
+  private func runAnalysis(text: String, isRegeneration: Bool = false) {
     isLoading = true
     resultTextView.isHidden = false
     resultTextView.text = "分析中…"
@@ -1005,12 +1006,11 @@ private func fallbackToSystemDictation() {
 
     let panelTab = keyboardContext.clawPanelTab
     let profile = HeartTargetService.shared.selectedProfile
-    var systemPrompt: String
-    if panelTab == 1 {
-      systemPrompt = "你是 CLAW 的帮你回 Skill。根据当前聊天内容、聊天对象关系和用户自己的表达习惯，直接生成一条最适合发送的回复。不要分析过程，不要加标题，不要写‘建议回复：’，只输出可直接发送的文字。自然、简洁、有分寸，避免 AI 腔。"
-    } else {
-      systemPrompt = "你是 CLAW 的超会说 Skill。保留用户原意，把这句话改得更自然、更有分寸、更像用户本人会说的话。不要解释，不要加标题，只输出可直接替换原文的最终版本。"
-    }
+    let skillID = panelTab == PanelTab.helpReply.rawValue ? "reply" : "rewrite"
+    let installedSkill = (try? ClawMemoryStore.shared.skills().first(where: { $0.id == skillID }))
+    var systemPrompt = installedSkill?.effectivePrompt ?? (panelTab == PanelTab.helpReply.rawValue
+      ? "你是 CLAW 的帮你回 Skill。根据当前聊天内容、聊天对象关系和用户自己的表达习惯，直接生成一条最适合发送的回复。不要分析过程，不要加标题，不要写‘建议回复：’，只输出可直接发送的文字。自然、简洁、有分寸，避免 AI 腔。"
+      : "你是 CLAW 的超会说 Skill。保留用户原意，把这句话改得更自然、更有分寸、更像用户本人会说的话。不要解释，不要加标题，只输出可直接替换原文的最终版本。")
     if let profile, !profile.memoryContext.isEmpty {
       systemPrompt += "\n当前聊天对象：\(profile.displayName)\n\(profile.memoryContext)"
     }
@@ -1034,14 +1034,16 @@ private func fallbackToSystemDictation() {
         let cleaned = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         self.resultTextView.text = cleaned
         self.copyButton.isHidden = false
-        let skillID = panelTab == PanelTab.helpReply.rawValue ? "reply" : "rewrite"
-        try? ClawMemoryStore.shared.recordFeedback(ClawEvolutionFeedback(
-          skillID: skillID,
-          contactID: profile?.id,
-          action: .regenerated,
-          originalText: text,
-          finalText: cleaned
-        ))
+        self.actionButton.setTitle("换一批", for: .normal)
+        if isRegeneration {
+          try? ClawMemoryStore.shared.recordFeedback(ClawEvolutionFeedback(
+            skillID: skillID,
+            contactID: profile?.id,
+            action: .regenerated,
+            originalText: text,
+            finalText: cleaned
+          ))
+        }
       case .failure(let error):
         self.resultTextView.text = "分析失败：\(error.localizedDescription)"
       }
@@ -1067,6 +1069,7 @@ private func fallbackToSystemDictation() {
       originalText: original,
       finalText: text
     ))
+    _ = ClawEvolutionEngine.shared.evolveIfNeeded(skillID: skillID)
     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     keyboardContext.clawPanelTab = -1
   }
@@ -1158,6 +1161,9 @@ extension ClawPanelOverlayView: PHPickerViewControllerDelegate {
               inserted += 1
               ClawSecretaryExtractor.shared.persistExtractedTasks(from: message)
             }
+          }
+          if inserted > 0, let profileID = profile?.id {
+            ClawContactProfileLearner.shared.refreshIfNeeded(profileID: profileID)
           }
           let trimmed = parsed.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
           if trimmed.isEmpty {

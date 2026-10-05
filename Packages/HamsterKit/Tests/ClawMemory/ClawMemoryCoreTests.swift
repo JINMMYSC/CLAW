@@ -96,4 +96,34 @@ final class ClawMemoryCoreTests: XCTestCase {
     XCTAssertEqual(try exchange.commit(preview), 3)
     XCTAssertEqual(try store.memories().count, 3)
   }
+
+  func testSkillPackageInstallAndEvolutionUseAcceptedReplies() throws {
+    let skill = ClawSkillDefinition(
+      id: "custom-reply",
+      name: "自定义回复",
+      summary: "测试 Skill",
+      systemPrompt: "自然回复",
+      permissions: ["memory.global"]
+    )
+    let package = ClawSkillPackage(skills: [skill])
+    let data = try JSONEncoder().encode(package)
+    let installer = ClawSkillImportService(store: store)
+    let preview = try installer.preview(data: data)
+    XCTAssertEqual(preview.map(\.id), ["custom-reply"])
+    XCTAssertEqual(try installer.install(preview), 1)
+
+    for text in ["好的，明天聊", "可以，我晚点发你", "行，我看完回复你"] {
+      try store.recordFeedback(ClawEvolutionFeedback(
+        skillID: "custom-reply",
+        action: .accepted,
+        originalText: "测试",
+        finalText: text
+      ))
+    }
+    let engine = ClawEvolutionEngine(store: store)
+    let snapshot = engine.evolveIfNeeded(skillID: "custom-reply")
+    XCTAssertNotNil(snapshot?.learnedDirective)
+    XCTAssertEqual(snapshot?.version, 2)
+    XCTAssertTrue((try store.memories(scope: "global")).contains { $0.sourceType == "evolution-engine" })
+  }
 }
