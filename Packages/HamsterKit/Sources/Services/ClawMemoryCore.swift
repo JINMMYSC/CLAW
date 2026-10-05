@@ -655,4 +655,3 @@ public final class ClawMemoryStore {
     return "\(contactID?.uuidString ?? "global")|\(speaker.rawValue)|\(minute)|\(normalized)"
   }
 }
-Process exited with code 0.

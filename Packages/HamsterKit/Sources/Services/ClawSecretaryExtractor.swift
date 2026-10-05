@@ -103,4 +103,3 @@ public final class ClawSecretaryExtractor {
     }
   }
 }
-Process exited with code 0.

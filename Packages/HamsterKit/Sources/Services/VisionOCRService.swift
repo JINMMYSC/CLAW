@@ -69,4 +69,3 @@ public class VisionOCRService {
     }
   }
 }
-Process exited with code 0.

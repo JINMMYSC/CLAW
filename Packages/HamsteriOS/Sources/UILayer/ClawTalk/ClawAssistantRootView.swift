@@ -505,4 +505,3 @@ private struct ClawMemoryDocumentPicker: UIViewControllerRepresentable {
     }
   }
 }
-Process exited with code 0.

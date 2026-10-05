@@ -97,4 +97,3 @@ final class ClawMemoryCoreTests: XCTestCase {
     XCTAssertEqual(try store.memories().count, 3)
   }
 }
-Process exited with code 0.

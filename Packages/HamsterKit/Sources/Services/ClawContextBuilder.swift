@@ -82,4 +82,3 @@ public final class ClawContextBuilder {
     )
   }
 }
-Process exited with code 0.

@@ -33,4 +33,3 @@ let package = Package(
       dependencies: ["HamsterKit"],
       path: "Tests"),
   ])
-Process exited with code 0.

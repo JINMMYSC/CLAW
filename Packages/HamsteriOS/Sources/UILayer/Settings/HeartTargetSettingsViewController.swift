@@ -279,4 +279,3 @@ public final class HeartTargetEditViewController: UITableViewController, PHPicke
     bio = textView.text
   }
 }
-Process exited with code 0.

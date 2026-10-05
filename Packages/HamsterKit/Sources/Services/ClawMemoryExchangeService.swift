@@ -213,4 +213,3 @@ public struct ClawMemoryExchangeEnvelope: Codable, Equatable {
     self.tasks = tasks
   }
 }
-Process exited with code 0.

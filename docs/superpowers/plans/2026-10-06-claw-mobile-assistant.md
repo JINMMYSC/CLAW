@@ -78,4 +78,3 @@
 - [ ] Commit and push the target branch.
 - [ ] Verify GitHub Actions run for the pushed commit.
 - [ ] Download the successful workflow IPA artifact and return it to the user.
-Process exited with code 0.

@@ -22,4 +22,3 @@ class ClawTalkViewController: NibLessViewController {
     hostingController.didMove(toParent: self)
   }
 }
-Process exited with code 0.

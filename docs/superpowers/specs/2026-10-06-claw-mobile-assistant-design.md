@@ -42,4 +42,3 @@ Collection stays user-controlled. Password fields remain blocked. Sensitive filt
 - Existing RIME input-method behavior and signing identifiers remain unchanged.
 - App Group remains the sharing seam between host and keyboard.
 - Existing ClawTalk, AutoInsight, SmartFreq, voice, and AI provider functionality should be reused rather than rewritten when possible.
-Process exited with code 0.

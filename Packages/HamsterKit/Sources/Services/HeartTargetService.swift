@@ -157,4 +157,3 @@ public class HeartTargetService {
     persist()
   }
 }
-Process exited with code 0.

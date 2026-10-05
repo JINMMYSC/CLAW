@@ -101,4 +101,3 @@ public final class ClawScreenshotChatParser {
     return text.range(of: pattern, options: .regularExpression) != nil
   }
 }
-Process exited with code 0.
