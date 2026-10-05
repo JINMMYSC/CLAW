@@ -9,7 +9,7 @@ class ClawTalkViewController: NibLessViewController {
     super.viewDidLoad()
     title = "Now ClawTalk"
 
-    let hostingController = UIHostingController(rootView: ClawTalkRootView(viewModel: self.viewModel))
+    let hostingController = UIHostingController(rootView: ClawAssistantRootView(viewModel: self.viewModel))
     addChild(hostingController)
     view.addSubview(hostingController.view)
     hostingController.view.translatesAutoresizingMaskIntoConstraints = false
@@ -22,3 +22,4 @@ class ClawTalkViewController: NibLessViewController {
     hostingController.didMove(toParent: self)
   }
 }
+Process exited with code 0.

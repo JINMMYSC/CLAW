@@ -164,6 +164,29 @@ public class AIService {
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
   ) {
     let provider = selectedProvider
+    let model = selectedModel
+    chatWithUsage(messages: messages, provider: provider, model: model, completion: completion)
+  }
+
+  /// Request-scoped routing. This avoids mutating the process-wide selected provider/model when
+  /// keyboard, AutoInsight and the assistant are active at the same time.
+  public func chat(
+    messages: [AIMessage],
+    provider: AIProvider,
+    model: String? = nil,
+    completion: @escaping (Result<String, Error>) -> Void
+  ) {
+    chatWithUsage(messages: messages, provider: provider, model: model ?? provider.defaultModel) { result in
+      completion(result.map { $0.0 })
+    }
+  }
+
+  public func chatWithUsage(
+    messages: [AIMessage],
+    provider: AIProvider,
+    model: String,
+    completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
+  ) {
     let key = apiKey(for: provider)
     guard !key.isEmpty else {
       completion(.failure(AIError.noAPIKey(provider)))
@@ -171,9 +194,9 @@ public class AIService {
     }
     switch provider {
     case .claude:
-      chatClaudeWithUsage(messages: messages, apiKey: key, completion: completion)
+      chatClaudeWithUsage(messages: messages, apiKey: key, model: model, completion: completion)
     default:
-      chatOpenAICompatWithUsage(messages: messages, provider: provider, apiKey: key, completion: completion)
+      chatOpenAICompatWithUsage(messages: messages, provider: provider, apiKey: key, model: model, completion: completion)
     }
   }
 
@@ -183,6 +206,7 @@ public class AIService {
     messages: [AIMessage],
     provider: AIProvider,
     apiKey: String,
+    model: String,
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
   ) {
     let urlString = "\(provider.baseURL)/chat/completions"
@@ -194,7 +218,6 @@ public class AIService {
     if provider == .openrouter {
       req.setValue("ClawTalk iOS", forHTTPHeaderField: "X-Title")
     }
-    let model = selectedModel
     let body: [String: Any] = [
       "model": model,
       "messages": messages.map { ["role": $0.role, "content": $0.content] },
@@ -249,6 +272,7 @@ public class AIService {
   private func chatClaudeWithUsage(
     messages: [AIMessage],
     apiKey: String,
+    model: String,
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
   ) {
     let urlString = "https://api.anthropic.com/v1/messages"
@@ -261,8 +285,6 @@ public class AIService {
 
     let systemMsg = messages.first(where: { $0.role == "system" })?.content
     let chatMsgs = messages.filter { $0.role != "system" }
-    let model = selectedModel
-
     var body: [String: Any] = [
       "model": model,
       "max_tokens": 4096,
@@ -330,3 +352,4 @@ public class AIService {
     }
   }
 }
+Process exited with code 0.

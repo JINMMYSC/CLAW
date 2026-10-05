@@ -24,9 +24,13 @@ let package = Package(
         "ZIPFoundation",
         "Yams",
       ],
-      path: "Sources"),
+      path: "Sources",
+      linkerSettings: [
+        .linkedLibrary("sqlite3"),
+      ]),
     .testTarget(
       name: "HamsterKitTests",
       dependencies: ["HamsterKit"],
       path: "Tests"),
   ])
+Process exited with code 0.
