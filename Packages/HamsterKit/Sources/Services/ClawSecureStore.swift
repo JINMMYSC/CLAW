@@ -1,11 +1,10 @@
 import Foundation
 import Security
 
-/// Small shared Keychain wrapper used for CLAW credentials.
+/// Small Keychain wrapper used for CLAW credentials.
 ///
-/// The main app and keyboard extension are signed with the same explicit shared
-/// Keychain access group. Values are device-bound and are never synchronized to
-/// iCloud Keychain.
+/// Host app and keyboard extension keep independent device-bound copies.
+/// AIService coordinates migration between them through the shared App Group.
 public final class ClawSecureStore {
   public static let shared = ClawSecureStore()
 
@@ -50,30 +49,13 @@ public final class ClawSecureStore {
     }
   }
 
-  /// Resolve the team prefix from our own signed application-identifier entitlement
-  /// so the same binary remains portable when the IPA is resigned by another team.
-  public var sharedAccessGroup: String? {
-    guard
-      let task = SecTaskCreateFromSelf(kCFAllocatorDefault),
-      let value = SecTaskCopyValueForEntitlement(task, "application-identifier" as CFString, nil),
-      let identifier = value as? String,
-      let prefix = identifier.split(separator: ".", maxSplits: 1).first,
-      !prefix.isEmpty
-    else { return nil }
-    return "\(prefix).\(HamsterConstants.appGroupName)"
-  }
-
   private func baseQuery(account: String) -> [String: Any] {
-    var query: [String: Any] = [
+    [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
       kSecAttrAccount as String: account,
       kSecAttrSynchronizable as String: false,
     ]
-    if let group = sharedAccessGroup {
-      query[kSecAttrAccessGroup as String] = group
-    }
-    return query
   }
 }
 

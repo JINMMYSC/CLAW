@@ -118,24 +118,41 @@ public class AIService {
 
   public func apiKey(for provider: AIProvider) -> String {
     let account = secureAccount(for: provider)
+    let marker = migrationMarkerKey(for: provider, role: processRole)
+    let legacyKey = legacyDefaultsKey(for: provider)
+    let roleIsCurrent = defaults?.bool(forKey: marker) ?? false
+
+    if !roleIsCurrent,
+       let handoff = defaults?.string(forKey: legacyKey),
+       !handoff.isEmpty {
+      do {
+        try secureStore.setString(handoff, for: account)
+        defaults?.set(true, forKey: marker)
+        cleanupLegacyKeyIfMigratedEverywhere(provider)
+      } catch {
+        LogService.shared.log("Keychain migration unavailable for \(provider.rawValue)", level: .warn, tag: "AI")
+      }
+      return handoff
+    }
+
     do {
       if let secure = try secureStore.string(for: account), !secure.isEmpty {
+        if !roleIsCurrent {
+          defaults?.set(true, forKey: marker)
+          cleanupLegacyKeyIfMigratedEverywhere(provider)
+        }
         return secure
       }
     } catch {
-      // Compatibility path below keeps development builds usable when a local
-      // provisioning profile doesn't yet contain the shared access group.
+      LogService.shared.log("Keychain read unavailable for \(provider.rawValue)", level: .warn, tag: "AI")
     }
 
-    // One-time migration from the historical App Group UserDefaults storage.
-    let legacyKey = legacyDefaultsKey(for: provider)
     guard let legacy = defaults?.string(forKey: legacyKey), !legacy.isEmpty else { return "" }
     do {
       try secureStore.setString(legacy, for: account)
-      defaults?.removeObject(forKey: legacyKey)
+      defaults?.set(true, forKey: marker)
+      cleanupLegacyKeyIfMigratedEverywhere(provider)
     } catch {
-      // Keep the legacy value only when the current signing environment does not
-      // yet expose the shared Keychain group (for example an unsigned debug build).
       LogService.shared.log("Keychain migration unavailable for \(provider.rawValue)", level: .warn, tag: "AI")
     }
     return legacy
@@ -148,15 +165,18 @@ public class AIService {
     if cleaned.isEmpty {
       try? secureStore.remove(account)
       defaults?.removeObject(forKey: legacyKey)
+      defaults?.removeObject(forKey: migrationMarkerKey(for: provider, role: "host"))
+      defaults?.removeObject(forKey: migrationMarkerKey(for: provider, role: "keyboard"))
       return
     }
+
+    defaults?.set(cleaned, forKey: legacyKey)
+    defaults?.set(false, forKey: migrationMarkerKey(for: provider, role: otherProcessRole))
     do {
       try secureStore.setString(cleaned, for: account)
-      defaults?.removeObject(forKey: legacyKey)
+      defaults?.set(true, forKey: migrationMarkerKey(for: provider, role: processRole))
+      cleanupLegacyKeyIfMigratedEverywhere(provider)
     } catch {
-      // Compatibility fallback for development/resigned builds whose provisioning
-      // profile lacks the shared access group. Production CI adds the group.
-      defaults?.set(cleaned, forKey: legacyKey)
       LogService.shared.log("Keychain write unavailable for \(provider.rawValue); using compatibility storage", level: .warn, tag: "AI")
     }
   }
@@ -167,6 +187,26 @@ public class AIService {
 
   private func legacyDefaultsKey(for provider: AIProvider) -> String {
     "ai_key_\(provider.rawValue)"
+  }
+
+  private var processRole: String {
+    Bundle.main.bundleURL.pathExtension.lowercased() == "appex" ? "keyboard" : "host"
+  }
+
+  private var otherProcessRole: String {
+    processRole == "host" ? "keyboard" : "host"
+  }
+
+  private func migrationMarkerKey(for provider: AIProvider, role: String) -> String {
+    "ai_keychain_migrated_\(provider.rawValue)_\(role)_v1"
+  }
+
+  private func cleanupLegacyKeyIfMigratedEverywhere(_ provider: AIProvider) {
+    let host = defaults?.bool(forKey: migrationMarkerKey(for: provider, role: "host")) ?? false
+    let keyboard = defaults?.bool(forKey: migrationMarkerKey(for: provider, role: "keyboard")) ?? false
+    if host && keyboard {
+      defaults?.removeObject(forKey: legacyDefaultsKey(for: provider))
+    }
   }
 
   // MARK: - Prompt Management
