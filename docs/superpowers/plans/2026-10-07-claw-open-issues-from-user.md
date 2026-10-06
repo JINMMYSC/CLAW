@@ -274,7 +274,22 @@ AI 侧（`ClawContextBuilder.build`）：
 4. 应用方式是 `window.overrideUserInterfaceStyle = .unspecified / .light / .dark`。主程序是 Scene 架构，窗口在 `SceneDelegate`；切换后要立即生效，可以遍历 `UIApplication.shared.connectedScenes` 取窗口重设，或发通知让 SceneDelegate 统一处理。
 5. 启动时必须在 `window.makeKeyAndVisible()` **之前**读取并赋值，否则会先闪一下系统配色再切换过去。
 
-### 两点提醒
+### 键盘也跟随（用户已确认）
 
-- 这个设置只作用于**主程序**。键盘扩展是独立进程，`overrideUserInterfaceStyle` 影响不到它，键盘外观仍跟随系统。若希望键盘也跟着变，需要把选项写进 App Group，并让键盘扩展启动时读取并套用。
-- 现在的位置在「键盘相关」分组里，而外观属于整个 App，语义上有点偏。可以顺手把该分组改名，或把外观提到更通用的分组。
+决定：选项写进 App Group，键盘扩展启动时自己读取并套用。选「系统」时扩展读到的就是跟随系统，两条进程读同一个键，行为一致。
+
+扩展侧的机制已查清：
+
+- `KeyboardContext.colorScheme` 直接返回 `traitCollection.userInterfaceStyle`（`KeyboardContext.swift` 第 574-576 行），`hasDarkColorScheme` 基于它，键盘上所有配色都从这里派生。
+- `KeyboardContext.traitCollection` 是从控制器同步来的：`sync(with:)` 里 `if traitCollection != controller.traitCollection { traitCollection = controller.traitCollection }`（第 787-789 行）。
+- 同步入口是 `KeyboardInputViewController.viewWillSyncWithContext()`（第 165-169 行），由 `traitCollectionDidChange` 等触发。
+
+所以扩展侧只需在 `viewDidLoad` / `viewWillAppear` 阶段先读 App Group 的值，给控制器设 `overrideUserInterfaceStyle`（系统 → `.unspecified`，浅色 → `.light`，深色 → `.dark`）。设完会触发 `traitCollectionDidChange`，`viewWillSyncWithContext()` 把新的 traitCollection 同步进 `keyboardContext`，配色随之整体更新。
+
+主程序侧则把选项写进 `UserDefaults(suiteName: HamsterConstants.appGroupName)`，并用自己的窗口设 `overrideUserInterfaceStyle`，两边读同一个键。
+
+建议键名 `claw_appearance_style_v1`，取值 `system` / `light` / `dark`。
+
+### 另外一点
+
+现在这个位置在「键盘相关」分组里，而外观属于整个 App，语义上有点偏。可以顺手把该分组改名，或把外观提到更通用的分组。
