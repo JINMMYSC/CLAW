@@ -57,6 +57,9 @@ struct ClawAssistantRootView: View {
     .onReceive(NotificationCenter.default.publisher(for: .clawVoiceCallRequested)) { _ in
       selectedTab = .assistant
     }
+    .onReceive(NotificationCenter.default.publisher(for: .clawVoiceInputRequested)) { _ in
+      selectedTab = .assistant
+    }
   }
 }
 
@@ -112,6 +115,10 @@ private struct ClawAssistantChatView: View {
       selectedProfileName = profile?.displayName
       chat.switchContext(contactID: profile?.id)
       let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
+      if defaults?.bool(forKey: HamsterConstants.clawVoiceInputLaunchKey) == true {
+        defaults?.set(false, forKey: HamsterConstants.clawVoiceInputLaunchKey)
+        startOneShotVoiceInput()
+      }
       if defaults?.bool(forKey: HamsterConstants.clawVoiceCallLaunchKey) == true {
         defaults?.set(false, forKey: HamsterConstants.clawVoiceCallLaunchKey)
         startHandsFreeCall()
@@ -122,6 +129,11 @@ private struct ClawAssistantChatView: View {
     }
     .onReceive(NotificationCenter.default.publisher(for: .clawVoiceCallRequested)) { _ in
       startHandsFreeCall()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .clawVoiceInputRequested)) { _ in
+      UserDefaults(suiteName: HamsterConstants.appGroupName)?
+        .set(false, forKey: HamsterConstants.clawVoiceInputLaunchKey)
+      startOneShotVoiceInput()
     }
     .onReceive(NotificationCenter.default.publisher(for: .heartTargetProfilesDidChange)) { _ in
       let profile = HeartTargetService.shared.selectedProfile
@@ -320,6 +332,13 @@ private struct ClawAssistantChatView: View {
         }
       }
     }
+  }
+
+  /// 从键盘话筒按钮跳转进来时只做一次听写，不进入连续通话。
+  private func startOneShotVoiceInput() {
+    if callActive { stopHandsFreeCall() }
+    guard !recording else { return }
+    toggleVoice()
   }
 
   private func startHandsFreeCall() {

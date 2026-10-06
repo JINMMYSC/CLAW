@@ -51,6 +51,12 @@ public enum HamsterConstants {
   /// Shared one-shot launch flag consumed by the host assistant after a voice deep link.
   public static let clawVoiceCallLaunchKey = "claw_voice_call_launch_v1"
 
+  /// Keyboard mic button opens the CLAW host app directly into one-shot dictation mode.
+  public static let appURLForGuruVoiceInput = "hamster://app.lgm.7517/clawTalk?voiceInput=1"
+
+  /// Shared one-shot launch flag consumed by the host assistant after a dictation deep link.
+  public static let clawVoiceInputLaunchKey = "claw_voice_input_launch_v1"
+
   /// Keyboard long-press AI opens the main app keyboard-settings page (ClawTalk deep link).
   public static let appURLForKeyboardSettings = "hamster://keyboardSettings"
 
@@ -58,4 +64,5 @@ public enum HamsterConstants {
 
 public extension Notification.Name {
   static let clawVoiceCallRequested = Notification.Name("clawVoiceCallRequested")
+  static let clawVoiceInputRequested = Notification.Name("clawVoiceInputRequested")
 }

@@ -877,23 +877,21 @@ public final class ClawPanelOverlayView: UIView {
   Bundle.main.bundleURL.pathExtension.lowercased() == "appex"
 }
 
-/// 自定义键盘扩展不能可靠直接占用麦克风；切到系统输入法，让用户使用系统听写。
-private func fallbackToSystemDictation() {
+/// 键盘扩展不能直接占用麦克风。这里把用户送到主 App 的语音输入模式。
+/// 不能调用 selectNextKeyboard()，那会让当前键盘消失，用户看到的就是闪退。
+private func handOffToHostVoiceInput() {
   isMicHeld = false
   isListening = false
-  ClawVoiceInputService.shared.stop()
   updateMicUI(recording: false)
-  if let controller = clawParentViewController as? KeyboardInputViewController {
-    controller.selectNextKeyboard()
-    return
-  }
-  showResultMessage("键盘扩展无法直接使用麦克风，请切换到系统键盘后使用听写")
+  guard let url = URL(string: HamsterConstants.appURLForGuruVoiceInput) else { return }
+  if !isAITab { showResultMessage("正在打开 CLAW 语音输入…") }
+  actionHandler.handle(.release, on: .url(url, id: "openClawVoiceInput"))
 }
 
 @objc private func micTapped() {
   guard !isCallActive else { return }
   if isKeyboardExtensionRuntime {
-    fallbackToSystemDictation()
+    handOffToHostVoiceInput()
     return
   }
   if isListening {
@@ -911,6 +909,10 @@ private func fallbackToSystemDictation() {
     switch sender.state {
     case .began:
       guard !isListening, !isCallActive else { return }
+      if isKeyboardExtensionRuntime {
+        handOffToHostVoiceInput()
+        return
+      }
       isMicHeld = true
       startVoiceInput()
     case .ended, .cancelled, .failed:
@@ -929,7 +931,7 @@ private func fallbackToSystemDictation() {
   /// 权限只在主程序申请；键盘扩展只读状态，避免系统权限框在扩展进程闪退
   private func startVoiceInput() {
     if isKeyboardExtensionRuntime {
-      fallbackToSystemDictation()
+      handOffToHostVoiceInput()
       return
     }
     switch ClawVoiceInputService.shared.authorizationStatus {
@@ -989,11 +991,11 @@ private func fallbackToSystemDictation() {
   private func startCall() {
     guard !isCallActive else { return }
     if isKeyboardExtensionRuntime {
-      actionHandler.handle(
-        .release,
-        on: .url(URL(string: HamsterConstants.appURLForGuruVoice), id: "openClawVoiceCall")
-      )
-      keyboardContext.clawPanelTab = -1
+      guard let url = URL(string: HamsterConstants.appURLForGuruVoice) else { return }
+      // 这里不能先收起面板：跳转失败时用户只会看到面板闪一下，
+      // 误以为闪退。保留面板并给出提示，失败时由键盘控制器统一反馈。
+      if !isAITab { showResultMessage("正在打开 CLAW 语音通话…") }
+      actionHandler.handle(.release, on: .url(url, id: "openClawVoiceCall"))
       return
     }
     switch ClawVoiceInputService.shared.authorizationStatus {
