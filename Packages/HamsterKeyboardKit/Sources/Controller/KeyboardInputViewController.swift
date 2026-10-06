@@ -676,29 +676,38 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
 
   open func openUrl(_ url: URL?) {
     guard let url else { return }
-    extensionContext?.open(url, completionHandler: { [weak self] success in
+    // 跳主程序失败时把真实原因显示出来：是没开完全访问、没有扩展上下文，还是系统拒绝了 URL。
+    guard let context = extensionContext else {
+      showOpenUrlFailureHint("键盘没有扩展上下文，无法跳转主程序")
+      return
+    }
+    context.open(url, completionHandler: { [weak self] success in
       DispatchQueue.main.async {
         guard let self = self else { return }
         if success {
           UISelectionFeedbackGenerator().selectionChanged()
         } else {
           UINotificationFeedbackGenerator().notificationOccurred(.error)
-          self.showOpenUrlFailureHint()
+          let reason = self.hasFullAccess
+            ? "系统拒绝跳转（完全访问已开）\n\(url.absoluteString)"
+            : "未开启「允许完全访问」\n设置 → 通用 → 键盘 → 键盘 → CLAW"
+          self.showOpenUrlFailureHint(reason)
         }
       }
     })
   }
 
   /// Inline hint shown when opening the main app fails (keyboard cannot show alerts; use text + haptic).
-  private func showOpenUrlFailureHint() {
+  private func showOpenUrlFailureHint(_ reason: String) {
     let tag = 87231
     view.viewWithTag(tag)?.removeFromSuperview()
     let label = UILabel()
     label.tag = tag
-    label.text = "未找到输入法主程序"
+    label.text = reason
+    label.numberOfLines = 2
     label.font = .systemFont(ofSize: 12, weight: .medium)
     label.textColor = .white
-    label.backgroundColor = UIColor.black.withAlphaComponent(0.75)
+    label.backgroundColor = UIColor.black.withAlphaComponent(0.85)
     label.textAlignment = .center
     label.layer.cornerRadius = 6
     label.layer.masksToBounds = true
@@ -707,8 +716,10 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
     NSLayoutConstraint.activate([
       label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
       label.topAnchor.constraint(equalTo: view.topAnchor, constant: 40),
+      label.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 8),
+      label.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -8),
     ])
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
       label.removeFromSuperview()
     }
   }
