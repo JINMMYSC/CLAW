@@ -13,6 +13,10 @@ on:
       - "Hamster.xcodeproj/**"
       - ".github/workflows/startup-smoke.yml"
 
+concurrency:
+  group: claw-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   launch:
     runs-on: macos-15
