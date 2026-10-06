@@ -506,3 +506,33 @@ if keyboardContext.useIOSNativeLayout {
 ### 依赖
 
 与第十四节同一个前提：`ClawPanelPalette` 是静态全局，只在两处同步，必须保证在读取这些颜色之前已经 `sync(with:)`，否则统一了写法也会因为取到过期主题而继续不一致。
+
+## 十六、「白」与「黑」合并为「简约」
+
+用户决定：把现有主题里的 **白** 与 **黑** 合并成一个主题，取名**简约**；浅色变体就是白，深色变体就是黑。合并后主题总数从 7 套变成 6 套。
+
+### 合并后的色值
+
+直接沿用现有预设，不重新调色：
+
+- 浅色变体 = 现「白」的浅色：底 `#F2F2F7`、键帽 `#FFFFFF`、按下 `#E5E5EA`、字 `#1C1C1E`、强调 `#6E6E73`、强调前景 `#FFFFFF`
+- 深色变体 = 现「黑」的深色：底 `#000000`、键帽 `#1C1C1E`、按下 `#2C2C2E`、字 `#FFFFFF`、强调 `#98989D`、强调前景 `#000000`
+
+这个组合满足第十三节 3.2 那条验收规则（浅色底 `#F2F2F7` 亮度高、深色底 `#000000` 亮度极低）。
+
+### 需要改的地方
+
+1. `ClawTalkTheme` 枚举：删掉 `white` 与 `black`，新增 `minimal = "clawtalk_minimal"`，`displayName = "简约"`，副标题可写「黑白极简」。
+2. `ClawTalkThemePresets.preset(for:)`：把原来 `.white` 与 `.black` 两个分支替换成 `.minimal` 一个分支，浅色套用上面第一组、深色套用第二组。
+3. 建议顺序：红 / 简约 / 黑金 / 海盐蓝 / 森林绿 / 樱花粉（简约占用原本白与黑的位置）。`KeyboardColorViewModel.themeOptions` 直接来自 `ClawTalkTheme.allCases`，顺序会跟着变，设置页无需额外改动。
+
+### 必须处理的老用户迁移（重要）
+
+老配置里 `useColorSchemaForLight` / `useColorSchemaForDark` 存的是 schema 名 `clawtalk_white`、`clawtalk_black`。合并后这两个名字不再对应任何主题，会出现两个后果：
+
+- 设置页 `selectedIndex` 解析不到主题，会退回显示「系统默认」；
+- 而 `hamsterColor()` 仍能在用户配置的 `colorSchemas` 里按老名字找到旧 schema，键盘继续用旧配色。
+
+两者叠加，就是之前记录过的"选了还是上一版"那类错位。所以必须加一次迁移：加载配置时把 `clawtalk_white` 与 `clawtalk_black` 都改写成 `clawtalk_minimal`，并用新预设覆盖同名 schema，然后回写配置。
+
+同时建议顺手做第十三节 3.1 提到的通用做法：加载配置时用内置预设覆盖同名 schema，避免以后再改主题色值出现同类问题。
