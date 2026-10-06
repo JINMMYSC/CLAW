@@ -30,6 +30,21 @@ def extract_entitlements(profile_path):
     return pl.get("Entitlements", {}) or {}
 
 
+def add_shared_keychain_group(entitlements, app_group="group.7518554"):
+    """Add one concrete shared Keychain group when the profile wildcard permits it."""
+    app_id = entitlements.get("application-identifier", "")
+    prefix = app_id.split(".", 1)[0] if "." in app_id else ""
+    if not prefix:
+        return None
+    shared = "%s.%s" % (prefix, app_group)
+    groups = list(entitlements.get("keychain-access-groups", []) or [])
+    permitted = (shared in groups) or ("%s.*" % prefix in groups)
+    if permitted and shared not in groups:
+        groups.append(shared)
+        entitlements["keychain-access-groups"] = groups
+    return shared if permitted else None
+
+
 def find_distribution_identity():
     out = subprocess.check_output(
         ["security", "find-identity", "-v", "-p", "codesigning"], text=True)
@@ -97,6 +112,12 @@ def main():
         # --- entitlements ---
         main_ent = extract_entitlements(args.main_profile)
         ext_ent = extract_entitlements(args.ext_profile)
+        main_shared = add_shared_keychain_group(main_ent)
+        ext_shared = add_shared_keychain_group(ext_ent)
+        if main_shared and ext_shared and main_shared == ext_shared:
+            print("shared keychain group:", main_shared)
+        else:
+            print("WARNING: shared keychain group not permitted by both profiles")
         main_ent_path = os.path.join(tmp, "main_ent.plist")
         ext_ent_path = os.path.join(tmp, "ext_ent.plist")
         with open(main_ent_path, "wb") as f:

@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 
 public struct ClawContextPack: Equatable {
   public var globalMemories: [ClawMemoryItem]
@@ -66,14 +67,15 @@ public final class ClawContextBuilder {
       return ClawContextPack()
     }
     let policy = ClawMemoryPolicyService.shared
+    let vault = ClawPrivacyVaultService.shared
     let rawGlobals = ((try? store.memories(scope: "global", limit: 80)) ?? [])
-      .filter { policy.isSourceEnabled($0.sourceType) }
+      .filter { policy.isSourceEnabled($0.sourceType) && vault.isVisibleToAI($0) }
     let globals = rank(rawGlobals, query: query).prefix(40).map { $0 }
     let contactMemories: [ClawMemoryItem]
     let timeline: [ClawConversationMessage]
     if let contactID {
       let rawContact = ((try? store.memories(scope: "contact", subjectID: contactID, limit: 80)) ?? [])
-        .filter { policy.isSourceEnabled($0.sourceType) }
+        .filter { policy.isSourceEnabled($0.sourceType) && vault.isVisibleToAI($0) }
       contactMemories = rank(rawContact, query: query).prefix(40).map { $0 }
       timeline = (try? store.conversation(contactID: contactID, limit: 32)) ?? []
     } else {
@@ -95,13 +97,20 @@ public final class ClawContextBuilder {
       return items.sorted { $0.lastObservedAt > $1.lastObservedAt }
     }
     let queryTokens = tokens(query)
+    let semantic = semanticQuery(query)
     let now = Date()
     return items.sorted { lhs, rhs in
-      score(lhs, queryTokens: queryTokens, now: now) > score(rhs, queryTokens: queryTokens, now: now)
+      score(lhs, queryTokens: queryTokens, semantic: semantic, now: now)
+        > score(rhs, queryTokens: queryTokens, semantic: semantic, now: now)
     }
   }
 
-  private func score(_ item: ClawMemoryItem, queryTokens: Set<String>, now: Date) -> Double {
+  private func score(
+    _ item: ClawMemoryItem,
+    queryTokens: Set<String>,
+    semantic: SemanticQuery?,
+    now: Date
+  ) -> Double {
     let memoryTokens = tokens(item.content)
     let overlap = Double(queryTokens.intersection(memoryTokens).count)
     let ageDays = max(0, now.timeIntervalSince(item.lastObservedAt) / 86_400)
@@ -109,7 +118,44 @@ public final class ClawContextBuilder {
     let exactKeyBoost = item.normalizedKey.map { key in
       queryTokens.contains(where: { key.lowercased().contains($0) }) ? 1.5 : 0
     } ?? 0
-    return overlap * 3 + item.confidence * 1.5 + recency + exactKeyBoost
+    let semanticBoost = semanticSimilarity(item.content, using: semantic) * 4
+    return overlap * 2.5 + semanticBoost + item.confidence * 1.5 + recency + exactKeyBoost
+  }
+
+  private struct SemanticQuery {
+    let embedding: NLEmbedding
+    let vector: [Double]
+  }
+
+  /// Apple's on-device sentence embeddings give CLAW true semantic retrieval
+  /// without sending the user's Memory Core to a cloud embedding endpoint.
+  /// Unsupported languages/devices simply fall back to the lexical ranker.
+  private func semanticQuery(_ query: String) -> SemanticQuery? {
+    let recognizer = NLLanguageRecognizer()
+    recognizer.processString(query)
+    let language = recognizer.dominantLanguage ?? .simplifiedChinese
+    guard
+      let embedding = NLEmbedding.sentenceEmbedding(for: language),
+      let vector = embedding.vector(for: query),
+      !vector.isEmpty
+    else { return nil }
+    return SemanticQuery(embedding: embedding, vector: vector)
+  }
+
+  private func semanticSimilarity(_ text: String, using query: SemanticQuery?) -> Double {
+    guard let query, let candidate = query.embedding.vector(for: text), candidate.count == query.vector.count else {
+      return 0
+    }
+    var dot = 0.0
+    var left = 0.0
+    var right = 0.0
+    for index in candidate.indices {
+      dot += query.vector[index] * candidate[index]
+      left += query.vector[index] * query.vector[index]
+      right += candidate[index] * candidate[index]
+    }
+    guard left > 0, right > 0 else { return 0 }
+    return max(0, min(1, dot / (sqrt(left) * sqrt(right))))
   }
 
   private func tokens(_ text: String) -> Set<String> {

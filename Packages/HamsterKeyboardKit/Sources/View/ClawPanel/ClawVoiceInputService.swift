@@ -2,11 +2,29 @@ import AVFoundation
 import Foundation
 import Speech
 
-/// 语音输入服务：按住说话 → SFSpeechRecognizer（zh-Hans）转文字
+public enum ClawVoiceLanguageMode: String, CaseIterable {
+  case automatic
+  case mandarin
+  case cantonese
+  case english
+
+  public var displayName: String {
+    switch self {
+    case .automatic: return "自动"
+    case .mandarin: return "普通话"
+    case .cantonese: return "粤语"
+    case .english: return "English"
+    }
+  }
+}
+
+/// 语音输入服务：按住说话 / 连续语音 → Speech 转文字。
 public final class ClawVoiceInputService: NSObject {
   public static let shared = ClawVoiceInputService()
 
-  private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-Hans"))
+  private let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
+  private let languageModeKey = "claw_voice_language_mode_v1"
+  private let silenceIntervalKey = "claw_voice_silence_interval_v1"
   private var audioEngine: AVAudioEngine?
   private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
   private var recognitionTask: SFSpeechRecognitionTask?
@@ -14,6 +32,24 @@ public final class ClawVoiceInputService: NSObject {
 
   /// 是否正在录音
   public private(set) var isRecording = false
+
+  public var languageMode: ClawVoiceLanguageMode {
+    get {
+      guard let raw = defaults?.string(forKey: languageModeKey),
+            let mode = ClawVoiceLanguageMode(rawValue: raw) else { return .automatic }
+      return mode
+    }
+    set { defaults?.set(newValue.rawValue, forKey: languageModeKey) }
+  }
+
+  /// 连续语音静音断句阈值。默认 1.0 秒，比旧版 1.2 秒更接近自然对话。
+  public var silenceInterval: TimeInterval {
+    get {
+      let stored = defaults?.double(forKey: silenceIntervalKey) ?? 0
+      return stored > 0 ? min(1.8, max(0.7, stored)) : 1.0
+    }
+    set { defaults?.set(min(1.8, max(0.7, newValue)), forKey: silenceIntervalKey) }
+  }
 
   private var streamingPartial: ((String) -> Void)?
   private var streamingSegment: ((String) -> Void)?
@@ -54,7 +90,7 @@ public final class ClawVoiceInputService: NSObject {
     }
 
     let generation = resetForNewSession()
-    guard let recognizer, recognizer.isAvailable else {
+    guard let recognizer = makeRecognizer(), recognizer.isAvailable else {
       completion(.failure(ClawVoiceError.recognizerUnavailable))
       return
     }
@@ -62,7 +98,9 @@ public final class ClawVoiceInputService: NSObject {
     let audioEngine = AVAudioEngine()
     let request = SFSpeechAudioBufferRecognitionRequest()
     request.shouldReportPartialResults = false
-    request.requiresOnDeviceRecognition = false
+    if recognizer.supportsOnDeviceRecognition {
+      request.requiresOnDeviceRecognition = true
+    }
 
     let inputNode = audioEngine.inputNode
     let format = inputNode.outputFormat(forBus: 0)
@@ -121,7 +159,7 @@ public final class ClawVoiceInputService: NSObject {
     streamingSegment = onSegment
     streamingError = onError
 
-    guard let recognizer, recognizer.isAvailable else {
+    guard let recognizer = makeRecognizer(), recognizer.isAvailable else {
       clearStreamingCallbacks()
       onError(ClawVoiceError.recognizerUnavailable)
       return
@@ -130,7 +168,9 @@ public final class ClawVoiceInputService: NSObject {
     let audioEngine = AVAudioEngine()
     let request = SFSpeechAudioBufferRecognitionRequest()
     request.shouldReportPartialResults = true
-    request.requiresOnDeviceRecognition = false
+    if recognizer.supportsOnDeviceRecognition {
+      request.requiresOnDeviceRecognition = true
+    }
 
     let inputNode = audioEngine.inputNode
     let format = inputNode.outputFormat(forBus: 0)
@@ -179,7 +219,7 @@ self.streamingPartial?(text)
     }
   }
 
-  /// 静音停顿 1.2s 判定断句：结束当前段，等待 final 结果
+  /// 静音停顿达到阈值后断句：结束当前段，等待 final 结果。
   private func restartSilenceTimer(for generation: UInt) {
     silenceWorkItem?.cancel()
     let item = DispatchWorkItem { [weak self] in
@@ -189,7 +229,29 @@ self.streamingPartial?(text)
       self.stop()
     }
     silenceWorkItem = item
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: item)
+    DispatchQueue.main.asyncAfter(deadline: .now() + silenceInterval, execute: item)
+  }
+
+  public var activeLocaleIdentifier: String {
+    switch languageMode {
+    case .mandarin:
+      return "zh-Hans"
+    case .cantonese:
+      return "yue-Hant-HK"
+    case .english:
+      return "en-US"
+    case .automatic:
+      let preferred = Locale.preferredLanguages.joined(separator: ",").lowercased()
+      if preferred.contains("yue") || preferred.contains("zh-hk") || preferred.contains("zh-mo") {
+        return "yue-Hant-HK"
+      }
+      if preferred.hasPrefix("en") { return "en-US" }
+      return "zh-Hans"
+    }
+  }
+
+  private func makeRecognizer() -> SFSpeechRecognizer? {
+    SFSpeechRecognizer(locale: Locale(identifier: activeLocaleIdentifier))
   }
 
   private func clearStreamingCallbacks() {

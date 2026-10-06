@@ -27,6 +27,9 @@ let package = Package(
       path: "Sources",
       linkerSettings: [
         .linkedLibrary("sqlite3"),
+        .linkedFramework("Security"),
+        .linkedFramework("NaturalLanguage"),
+        .linkedFramework("LocalAuthentication"),
       ]),
     .testTarget(
       name: "HamsterKitTests",

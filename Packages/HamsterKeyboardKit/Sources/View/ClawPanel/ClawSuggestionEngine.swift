@@ -54,11 +54,13 @@ public final class ClawSuggestionEngine {
     requestInFlight = true
 
     let systemPrompt = "你是轻量输入助手。请根据用户最近输入的内容，生成 2 条简短、自然、可直接发送的接话建议。每条不超过 12 个字，不要序号，不要引号，用换行符分隔，只输出建议本身。"
+    let requestConfiguration = AIService.shared.currentRequestConfiguration
     AIService.shared.chat(
       messages: [
         AIMessage(role: "system", content: systemPrompt),
         AIMessage(role: "user", content: text),
-      ]
+      ],
+      configuration: requestConfiguration
     ) { [weak self] result in
       DispatchQueue.main.async {
         guard let self else { return }

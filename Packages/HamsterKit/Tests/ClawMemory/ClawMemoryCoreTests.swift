@@ -298,4 +298,86 @@ final class ClawMemoryCoreTests: XCTestCase {
     XCTAssertEqual(try store.tasks(status: .open).count, 1)
     XCTAssertTrue(secretary.briefing(now: now).contains("未完成事项"))
   }
+
+  func testSkillDiscoveryCreatesDisabledDraftFromRepeatedSuccess() throws {
+    let contact = UUID()
+    let base = ClawSkillDefinition(
+      id: "discovery-base",
+      name: "帮你写",
+      summary: "test",
+      systemPrompt: "自然表达",
+      permissions: ["memory.global"],
+      triggers: [.manual],
+      toolIDs: ["memory.search"]
+    )
+    try store.saveSkill(base)
+    for index in 0..<6 {
+      try store.recordFeedback(ClawEvolutionFeedback(
+        skillID: base.id,
+        contactID: contact,
+        action: index % 2 == 0 ? .edited : .accepted,
+        originalText: "原始表达 \(index)",
+        finalText: "好的，我晚点回复你 \(index)"
+      ))
+    }
+    let discovery = ClawSkillDiscoveryService(store: store)
+    let drafts = discovery.discover(minimumSamples: 5)
+    XCTAssertEqual(drafts.count, 1)
+    XCTAssertFalse(drafts[0].proposedSkill.enabled)
+    XCTAssertEqual(drafts[0].contactID, contact)
+    let saved = try discovery.saveDraft(drafts[0])
+    XCTAssertFalse(saved.enabled)
+    XCTAssertEqual((try store.skills()).first(where: { $0.id == saved.id })?.enabled, false)
+  }
+
+  func testPrivacyVaultExcludesProtectedMemoryFromContextWhileLocked() throws {
+    let item = ClawMemoryItem(
+      kind: .fact,
+      content: "非常私密的长期事实",
+      normalizedKey: "private-fact",
+      sourceType: "manual"
+    )
+    try store.upsertMemory(item)
+    ClawPrivacyVaultService.shared.setProtected(item.id, protected: true)
+    ClawPrivacyVaultService.shared.lockNow()
+    defer { ClawPrivacyVaultService.shared.setProtected(item.id, protected: false) }
+
+    let pack = ClawContextBuilder(store: store).build(contactID: nil, query: "私密事实")
+    XCTAssertFalse(pack.globalMemories.contains(where: { $0.id == item.id }))
+  }
+
+  func testMemoryStoreHandlesTwoThousandRowsAndScopedLookup() throws {
+    let contact = UUID()
+    for index in 0..<2_000 {
+      try store.upsertMemory(ClawMemoryItem(
+        kind: .fact,
+        scope: index % 2 == 0 ? "global" : "contact",
+        subjectID: index % 2 == 0 ? nil : contact,
+        content: "压力回归记忆 \(index)",
+        normalizedKey: "load-\(index)",
+        sourceType: "stress-smoke"
+      ))
+    }
+    XCTAssertEqual(try store.memories(scope: "global", limit: 3_000).count, 1_000)
+    XCTAssertEqual(try store.memories(scope: "contact", subjectID: contact, limit: 3_000).count, 1_000)
+  }
+
+  /// Opt-in long-run benchmark for release qualification:
+  /// CLAW_STRESS_TEST=1 swift test --filter ClawMemoryCoreTests/testHundredThousandMemoryStress
+  func testHundredThousandMemoryStress() throws {
+    guard ProcessInfo.processInfo.environment["CLAW_STRESS_TEST"] == "1" else {
+      throw XCTSkip("Set CLAW_STRESS_TEST=1 to run the 100k Memory benchmark")
+    }
+    measure {
+      for index in 0..<100_000 {
+        try? store.upsertMemory(ClawMemoryItem(
+          kind: .fact,
+          content: "长期压力记忆 \(index)",
+          normalizedKey: "stress-100k-\(index)",
+          sourceType: "stress-benchmark"
+        ))
+      }
+      _ = try? store.memories(scope: "global", limit: 200)
+    }
+  }
 }

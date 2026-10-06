@@ -23,5 +23,9 @@
 	<array>
 		<string>group.7518554</string>
 	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)group.7518554</string>
+	</array>
 </dict>
 </plist>

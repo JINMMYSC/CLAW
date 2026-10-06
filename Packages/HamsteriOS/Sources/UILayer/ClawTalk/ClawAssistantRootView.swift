@@ -35,6 +35,7 @@ private struct ClawAssistantChatView: View {
   @State private var input = ""
   @State private var recording = false
   @State private var voiceHint = ""
+  @State private var voiceMode = ClawVoiceInputService.shared.languageMode
 
   var body: some View {
     VStack(spacing: 0) {
@@ -137,6 +138,28 @@ private struct ClawAssistantChatView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
       }
       HStack(spacing: 8) {
+        Menu {
+          ForEach(ClawVoiceLanguageMode.allCases, id: \.rawValue) { mode in
+            Button {
+              voiceMode = mode
+              ClawVoiceInputService.shared.languageMode = mode
+            } label: {
+              if voiceMode == mode {
+                Label(mode.displayName, systemImage: "checkmark")
+              } else {
+                Text(mode.displayName)
+              }
+            }
+          }
+        } label: {
+          VStack(spacing: 0) {
+            Image(systemName: "waveform.circle")
+              .font(.system(size: 24))
+            Text(voiceMode.displayName)
+              .font(.system(size: 8))
+          }
+          .foregroundColor(.accentColor)
+        }
         Button {
           toggleVoice()
         } label: {
@@ -437,7 +460,9 @@ private struct ClawMemoryCenterView: View {
   @State private var showingSkillImporter = false
   @State private var importPreview: ClawMemoryImportPreview?
   @State private var skillPreview: [ClawSkillDefinition] = []
+  @State private var discoveredSkillDrafts: [ClawSkillDraftCandidate] = []
   @State private var temporaryMode = ClawMemoryPolicyService.shared.temporaryMode
+  @State private var vaultUnlocked = ClawPrivacyVaultService.shared.isUnlocked
   @State private var status = ""
 
   var body: some View {
@@ -446,6 +471,12 @@ private struct ClawMemoryCenterView: View {
         Section {
           HStack { Label("结构化记忆", systemImage: "brain"); Spacer(); Text("\(memories.count)").foregroundColor(.secondary) }
           HStack { Label("可用 Skills", systemImage: "puzzlepiece.extension"); Spacer(); Text("\(skills.filter(\.enabled).count)").foregroundColor(.secondary) }
+          HStack {
+            Label("隐私保险箱", systemImage: vaultUnlocked ? "lock.open.fill" : "lock.fill")
+            Spacer()
+            Text("\(memories.filter { ClawPrivacyVaultService.shared.isProtected($0) }.count)")
+              .foregroundColor(.secondary)
+          }
           if memories.isEmpty { Text("新的长期记忆会保留来源、范围和置信度。").font(.caption).foregroundColor(.secondary) }
         } header: {
           Text("我的 AI 知道什么")
@@ -459,6 +490,24 @@ private struct ClawMemoryCenterView: View {
               ClawMemoryPolicyService.shared.temporaryMode = value
             }
           ))
+          Button {
+            if vaultUnlocked {
+              ClawPrivacyVaultService.shared.lockNow()
+              vaultUnlocked = false
+            } else {
+              ClawPrivacyVaultService.shared.unlock { success, error in
+                DispatchQueue.main.async {
+                  vaultUnlocked = success
+                  status = success ? "隐私保险箱已临时解锁。" : "解锁失败：\(error?.localizedDescription ?? "未知错误")"
+                }
+              }
+            }
+          } label: {
+            Label(
+              vaultUnlocked ? "立即锁定隐私保险箱" : "Face ID / 设备密码解锁保险箱",
+              systemImage: vaultUnlocked ? "lock.fill" : "faceid"
+            )
+          }
           ForEach(sourceTypes, id: \.self) { source in
             Toggle(source, isOn: Binding(
               get: { ClawMemoryPolicyService.shared.isSourceEnabled(source) },
@@ -474,10 +523,25 @@ private struct ClawMemoryCenterView: View {
         Section {
           ForEach(memories.prefix(30)) { item in
             Button {
-              editingMemory = item
+              if !ClawPrivacyVaultService.shared.isProtected(item) || vaultUnlocked {
+                editingMemory = item
+              } else {
+                status = "这条记忆在隐私保险箱中，请先解锁。"
+              }
             } label: {
               VStack(alignment: .leading, spacing: 3) {
-                Text(item.content).foregroundColor(.primary)
+                HStack {
+                  if ClawPrivacyVaultService.shared.isProtected(item) {
+                    Image(systemName: vaultUnlocked ? "lock.open.fill" : "lock.fill")
+                      .font(.caption).foregroundColor(.orange)
+                  }
+                  Text(
+                    ClawPrivacyVaultService.shared.isProtected(item) && !vaultUnlocked
+                      ? "已锁定的私人记忆"
+                      : item.content
+                  )
+                  .foregroundColor(.primary)
+                }
                 let provenance = ClawMemoryPolicyService.shared.provenance(for: item)
                 Text("\(provenance.displayName) · \(Int(item.confidence * 100))% · \(item.sourceType)")
                   .font(.caption2).foregroundColor(.secondary)
@@ -497,6 +561,14 @@ private struct ClawMemoryCenterView: View {
                 reload()
               }
               .tint(.orange)
+              Button(ClawPrivacyVaultService.shared.isProtected(item) ? "移出保险箱" : "放入保险箱") {
+                ClawPrivacyVaultService.shared.setProtected(
+                  item.id,
+                  protected: !ClawPrivacyVaultService.shared.isProtected(item)
+                )
+                reload()
+              }
+              .tint(.purple)
             }
           }
         } header: {
@@ -552,6 +624,32 @@ private struct ClawMemoryCenterView: View {
         }
 
         Section {
+          if !discoveredSkillDrafts.isEmpty {
+            ForEach(discoveredSkillDrafts) { draft in
+              VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                  Image(systemName: "sparkles")
+                  Text(draft.proposedSkill.name).font(.subheadline.weight(.semibold))
+                  Spacer()
+                  Text("\(draft.sampleCount) 样本").font(.caption2).foregroundColor(.secondary)
+                }
+                Text(draft.reason).font(.caption).foregroundColor(.secondary)
+                Text("只生成草稿，不会自动启用。")
+                  .font(.caption2).foregroundColor(.orange)
+                Button("保存为待确认 Skill") {
+                  do {
+                    _ = try ClawSkillDiscoveryService.shared.saveDraft(draft)
+                    status = "Skill 草稿已保存，默认停用；你可以检查后再启用。"
+                    reload()
+                  } catch {
+                    status = "保存 Skill 草稿失败：\(error.localizedDescription)"
+                  }
+                }
+                .buttonStyle(.bordered)
+                .font(.caption)
+              }
+            }
+          }
           Button { showingSkillImporter = true } label: {
             Label("安装 Skill（.clawskill / JSON）", systemImage: "plus.square.on.square")
           }
@@ -647,7 +745,9 @@ private struct ClawMemoryCenterView: View {
   private func reload() {
     memories = (try? ClawMemoryStore.shared.memories(limit: 1_000)) ?? []
     skills = (try? ClawMemoryStore.shared.skills()) ?? []
+    discoveredSkillDrafts = ClawSkillDiscoveryService.shared.discover()
     temporaryMode = ClawMemoryPolicyService.shared.temporaryMode
+    vaultUnlocked = ClawPrivacyVaultService.shared.isUnlocked
   }
 
   private var sourceTypes: [String] {

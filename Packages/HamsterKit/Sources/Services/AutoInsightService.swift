@@ -219,10 +219,11 @@ public class AutoInsightService {
 
     let spiritualPromptText = buildPrompt(cfg.spiritualPrompt)
     let taskPromptText = buildPrompt(cfg.taskPrompt)
+    let requestConfiguration = AIService.shared.currentRequestConfiguration
 
     // 两个 AI 调用并发执行
-    async let spiritualCall = callAI(prompt: spiritualPromptText)
-    async let taskCall = callAI(prompt: taskPromptText)
+    async let spiritualCall = callAI(prompt: spiritualPromptText, configuration: requestConfiguration)
+    async let taskCall = callAI(prompt: taskPromptText, configuration: requestConfiguration)
 
     let (spiritualResult, taskResult) = await (spiritualCall, taskCall)
 
@@ -344,10 +345,13 @@ public class AutoInsightService {
 
   // MARK: - AI Call
 
-  private func callAI(prompt: String) async -> Result<String, Error> {
+  private func callAI(
+    prompt: String,
+    configuration: AIRequestConfiguration
+  ) async -> Result<String, Error> {
     await withCheckedContinuation { continuation in
       let messages = [AIMessage(role: "user", content: prompt)]
-      AIService.shared.chat(messages: messages) { result in
+      AIService.shared.chat(messages: messages, configuration: configuration) { result in
         continuation.resume(returning: result)
       }
     }
