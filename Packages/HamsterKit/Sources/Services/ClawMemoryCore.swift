@@ -408,7 +408,74 @@ public final class ClawMemoryStore {
         final_text TEXT,
         created_at REAL NOT NULL
       );
+      """,
       """
+      CREATE TABLE IF NOT EXISTS raw_events (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        content TEXT NOT NULL,
+        source_app TEXT,
+        source_ref TEXT,
+        occurred_at REAL NOT NULL,
+        ingested_at REAL NOT NULL,
+        idempotency_key TEXT
+      );
+      """,
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_events_idem ON raw_events(idempotency_key) WHERE idempotency_key IS NOT NULL;",
+      """
+      CREATE TABLE IF NOT EXISTS memory_v2 (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        state TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        content TEXT NOT NULL,
+        normalized_key TEXT,
+        person_id TEXT,
+        project_id TEXT,
+        session_id TEXT,
+        confidence REAL NOT NULL,
+        importance REAL NOT NULL,
+        cloud_permission TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL,
+        confirmed_at REAL,
+        expires_at REAL,
+        payload BLOB NOT NULL
+      );
+      """,
+      "CREATE INDEX IF NOT EXISTS idx_memory_v2_scope ON memory_v2(scope, person_id, state);",
+      "CREATE INDEX IF NOT EXISTS idx_memory_v2_updated ON memory_v2(type, updated_at DESC);",
+      """
+      CREATE TABLE IF NOT EXISTS memory_evidence (
+        id TEXT PRIMARY KEY,
+        memory_id TEXT NOT NULL,
+        raw_event_id TEXT NOT NULL,
+        locator TEXT,
+        excerpt TEXT
+      );
+      """,
+      "CREATE INDEX IF NOT EXISTS idx_memory_evidence_memory ON memory_evidence(memory_id);",
+      """
+      CREATE TABLE IF NOT EXISTS memory_versions (
+        id TEXT PRIMARY KEY,
+        memory_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        payload BLOB NOT NULL,
+        created_at REAL NOT NULL
+      );
+      """,
+      "CREATE INDEX IF NOT EXISTS idx_memory_versions_memory ON memory_versions(memory_id, version DESC);",
+      """
+      CREATE TABLE IF NOT EXISTS memory_lineage (
+        id TEXT PRIMARY KEY,
+        memory_id TEXT NOT NULL,
+        parent_memory_id TEXT,
+        raw_event_id TEXT,
+        source_memory_id TEXT
+      );
+      """,
+      "CREATE INDEX IF NOT EXISTS idx_memory_lineage_memory ON memory_lineage(memory_id);"
     ]
     for statement in statements { try? execute(statement) }
   }
@@ -820,6 +887,241 @@ public final class ClawMemoryStore {
       ))
     }
     return result
+  }
+
+  // MARK: - Memory V2
+
+  /// 写入一条结构化记忆，并同步保存版本快照、证据与血缘。
+  @discardableResult
+  public func saveMemoryV2(
+    _ record: MemoryV2Record,
+    rawEvents: [RawMemoryEvent] = []
+  ) throws -> MemoryV2Record {
+    lock.lock(); defer { lock.unlock() }
+    try insertRawEvents(rawEvents)
+    let payload = try JSONEncoder().encode(record)
+    try upsertMemoryV2Row(record, payload: payload)
+    try insertMemoryVersion(record, payload: payload)
+    try replaceMemoryEvidence(record)
+    try insertMemoryLineage(record)
+    return record
+  }
+
+  /// 按 id 读取一条 V2 记忆。
+  public func memoryV2(id: UUID) throws -> MemoryV2Record? {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("SELECT payload FROM memory_v2 WHERE id = ?;")
+    defer { sqlite3_finalize(statement) }
+    bindText(id.uuidString, at: 1, in: statement)
+    guard sqlite3_step(statement) == SQLITE_ROW,
+          let blob = sqlite3_column_blob(statement, 0) else { return nil }
+    let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0)))
+    return try? JSONDecoder().decode(MemoryV2Record.self, from: data)
+  }
+
+  /// 按作用域/人物/状态筛选 V2 记忆，按最近更新排序。
+  public func memoryV2(
+    scope: MemoryScope? = nil,
+    personID: UUID? = nil,
+    state: MemoryState? = nil,
+    limit: Int = 200
+  ) throws -> [MemoryV2Record] {
+    lock.lock(); defer { lock.unlock() }
+    var sql = "SELECT payload FROM memory_v2 WHERE 1=1"
+    if scope != nil { sql += " AND scope = ?" }
+    if personID != nil { sql += " AND person_id = ?" }
+    if state != nil { sql += " AND state = ?" }
+    sql += " ORDER BY updated_at DESC LIMIT ?;"
+    let statement = try prepare(sql)
+    defer { sqlite3_finalize(statement) }
+    var index: Int32 = 1
+    if let scope { bindText(scope.rawValue, at: index, in: statement); index += 1 }
+    if let personID { bindText(personID.uuidString, at: index, in: statement); index += 1 }
+    if let state { bindText(state.rawValue, at: index, in: statement); index += 1 }
+    sqlite3_bind_int(statement, index, Int32(max(1, limit)))
+    var result: [MemoryV2Record] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      guard let blob = sqlite3_column_blob(statement, 0) else { continue }
+      let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0)))
+      if let record = try? JSONDecoder().decode(MemoryV2Record.self, from: data) {
+        result.append(record)
+      }
+    }
+    return result
+  }
+
+  /// V2 记忆条数，供迁移与压力测试校验。
+  public func memoryV2Count() throws -> Int {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("SELECT COUNT(*) FROM memory_v2;")
+    defer { sqlite3_finalize(statement) }
+    guard sqlite3_step(statement) == SQLITE_ROW else { return 0 }
+    return Int(sqlite3_column_int(statement, 0))
+  }
+
+  /// 按 id 读取原始证据事件。
+  public func rawEvents(ids: [UUID]) throws -> [RawMemoryEvent] {
+    lock.lock(); defer { lock.unlock() }
+    guard !ids.isEmpty else { return [] }
+    let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
+    let sql = "SELECT id,kind,content,source_app,source_ref,occurred_at,ingested_at,idempotency_key FROM raw_events WHERE id IN (\(placeholders));"
+    let statement = try prepare(sql)
+    defer { sqlite3_finalize(statement) }
+    for (offset, id) in ids.enumerated() {
+      bindText(id.uuidString, at: Int32(offset + 1), in: statement)
+    }
+    var result: [RawMemoryEvent] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      guard let idText = text(statement, 0), let id = UUID(uuidString: idText),
+            let kind = text(statement, 1), let content = text(statement, 2) else { continue }
+      result.append(RawMemoryEvent(
+        id: id,
+        kind: kind,
+        content: content,
+        sourceApp: text(statement, 3),
+        sourceRef: text(statement, 4),
+        occurredAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 5)),
+        ingestedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
+        idempotencyKey: text(statement, 7)
+      ))
+    }
+    return result
+  }
+
+  private func insertRawEvents(_ events: [RawMemoryEvent]) throws {
+    guard !events.isEmpty else { return }
+    let sql = "INSERT OR IGNORE INTO raw_events (id,kind,content,source_app,source_ref,occurred_at,ingested_at,idempotency_key) VALUES (?,?,?,?,?,?,?,?);"
+    for event in events {
+      let statement = try prepare(sql)
+      defer { sqlite3_finalize(statement) }
+      bindText(event.id.uuidString, at: 1, in: statement)
+      bindText(event.kind, at: 2, in: statement)
+      bindText(event.content, at: 3, in: statement)
+      bindText(event.sourceApp, at: 4, in: statement)
+      bindText(event.sourceRef, at: 5, in: statement)
+      sqlite3_bind_double(statement, 6, event.occurredAt.timeIntervalSince1970)
+      sqlite3_bind_double(statement, 7, event.ingestedAt.timeIntervalSince1970)
+      bindText(event.idempotencyKey, at: 8, in: statement)
+      guard sqlite3_step(statement) == SQLITE_DONE else {
+        throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+      }
+    }
+  }
+
+  private func upsertMemoryV2Row(_ record: MemoryV2Record, payload: Data) throws {
+    let sql = """
+    INSERT INTO memory_v2 (id,type,state,scope,content,normalized_key,person_id,project_id,session_id,confidence,importance,cloud_permission,version,created_at,updated_at,confirmed_at,expires_at,payload)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET type=excluded.type,state=excluded.state,scope=excluded.scope,content=excluded.content,normalized_key=excluded.normalized_key,person_id=excluded.person_id,project_id=excluded.project_id,session_id=excluded.session_id,confidence=excluded.confidence,importance=excluded.importance,cloud_permission=excluded.cloud_permission,version=excluded.version,updated_at=excluded.updated_at,confirmed_at=excluded.confirmed_at,expires_at=excluded.expires_at,payload=excluded.payload;
+    """
+    let statement = try prepare(sql)
+    defer { sqlite3_finalize(statement) }
+    bindText(record.id.uuidString, at: 1, in: statement)
+    bindText(record.type.rawValue, at: 2, in: statement)
+    bindText(record.state.rawValue, at: 3, in: statement)
+    bindText(record.scope.rawValue, at: 4, in: statement)
+    bindText(record.content, at: 5, in: statement)
+    bindText(record.normalizedKey, at: 6, in: statement)
+    bindText(record.personID?.uuidString, at: 7, in: statement)
+    bindText(record.projectID?.uuidString, at: 8, in: statement)
+    bindText(record.sessionID?.uuidString, at: 9, in: statement)
+    sqlite3_bind_double(statement, 10, record.confidence)
+    sqlite3_bind_double(statement, 11, record.importance)
+    bindText(record.cloudPermission.rawValue, at: 12, in: statement)
+    sqlite3_bind_int(statement, 13, Int32(record.version))
+    sqlite3_bind_double(statement, 14, record.createdAt.timeIntervalSince1970)
+    sqlite3_bind_double(statement, 15, record.updatedAt.timeIntervalSince1970)
+    if let confirmedAt = record.confirmedAt {
+      sqlite3_bind_double(statement, 16, confirmedAt.timeIntervalSince1970)
+    } else {
+      sqlite3_bind_null(statement, 16)
+    }
+    if let expiresAt = record.expiresAt {
+      sqlite3_bind_double(statement, 17, expiresAt.timeIntervalSince1970)
+    } else {
+      sqlite3_bind_null(statement, 17)
+    }
+    payload.withUnsafeBytes { bytes in
+      _ = sqlite3_bind_blob(statement, 18, bytes.baseAddress, Int32(payload.count), transient)
+    }
+    guard sqlite3_step(statement) == SQLITE_DONE else {
+      throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+    }
+  }
+
+  private func insertMemoryVersion(_ record: MemoryV2Record, payload: Data) throws {
+    let sql = "INSERT INTO memory_versions (id,memory_id,version,payload,created_at) VALUES (?,?,?,?,?);"
+    let statement = try prepare(sql)
+    defer { sqlite3_finalize(statement) }
+    bindText(UUID().uuidString, at: 1, in: statement)
+    bindText(record.id.uuidString, at: 2, in: statement)
+    sqlite3_bind_int(statement, 3, Int32(record.version))
+    payload.withUnsafeBytes { bytes in
+      _ = sqlite3_bind_blob(statement, 4, bytes.baseAddress, Int32(payload.count), transient)
+    }
+    sqlite3_bind_double(statement, 5, Date().timeIntervalSince1970)
+    guard sqlite3_step(statement) == SQLITE_DONE else {
+      throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+    }
+  }
+
+  private func replaceMemoryEvidence(_ record: MemoryV2Record) throws {
+    let deleteStatement = try prepare("DELETE FROM memory_evidence WHERE memory_id = ?;")
+    bindText(record.id.uuidString, at: 1, in: deleteStatement)
+    guard sqlite3_step(deleteStatement) == SQLITE_DONE else {
+      let message = String(cString: sqlite3_errmsg(try requireDB()))
+      sqlite3_finalize(deleteStatement)
+      throw ClawMemoryStoreError.sqlite(message: message)
+    }
+    sqlite3_finalize(deleteStatement)
+
+    let sql = "INSERT OR REPLACE INTO memory_evidence (id,memory_id,raw_event_id,locator,excerpt) VALUES (?,?,?,?,?);"
+    for evidence in record.evidence {
+      let statement = try prepare(sql)
+      defer { sqlite3_finalize(statement) }
+      bindText(evidence.id.uuidString, at: 1, in: statement)
+      bindText(record.id.uuidString, at: 2, in: statement)
+      bindText(evidence.rawEventID.uuidString, at: 3, in: statement)
+      bindText(evidence.locator, at: 4, in: statement)
+      bindText(evidence.excerpt, at: 5, in: statement)
+      guard sqlite3_step(statement) == SQLITE_DONE else {
+        throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+      }
+    }
+  }
+
+  private func insertMemoryLineage(_ record: MemoryV2Record) throws {
+    let deleteStatement = try prepare("DELETE FROM memory_lineage WHERE memory_id = ?;")
+    bindText(record.id.uuidString, at: 1, in: deleteStatement)
+    guard sqlite3_step(deleteStatement) == SQLITE_DONE else {
+      let message = String(cString: sqlite3_errmsg(try requireDB()))
+      sqlite3_finalize(deleteStatement)
+      throw ClawMemoryStoreError.sqlite(message: message)
+    }
+    sqlite3_finalize(deleteStatement)
+
+    let sql = "INSERT INTO memory_lineage (id,memory_id,parent_memory_id,raw_event_id,source_memory_id) VALUES (?,?,?,?,?);"
+    func insertEdge(parent: UUID?, rawEvent: UUID?, source: UUID?) throws {
+      let statement = try prepare(sql)
+      defer { sqlite3_finalize(statement) }
+      bindText(UUID().uuidString, at: 1, in: statement)
+      bindText(record.id.uuidString, at: 2, in: statement)
+      bindText(parent?.uuidString, at: 3, in: statement)
+      bindText(rawEvent?.uuidString, at: 4, in: statement)
+      bindText(source?.uuidString, at: 5, in: statement)
+      guard sqlite3_step(statement) == SQLITE_DONE else {
+        throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+      }
+    }
+    if let parentID = record.lineage.parentID {
+      try insertEdge(parent: parentID, rawEvent: nil, source: nil)
+    }
+    for rawEventID in record.lineage.rawEventIDs {
+      try insertEdge(parent: nil, rawEvent: rawEventID, source: nil)
+    }
+    for sourceID in record.lineage.derivedFromMemoryIDs {
+      try insertEdge(parent: nil, rawEvent: nil, source: sourceID)
+    }
   }
 
   private func seedBuiltInSkillsIfNeeded() {
