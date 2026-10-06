@@ -1,0 +1,80 @@
+# CLAW 待修问题清单（用户反馈汇总）
+
+> 记录时间：2026-10-07
+> 用法：这是用户口头反馈的待修项汇总，后续继续补充。每条都带代码定位和当前状态，接手时不必重新排查。
+
+## 当前仓库状态
+
+- 已推送且 CI 全绿的基线：`f3a52bc84e223053c68f85ae5f79f29938e47158`
+- 已提交但**尚未推送**（当时 github.com 不通）：
+  - `a620bc3` diag: surface the real reason when the keyboard cannot open the host app
+  - `107f3e4` fix: run CLAW voice input inside the keyboard instead of jumping to the host app
+- 工作区未提交（用户要求暂缓）：`Packages/HamsterKeyboardKit/Sources/View/KeyboardToolbarView.swift` 的候选栏图标精简半成品
+
+## 一、候选栏右侧图标（规格已确认）
+
+用户要的最终规则：
+
+1. 「显示应用图标」（键盘设置 → 候选栏设置）控制整组 CLAW 入口：人物（全局）／帮你回／超会说／AI／眼睛／表情／`⋯`。
+2. 「显示键盘收起图标」控制 `⌄`，**默认必须开启**。
+3. 候选栏里 `⌄` 单独贴最右侧，不和眼睛／表情／`⋯` 挤在一起。
+4. 输入文字时应用图标那一组**不显示**（用户已确认）。即：输入为空显示应用组 + `⌄`；打字时只剩候选词 + `⌄`。
+
+必须连带处理的两件事：
+
+- `Resources/SharedSupport/hamster.yaml` 里 `displayAppIconButton` 和 `displayKeyboardDismissButton` 默认都是 `false`，接线后要改成 `true`，否则升级后那排按钮会默认消失。
+- 功能行现在是一长串手写约束（`contactButton → helpReplyButton → … → moreButton → dismissKeyboardButton`），隐藏其中几个会在前面留空白，需要改成横向 stack 才能正确收起。
+
+状态：**未完成**。工作区里只有一版过时的半成品（只留 `⋯`、宽度 112→40），要按上面规则重做。
+
+## 二、候选栏下拉（展开）只剩一行
+
+- 现象：点候选栏展开，键盘变高但候选词仍只有一行，多出来的位置是空白。
+- 根因：`KeyboardToolbarView.swift` 里 `candidateBarView.topAnchor = commonFunctionBar.topAnchor`、`.bottomAnchor = commonFunctionBar.bottomAnchor`，而 `commonFunctionBar` 高度被写死为 `keyboardContext.heightOfToolbar`（默认 50）。候选栏被永久夹在 50pt 内。
+- 出处：这两条约束是 **6152632** 加入的。之前是 `addSubview(candidateBarView)` + `candidateBarView.fillSuperview()`，即铺满整条工具栏，展开时能拿到全部高度。
+- 展开机制本身仍在 `KeyboardRootView.swift`（展开时移除按键视图，把工具栏高度设为键区高度 + 50）。
+- 修法方向：候选栏上下约束按 `keyboardContext.candidatesViewState` 切换两组——收起时保持现状，展开时改为从工具栏顶部延伸到功能行上沿。
+
+状态：**已定位，未改**。
+
+## 三、中文九宫格左侧符号初次显示是浅灰色
+
+- 现象：刚进入中文九宫格，左侧那一列滑动符号是浅灰、看不清；滑动列表后才变黑。
+- 根因：`SymbolCell` 自己缓存 style，颜色在 `updateConfiguration` 里取 `style?.foregroundColor`；而 `setStyle` 最终只是重新 apply 一份**内容完全相同**的 diffable snapshot，不会重新配置已存在的 cell，所以屏幕上已有格子保留旧颜色，只有滑动后新建/复用的格子才拿到新样式。另外初始 style 用的是 `ChineseNineGridKeyboard.init` 当时的 `colorScheme`。
+- 涉及文件：`SymbolCell.swift`、`SymbolsVerticalView.swift`、`ChineseNineGridKeyboard.swift`。
+- 修法方向：`setStyle` 时强制重建单元格（如 `applySnapshotUsingReloadData`）；或让 cell 不再缓存 style；并保证首次构建使用最终配色。
+
+状态：**已定位，未改**。
+
+## 四、键盘语音：要在键盘里直接录，不跳转
+
+- 用户明确要求：语音输入就在输入法界面完成，**不要跳主程序**。
+- 已做的改动（提交 `107f3e4`，未推送）：
+  - `ClawVoiceInputService.start()` / `startStreaming()` 去掉 `isKeyboardExtensionRuntime` 拦截。
+  - `ClawPanelOverlayView` 去掉话筒／电话的 `handOffToHostVoiceInput()` 跳转分支，恢复键盘内录音与连续通话链路。
+- 前提条件：键盘开启「允许完全访问」，且麦克风与语音识别权限已在主程序授权过（扩展不能弹权限框）。键盘 Info.plist 已有 `NSMicrophoneUsageDescription` 与 `NSSpeechRecognitionUsageDescription`。
+- 待验证：真机上按住话筒／点电话能否直接出字。若系统仍拒绝扩展录音，会返回错误而不是静默失败。
+
+状态：**代码已改，待打包 + 真机验证**。
+
+## 五、键盘所有"打开主程序"入口失败
+
+- 现象：键盘里点语音（旧逻辑）、`⋯ → 打开 CLAW 助手`、`⋯ → 键盘设置`，全部弹「未找到输入法主程序」。
+- 已排除：
+  - 协议未注册 —— 手机 Safari 打开 `hamster://app.lgm.7517/clawTalk` 可以正常跳转。
+  - 完全访问未开 —— 用户已开启。
+  - 多个 App 抢同一 scheme —— 用户已删掉其他 CLAW／Hamster／GuruIM／ClawBase，仍然失败。
+  - bundle id / 签名不一致 —— 仓库侧 `app.lgm.7517`（主程序）与 `app.lgm.7517.123`（键盘）成对，签名脚本不改写 bundle id，全仓库只有 `Hamster/Info.plist` 注册该协议。
+- 失败点：`KeyboardInputViewController.openUrl` 调用 `extensionContext.open(url)`，回调返回 `success == false`，于是走 `showOpenUrlFailureHint()`。
+- 已加的诊断（提交 `a620bc3`，未推送）：失败提示改成显示「完全访问状态 + 真实 URL」，不再统一显示"未找到输入法主程序"。
+- 备注：语音已按第四条改为不跳转，但 `⋯` 菜单里另外两个入口仍然依赖这条通道，所以这个 bug 依然要解决。
+
+状态：**原因未定，已加诊断，待用新包复现取证**。
+
+## 六、其他已记录但未动手的项
+
+- 键盘设置里两个死开关：`displayAppIconButton`、`displayKeyboardDismissButton` 目前只有配置读写 + `KeyboardContext` 访问器，没有任何视图消费，属于空转（见第一条的接线工作）。
+- 面板重复订阅与强制布局精简（`KeyboardToolbarView` / `ClawPanelOverlayView` 多处 `layoutIfNeeded()`）。
+- 语音状态机加固：防连点、音频中断、路由变化、后台处理。
+- 主程序「键盘设置 → 候选栏设置」里，`显示候选项序号`、`显示候选 Comment` 只在关闭「iOS 原生布局」时生效；`编码区高度` 在 iOS 原生布局下被固定为 20。
+
