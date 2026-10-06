@@ -75,7 +75,7 @@ jobs:
 
   sign:
     needs: build
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/work/claw-voice-keyboard-bg'
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/work/claw-voice-keyboard-bg' || github.ref == 'refs/heads/work/claw-productization-20261006'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
