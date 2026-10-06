@@ -195,8 +195,9 @@ rime:
   maximumNumberOfCandidateWords: 100
   keyValueOfSwitchSimplifiedAndTraditional: traditionalization
   # RIME 重新部署时，是否覆盖词库文件
-  # 如果使用自造词，需要改为 false, 否则部署时会覆盖键盘自造词文件
-  overrideDictFiles: true
+  # 必须为 false：为 true 时部署不会先把键盘学到的 userdb/自造词搬回沙盒，
+  # 部署结束后 App Group 目录又会被沙盒副本整份覆盖，导致键盘词频学习每次部署清零。
+  overrideDictFiles: false
   # 覆盖词库文件的正则表达式
   # 使用场景：
   # 在开启 overrideDictFiles 后，每次重新部署会按照正则表达式符合的条件翻盖文件
