@@ -432,3 +432,12 @@ if keyboardContext.useIOSNativeLayout {
 2. **`ClawPanelPalette` 这个静态全局晚一拍**。它的 `activeTheme` 只在 `KeyboardToolbarView.setupAppearance()` 与 `ClawPanelOverlayView.refresh(for:)` 两处被同步（另外 `hamsterColor()` 会顺手更新它），而 `KeyboardToolbarView` 是直接读 `ClawPanelPalette.toolbarBackground` 的。若工具栏先构建、配置后到，工具栏与候选栏就会停在系统色，而键盘本体已是主题色。
 
 补充修法（在第十四节通用方案之外）：主题或深浅色变化时，要同时做三件事——刷新 `ClawPanelPalette.sync(with:)`、重新调用 `syncKeyboardBackgroundColor()`、并让根视图重跑一次 `setupAppearance()`。只做其中一件仍会留下接缝。
+
+### 底部那条能不能改？——先做一次验证
+
+第三方键盘的整个区域（含底部那条）理论上都在扩展的 `inputView` 内，扩展可以自己涂色，这也是搜狗、Gboard 的主题色能一路贯到底部的原因。只有一种情况改不了：扩展的视图没铺满系统分配的键盘区域，剩下的部分由系统用默认底色补。
+
+验证方法（一次即可定性）：在键盘扩展里把 `view.backgroundColor` 临时设成一个刺眼的颜色（例如纯红），重新打开键盘看底部那条是否也变红。
+
+- 变红 → 那块属于扩展，能改，问题只是取色没统一，按本节方案修即可。
+- 不变 → 那块不在扩展视图内，只能保证扩展自身铺满，颜色由系统决定。
