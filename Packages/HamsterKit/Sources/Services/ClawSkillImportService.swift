@@ -69,6 +69,8 @@ public final class ClawSkillImportService {
     guard !id.isEmpty && id.count <= 80 && !name.isEmpty && name.count <= 80 && !prompt.isEmpty && prompt.count <= 20_000 else {
       return false
     }
+    if let inputContract = skill.inputContract, inputContract.count > 2_000 { return false }
+    if let outputContract = skill.outputContract, outputContract.count > 2_000 { return false }
     let tools = Set(skill.toolIDs ?? [])
     guard tools.isSubset(of: ClawSkillRuntime.shared.supportedTools) else { return false }
     let allowedPermissions: Set<String> = [

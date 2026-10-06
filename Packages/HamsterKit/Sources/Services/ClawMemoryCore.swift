@@ -178,6 +178,9 @@ public struct ClawSkillDefinition: Codable, Identifiable, Equatable {
   public var triggers: [ClawSkillTrigger]?
   public var workflow: [ClawSkillStep]?
   public var toolIDs: [String]?
+  /// Human-readable contracts used by the declarative runtime and import UI.
+  public var inputContract: String?
+  public var outputContract: String?
 
   public init(
     id: String,
@@ -193,7 +196,9 @@ public struct ClawSkillDefinition: Codable, Identifiable, Equatable {
     editedCount: Int = 0,
     triggers: [ClawSkillTrigger]? = nil,
     workflow: [ClawSkillStep]? = nil,
-    toolIDs: [String]? = nil
+    toolIDs: [String]? = nil,
+    inputContract: String? = nil,
+    outputContract: String? = nil
   ) {
     self.id = id
     self.name = name
@@ -209,6 +214,8 @@ public struct ClawSkillDefinition: Codable, Identifiable, Equatable {
     self.triggers = triggers
     self.workflow = workflow
     self.toolIDs = toolIDs
+    self.inputContract = inputContract
+    self.outputContract = outputContract
   }
 
   public var effectivePrompt: String {
@@ -817,12 +824,12 @@ public final class ClawMemoryStore {
 
   private func seedBuiltInSkillsIfNeeded() {
     let builtIns = [
-      ClawSkillDefinition(id: "reply", name: "帮你回", summary: "结合当前聊天、对象关系与用户表达习惯生成回复", systemPrompt: "理解对方真实意图和情绪，生成自然、简洁、像用户本人会说的话。", permissions: ["memory.global", "memory.contact", "conversation.current"], triggers: [.manual, .keyboardHelpReply, .screenshotImported], toolIDs: ["memory.search", "conversation.current"]),
-      ClawSkillDefinition(id: "rewrite", name: "超会说", summary: "保留原意并优化表达", systemPrompt: "保留用户原意，减少 AI 腔，让表达自然、有分寸，并优先遵循用户长期语言习惯。", permissions: ["memory.global", "memory.contact"], triggers: [.manual, .keyboardRewrite], toolIDs: ["memory.search"]),
-      ClawSkillDefinition(id: "screenshot-chat", name: "聊天截图理解", summary: "把聊天截图转成结构化时间线", systemPrompt: "识别聊天对象、发言方、顺序、时间和正文，不臆造不可见内容。", permissions: ["photos.selected", "memory.contact"], triggers: [.screenshotImported], toolIDs: ["conversation.write"]),
-      ClawSkillDefinition(id: "contact-profile", name: "人物画像", summary: "从有来源的互动中更新联系人画像", systemPrompt: "只从可追溯证据提炼稳定特征，区分事实与推断。", permissions: ["memory.contact"], triggers: [.screenshotImported, .dailyReview], toolIDs: ["memory.contact"]),
-      ClawSkillDefinition(id: "task-extract", name: "任务提取", summary: "从对话识别承诺、等待、截止日期和下一步", systemPrompt: "只在语义足够明确时创建任务或承诺，并保留来源。", permissions: ["conversation.current", "tasks.write"], triggers: [.screenshotImported, .assistant], toolIDs: ["tasks.write"]),
-      ClawSkillDefinition(id: "daily-secretary", name: "今日秘书", summary: "整理当天重要事项和下一步", systemPrompt: "优先未完成承诺、截止日期、等待回复和高相关近期事件，避免无意义打扰。", permissions: ["memory.global", "memory.contact", "tasks.read"], triggers: [.dailyReview, .manual], toolIDs: ["memory.search", "tasks.read"]),
+      ClawSkillDefinition(id: "reply", name: "帮你回", summary: "结合当前聊天、对象关系与用户表达习惯生成回复", systemPrompt: "理解对方真实意图和情绪，生成自然、简洁、像用户本人会说的话。", permissions: ["memory.global", "memory.contact", "conversation.current"], triggers: [.manual, .keyboardHelpReply, .screenshotImported], toolIDs: ["memory.search", "conversation.current"], inputContract: "当前聊天内容，可选联系人/截图上下文", outputContract: "可直接发送的短回复候选"),
+      ClawSkillDefinition(id: "rewrite", name: "超会说", summary: "保留原意并优化表达", systemPrompt: "保留用户原意，减少 AI 腔，让表达自然、有分寸，并优先遵循用户长期语言习惯。", permissions: ["memory.global", "memory.contact"], triggers: [.manual, .keyboardRewrite], toolIDs: ["memory.search"], inputContract: "用户原始表达", outputContract: "可直接替换原文的优化版本"),
+      ClawSkillDefinition(id: "screenshot-chat", name: "聊天截图理解", summary: "把聊天截图转成结构化时间线", systemPrompt: "识别聊天对象、发言方、顺序、时间和正文，不臆造不可见内容。", permissions: ["photos.selected", "memory.contact"], triggers: [.screenshotImported], toolIDs: ["conversation.write"], inputContract: "一张或多张聊天截图", outputContract: "结构化 Conversation Timeline"),
+      ClawSkillDefinition(id: "contact-profile", name: "人物画像", summary: "从有来源的互动中更新联系人画像", systemPrompt: "只从可追溯证据提炼稳定特征，区分事实与推断。", permissions: ["memory.contact"], triggers: [.screenshotImported, .dailyReview], toolIDs: ["memory.contact"], inputContract: "联系人历史互动", outputContract: "带来源的稳定人物/关系画像"),
+      ClawSkillDefinition(id: "task-extract", name: "任务提取", summary: "从对话识别承诺、等待、截止日期和下一步", systemPrompt: "只在语义足够明确时创建任务或承诺，并保留来源。", permissions: ["conversation.current", "tasks.write"], triggers: [.screenshotImported, .assistant], toolIDs: ["tasks.write"], inputContract: "当前聊天消息", outputContract: "Task / Commitment / WaitingFor / Deadline / NextAction"),
+      ClawSkillDefinition(id: "daily-secretary", name: "今日秘书", summary: "整理当天重要事项和下一步", systemPrompt: "优先未完成承诺、截止日期、等待回复和高相关近期事件，避免无意义打扰。", permissions: ["memory.global", "memory.contact", "tasks.read"], triggers: [.dailyReview, .manual], toolIDs: ["memory.search", "tasks.read"], inputContract: "今日记忆、任务和近期互动", outputContract: "按优先级排序的 briefing 与下一步"),
     ]
     let existing = (try? skills()) ?? []
     for builtIn in builtIns {
@@ -838,6 +845,14 @@ public final class ClawMemoryStore {
         }
         if old.workflow == nil, builtIn.workflow != nil {
           old.workflow = builtIn.workflow
+          changed = true
+        }
+        if old.inputContract == nil, builtIn.inputContract != nil {
+          old.inputContract = builtIn.inputContract
+          changed = true
+        }
+        if old.outputContract == nil, builtIn.outputContract != nil {
+          old.outputContract = builtIn.outputContract
           changed = true
         }
         if changed { try? saveSkill(old) }

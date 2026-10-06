@@ -232,6 +232,48 @@ final class ClawMemoryCoreTests: XCTestCase {
     ))
   }
 
+  func testSkillRuntimeABExperimentAndWhitelistedToolExecution() throws {
+    let skillID = "ab-test-\(UUID().uuidString)"
+    try store.upsertMemory(ClawMemoryItem(
+      kind: .communicationPreference,
+      content: "不要写太长",
+      normalizedKey: "short-style",
+      sourceType: "manual"
+    ))
+    let skill = ClawSkillDefinition(
+      id: skillID,
+      name: "A/B 测试",
+      summary: "test",
+      systemPrompt: "基础提示",
+      permissions: ["memory.global"],
+      learnedDirective: "优先短句",
+      triggers: [.manual],
+      toolIDs: ["memory.search"],
+      inputContract: "一句用户输入",
+      outputContract: "一条回复"
+    )
+    try store.saveSkill(skill)
+    let runtime = ClawSkillRuntime(store: store)
+    let first = try runtime.prepare(skillID: skillID, trigger: .manual, input: "怎么说", contactID: nil)
+    let second = try runtime.prepare(skillID: skillID, trigger: .manual, input: "怎么说", contactID: nil)
+    XCTAssertEqual(Set([first.experimentVariantID, second.experimentVariantID].compactMap { $0 }), Set(["control", "evolved"]))
+
+    runtime.recordExperimentFeedback(skillID: skillID, variantID: "evolved", action: .accepted)
+    runtime.recordExperimentFeedback(skillID: skillID, variantID: "control", action: .regenerated)
+    let experiment = runtime.experimentMetrics(skillID: skillID)
+    XCTAssertEqual(experiment?.control.impressions, 1)
+    XCTAssertEqual(experiment?.evolved.impressions, 1)
+    XCTAssertEqual(experiment?.evolved.accepted, 1)
+
+    let toolOutput = try runtime.executeTool(
+      skillID: skillID,
+      toolID: "memory.search",
+      input: "短",
+      contactID: nil
+    )
+    XCTAssertTrue(toolOutput.contains("不要写太长"))
+  }
+
   func testProactiveSecretarySurfacesOverdueAndWaitingItems() throws {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
     let overdue = ClawSecretaryTask(
@@ -254,5 +296,6 @@ final class ClawMemoryCoreTests: XCTestCase {
     XCTAssertEqual(suggestions.first?.taskID, overdue.id)
     XCTAssertTrue(secretary.complete(taskID: overdue.id))
     XCTAssertEqual(try store.tasks(status: .open).count, 1)
+    XCTAssertTrue(secretary.briefing(now: now).contains("未完成事项"))
   }
 }

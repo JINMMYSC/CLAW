@@ -6,6 +6,7 @@ public struct ClawPendingGeneratedOutput: Codable, Equatable {
   public var sourceText: String?
   public var generatedText: String
   public var style: String?
+  public var experimentVariantID: String?
   public var insertedAt: Date
 }
 
@@ -22,7 +23,8 @@ public final class ClawGeneratedOutputTracker {
     contactID: UUID?,
     sourceText: String?,
     generatedText: String,
-    style: String? = nil
+    style: String? = nil,
+    experimentVariantID: String? = nil
   ) {
     let pending = ClawPendingGeneratedOutput(
       skillID: skillID,
@@ -30,6 +32,7 @@ public final class ClawGeneratedOutputTracker {
       sourceText: sourceText,
       generatedText: generatedText,
       style: style,
+      experimentVariantID: experimentVariantID,
       insertedAt: Date()
     )
     defaults?.set(try? JSONEncoder().encode(pending), forKey: key)
@@ -59,6 +62,11 @@ public final class ClawGeneratedOutputTracker {
       originalText: generated,
       finalText: final
     ))
+    ClawSkillRuntime.shared.recordExperimentFeedback(
+      skillID: pending.skillID,
+      variantID: pending.experimentVariantID,
+      action: .edited
+    )
     _ = ClawEvolutionEngine.shared.evolveIfNeeded(skillID: pending.skillID)
     return true
   }

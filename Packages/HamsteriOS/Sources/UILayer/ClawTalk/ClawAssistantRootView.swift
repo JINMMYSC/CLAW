@@ -193,6 +193,7 @@ private struct ClawSecretaryTodayView: View {
   @State private var tasks: [ClawSecretaryTask] = []
   @State private var memories: [ClawMemoryItem] = []
   @State private var suggestions: [ClawSecretarySuggestion] = []
+  @State private var briefing = ""
 
   var body: some View {
     NavigationView {
@@ -209,6 +210,15 @@ private struct ClawSecretaryTodayView: View {
           }
         } header: {
           Text("秘书摘要")
+        }
+        Section {
+          Text(briefing)
+            .font(.subheadline)
+            .textSelection(.enabled)
+        } header: {
+          Text("今日 Briefing")
+        } footer: {
+          Text("由本机任务/承诺/等待状态生成；即使未配置云端模型也可用。")
         }
         if !suggestions.isEmpty {
           Section {
@@ -280,6 +290,7 @@ private struct ClawSecretaryTodayView: View {
     tasks = (try? ClawMemoryStore.shared.tasks(status: .open, limit: 100)) ?? []
     memories = (try? ClawMemoryStore.shared.memories(limit: 500)) ?? []
     suggestions = ClawProactiveSecretaryService.shared.suggestions()
+    briefing = ClawProactiveSecretaryService.shared.briefing()
     ClawProactiveSecretaryService.shared.refreshLocalNotifications()
   }
 }
@@ -493,13 +504,18 @@ private struct ClawMemoryCenterView: View {
         }
 
         Section {
-          Button { showingImporter = true } label: { Label("从电脑 Agent 导入", systemImage: "square.and.arrow.down") }
+          Button { showingImporter = true } label: { Label("从电脑 Agent 导入文件 / 文件夹", systemImage: "square.and.arrow.down") }
           Menu {
             ForEach(ClawAgentExportPreset.allCases) { preset in
               Button(preset.displayName) { exportMarkdown(preset: preset, includeContacts: true) }
             }
             Divider()
             Button("只导出我的个人记忆") { exportMarkdown(preset: .generic, includeContacts: false) }
+            if let current = HeartTargetService.shared.selectedProfile {
+              Button("只导出当前联系人：\(current.displayName)") {
+                exportMarkdown(preset: .generic, includeContacts: true, contactIDs: [current.id])
+              }
+            }
           } label: {
             Label("导出 Markdown 给 Agent", systemImage: "doc.plaintext")
           }
@@ -562,9 +578,27 @@ private struct ClawMemoryCenterView: View {
                 Text("工具：\(tools.joined(separator: " · "))")
                   .font(.caption2).foregroundColor(.secondary).lineLimit(2)
               }
+              if let inputContract = skill.inputContract, !inputContract.isEmpty {
+                Text("输入：\(inputContract)")
+                  .font(.caption2).foregroundColor(.secondary).lineLimit(2)
+              }
+              if let outputContract = skill.outputContract, !outputContract.isEmpty {
+                Text("输出：\(outputContract)")
+                  .font(.caption2).foregroundColor(.secondary).lineLimit(2)
+              }
               if let learned = skill.learnedDirective, !learned.isEmpty {
                 Text("已进化：\(learned)")
                   .font(.caption2).foregroundColor(.accentColor).lineLimit(3)
+              }
+              if let experiment = ClawSkillRuntime.shared.experimentMetrics(skillID: skill.id) {
+                let controlRate = Int(experiment.control.successRate * 100)
+                let evolvedRate = Int(experiment.evolved.successRate * 100)
+                Text("A/B：原版 \(controlRate)%（\(experiment.control.impressions)次） · 进化版 \(evolvedRate)%（\(experiment.evolved.impressions)次）")
+                  .font(.caption2).foregroundColor(.secondary)
+                if let winner = experiment.winner {
+                  Text("当前评测领先：\(winner == "evolved" ? "进化版" : "原版")")
+                    .font(.caption2).foregroundColor(.green)
+                }
               }
               HStack {
                 Button(skill.enabled ? "停用" : "启用") { toggleSkill(skill) }
@@ -640,9 +674,17 @@ private struct ClawMemoryCenterView: View {
     }
   }
 
-  private func exportMarkdown(preset: ClawAgentExportPreset, includeContacts: Bool) {
+  private func exportMarkdown(
+    preset: ClawAgentExportPreset,
+    includeContacts: Bool,
+    contactIDs: Set<UUID>? = nil
+  ) {
     do {
-      let text = try ClawMemoryExchangeService.shared.exportMarkdown(preset: preset, includeContacts: includeContacts)
+      let text = try ClawMemoryExchangeService.shared.exportMarkdown(
+        preset: preset,
+        includeContacts: includeContacts,
+        contactIDs: contactIDs
+      )
       let url = FileManager.default.temporaryDirectory.appendingPathComponent("CLAW-Memory-\(preset.rawValue).md")
       try text.write(to: url, atomically: true, encoding: .utf8)
       share(url)
@@ -668,8 +710,13 @@ private struct ClawMemoryCenterView: View {
   private func analyzeImports(_ urls: [URL]) {
     guard !urls.isEmpty else { return }
     do {
+      let importURLs = expandImportURLs(urls)
+      guard !importURLs.isEmpty else {
+        status = "没有找到可导入的 .md/.txt/.json/.jsonl/.clawmemory 文件。"
+        return
+      }
       var previews: [ClawMemoryImportPreview] = []
-      for url in urls {
+      for url in importURLs {
         let data = try Data(contentsOf: url)
         previews.append(try ClawMemoryExchangeService.shared.previewImport(data: data, fileName: url.lastPathComponent))
       }
@@ -681,12 +728,37 @@ private struct ClawMemoryCenterView: View {
         conversations: previews.flatMap(\.conversations),
         duplicateCount: previews.reduce(0) { $0 + $1.duplicateCount },
         conflictCount: previews.reduce(0) { $0 + $1.conflictCount },
-        sourceName: urls.count == 1 ? urls[0].lastPathComponent : "\(urls.count) 个文件"
+        sourceName: importURLs.count == 1 ? importURLs[0].lastPathComponent : "\(importURLs.count) 个文件"
       )
-      status = "已分析 \(urls.count) 个文件，请确认后写入。"
+      status = "已分析 \(importURLs.count) 个文件，请确认后写入。"
     } catch {
       status = "导入分析失败：\(error.localizedDescription)"
     }
+  }
+
+  private func expandImportURLs(_ urls: [URL]) -> [URL] {
+    let allowed = Set(["md", "markdown", "txt", "json", "jsonl", "clawmemory", "zip"])
+    var result: [URL] = []
+    let fm = FileManager.default
+    for url in urls {
+      var isDirectory: ObjCBool = false
+      if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+        if let enumerator = fm.enumerator(
+          at: url,
+          includingPropertiesForKeys: [.isRegularFileKey],
+          options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) {
+          for case let fileURL as URL in enumerator {
+            if allowed.contains(fileURL.pathExtension.lowercased()) {
+              result.append(fileURL)
+            }
+          }
+        }
+      } else if allowed.contains(url.pathExtension.lowercased()) {
+        result.append(url)
+      }
+    }
+    return result
   }
 
   private func toggleSkill(_ skill: ClawSkillDefinition) {
@@ -789,7 +861,7 @@ private struct ClawMemoryDocumentPicker: UIViewControllerRepresentable {
   func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
 
   func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-    let types: [UTType] = [.plainText, .json, .data, .archive]
+    let types: [UTType] = [.plainText, .json, .data, .archive, .folder]
     let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
     picker.allowsMultipleSelection = allowsMultipleSelection
     picker.delegate = context.coordinator

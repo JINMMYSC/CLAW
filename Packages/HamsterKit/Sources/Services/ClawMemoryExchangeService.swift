@@ -94,7 +94,13 @@ public final class ClawMemoryExchangeService {
       }
     }
 
-    let tasks = try store.tasks(status: .open, limit: 2_000)
+    var tasks = try store.tasks(status: .open, limit: 2_000)
+    if let contactIDs {
+      tasks = tasks.filter { task in
+        guard let id = task.contactID else { return true }
+        return contactIDs.contains(id)
+      }
+    }
     if !tasks.isEmpty {
       sections.append("\n## Open Tasks")
       sections.append(contentsOf: tasks.map { task in

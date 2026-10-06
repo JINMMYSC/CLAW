@@ -1313,7 +1313,7 @@ extension KeyboardInputViewController {
         content: trimmed,
         occurredAt: startTime,
         sourceType: "keyboard-session",
-        sourceRef: "clawtalk:(entry.id.uuidString)",
+        sourceRef: "clawtalk:\(entry.id.uuidString)",
         confidence: 1
       )
       if (try? ClawMemoryStore.shared.appendConversation(message)) == true {
@@ -1405,26 +1405,5 @@ extension KeyboardInputViewController {
     case .go:                      return "跳转/确认"
     case .join:                    return "加入/提交"
     case .continue:                return "表单填写"
-    default:                       break
-    }
 
-    return "通用文本"
-  }
-}
-
-private enum AssociatedKeys {
-  static var textBuffer = "clawTalkTextBuffer"
-  static var sessionStartTime = "clawTalkSessionStartTime"
-  static var initialContext = "clawTalkInitialContext"
-  static var sessionBlocked = "clawTalkSessionBlocked"
-}
-
-extension UIKeyboardType {
-  var isNumberType: Bool {
-    switch self {
-    // 数字键盘
-    case .numberPad, .numbersAndPunctuation, .phonePad, .decimalPad, .asciiCapableNumberPad: return true
-    default: return false
-    }
-  }
-}
+[Showing lines 1-1407 of 1431 (50.0KB limit). Use offset=1408 to continue.]

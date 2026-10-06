@@ -58,6 +58,29 @@ public final class ClawProactiveSecretaryService {
     }
   }
 
+  /// Lightweight on-device daily briefing. It is deterministic and available even when
+  /// no cloud model is configured; AutoInsight can layer richer AI analysis on top.
+  public func briefing(now: Date = Date()) -> String {
+    let open = (try? store.tasks(status: .open, limit: 100)) ?? []
+    let proactive = suggestions(now: now)
+    guard !open.isEmpty || !proactive.isEmpty else {
+      return "今天暂时没有明确的未完成承诺、截止事项或等待跟进。"
+    }
+
+    let urgent = proactive.filter { $0.urgency >= .high }.count
+    let waiting = open.filter { $0.kind == .waitingFor }.count
+    var lines = ["今天有 \(open.count) 个未完成事项，其中 \(urgent) 个需要优先关注，\(waiting) 个正在等待对方。"]
+    for item in proactive.prefix(5) {
+      lines.append("• \(item.title) — \(item.detail)")
+    }
+    if proactive.isEmpty {
+      for task in open.prefix(5) {
+        lines.append("• \(task.title)")
+      }
+    }
+    return lines.joined(separator: "\n")
+  }
+
   @discardableResult
   public func complete(taskID: UUID) -> Bool {
     (try? store.setTaskStatus(id: taskID, status: .done)) ?? false
