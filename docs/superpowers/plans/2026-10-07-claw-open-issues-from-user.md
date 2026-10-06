@@ -256,3 +256,25 @@ AI 侧（`ClawContextBuilder.build`）：
 2. 两个按钮动作前先判断 `URL.iCloudDocumentURL != nil`；为 nil 时给出可读提示——「iCloud 不可用，请先在系统设置登录 iCloud 并打开 iCloud Drive」，而不是崩。
 3. `iCloudDocumentURL` 不要永久缓存 nil：改为每次求值，或仅在拿到值时才缓存。
 4. 顺带把 `enableAppleCloud` 总开关的判断补上。
+
+## 十二、主程序增加「外观」选项（系统／浅色／深色）
+
+用户要求：主程序设置页增加「外观」，可选 系统 / 浅色 / 深色，位置在「键盘配色」**上面一行**。
+
+### 现状
+
+- 「键盘配色」在 `Packages/HamsteriOS/Sources/ViewModel/Settings/SettingsViewModel.swift` 第 150-158 行，位于 `SettingSectionModel(title: "键盘相关")` 分组内。
+- 主程序**目前没有任何外观开关**：全仓库搜不到 `overrideUserInterfaceStyle`；界面颜色走动态色（`UIColor { trait in trait.userInterfaceStyle == .dark ? ... }`），完全跟随系统。
+
+### 实现要点
+
+1. 新项插入到第 150 行之前，复用现成的 `.pullDown` 类型。参考写法见 `Packages/HamsteriOS/Sources/ViewModel/Keyboard/KeyboardSettingsViewModel.swift` 第 1471-1498 行：`type: .pullDown` + `textValue` 显示当前值 + `pullDownMenuActionsBuilder` 返回 `[UIAction]`。图标可用 `circle.lefthalf.filled`。
+2. 三个 `UIAction` 分别对应 系统 / 浅色 / 深色，用 `state: .on` 标出当前选中项。
+3. 持久化用 `UserDefaults.standard` 即可，这是主程序自己的显示偏好，不必进 App Group。
+4. 应用方式是 `window.overrideUserInterfaceStyle = .unspecified / .light / .dark`。主程序是 Scene 架构，窗口在 `SceneDelegate`；切换后要立即生效，可以遍历 `UIApplication.shared.connectedScenes` 取窗口重设，或发通知让 SceneDelegate 统一处理。
+5. 启动时必须在 `window.makeKeyAndVisible()` **之前**读取并赋值，否则会先闪一下系统配色再切换过去。
+
+### 两点提醒
+
+- 这个设置只作用于**主程序**。键盘扩展是独立进程，`overrideUserInterfaceStyle` 影响不到它，键盘外观仍跟随系统。若希望键盘也跟着变，需要把选项写进 App Group，并让键盘扩展启动时读取并套用。
+- 现在的位置在「键盘相关」分组里，而外观属于整个 App，语义上有点偏。可以顺手把该分组改名，或把外观提到更通用的分组。
