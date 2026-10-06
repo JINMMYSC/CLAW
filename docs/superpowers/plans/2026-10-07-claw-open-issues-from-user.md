@@ -78,3 +78,49 @@
 - 语音状态机加固：防连点、音频中断、路由变化、后台处理。
 - 主程序「键盘设置 → 候选栏设置」里，`显示候选项序号`、`显示候选 Comment` 只在关闭「iOS 原生布局」时生效；`编码区高度` 在 iOS 原生布局下被固定为 20。
 
+## 七、Memory OS 交接稿落地差距
+
+对照《CLAW TALK 记忆系统最终方向交接稿》逐条核实（2026-10-07）。结论：**主体未落地，已落的是地基。**
+
+### 已经落地
+
+- SQLite 作为唯一真相：`ClawMemoryStore`，现有 `memory_items` / `conversation_messages` / `secretary_tasks` / `skills` / `evolution_feedback` 五张表。
+- Context Builder：`ClawContextBuilder` 已被帮你回、超会说、助手会话、Skill Runtime 共用；6000 字符预算，分区拼装。
+- 本地语义检索：`ClawContextBuilder` 用 `NLEmbedding.sentenceEmbedding` 在设备本地算语义相似度，与关键词重叠、置信度、时间衰减、精确 key 一起加权排序。**但没有向量索引**，每条候选都要现场算一次向量。
+- 键盘扩展瘦身：键盘只写 App Group 队列（`ClawKeyboardDeferredEventService`），主程序启动时 drain。
+- 隐私基础：来源暂停、临时模式、隐私保险箱（`LAContext`，Face ID / 设备密码解锁）。
+- 导入导出：`.clawmemory` / Markdown / JSON（`ClawMemoryExchangeService`）。
+- 人物身份解析基础：`ClawContactIdentityResolver`。
+- 任务提取：`ClawSecretaryExtractor`。
+
+### 只建了结构、还没有落地
+
+- Memory V2 模型与五张表：`raw_events` / `memory_v2` / `memory_evidence` / `memory_versions` / `memory_lineage`，对应 Scope / State / Type / Trust / Provenance / Evidence / Lineage。
+  **关键：`saveMemoryV2` 的调用方为零，这几张表现在是空的。**
+- `StandingIntent` 结构体已定义，无存储、无使用。
+
+### 完全没有
+
+- FTS5 全文索引（全仓库搜不到 `fts5` 或 `MATCH`）。
+- Memory Router。
+- Memory SDK 统一接口（各功能现在直接调 `ClawMemoryStore`）。
+- Provenance Trust 的实际落地（旧表只有 sourceType / sourceRef / confidence）。
+- Evidence 写入与 Lineage Forget。
+- Memory Promotion（Candidate → Confirmed 生命周期）。
+- 冲突处理、陈旧降权、TTL / 过期。
+- CLAW Dream（Light / REM / Deep / Audit）。
+- Memory Flush。
+- Episode / Project / Knowledge / Relationship Graph / Communication Memory 这几类记忆。
+- 向量索引、图索引、MMR 去重。
+- 数据库加密（SQLCipher 或等效）、附件 AES-256-GCM。
+- 多设备同步。
+
+### 建议排期
+
+1. 先让 V2 表真正被写入：把记忆写入路径收敛到 `saveMemoryV2`，让 Provenance / Evidence / Lineage 开始积累。
+2. 建 Memory SDK 门面，禁止各功能直接访问底层表。
+3. 加 FTS5，与现有语义排序合并成混合检索。
+4. 记忆生命周期：Promotion、冲突处理、陈旧降权、TTL。
+5. Memory Flush 与 Standing Intent。
+6. CLAW Dream：先做 Light，再做 REM / Deep / Audit。
+7. 加密、导出、多设备同步。
