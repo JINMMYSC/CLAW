@@ -1276,10 +1276,6 @@ extension KeyboardInputViewController {
 
     guard ClawTalkPrivacyService.shared.isCollectionEnabled, !wasBlocked else { return }
 
-    // If an AI reply/rewrite was inserted during this keyboard session, compare the
-    // eventual typed buffer with that generated text. Meaningful edits become Evolution feedback.
-    _ = ClawGeneratedOutputTracker.shared.reconcile(finalSessionText: typed)
-
     // 去重：裁掉 context 尾部与 typed 头部的重叠部分
     // （同一输入框多次唤起键盘时，上次打的内容会出现在下次的 context 末尾）
     let context = clawTalkDeduplicateContext(rawContext, typed: typed)
@@ -1292,25 +1288,16 @@ extension KeyboardInputViewController {
     )
     ClawTalkDataService.shared.saveSession(entry)
 
-    // When a chat target is explicitly selected, the keyboard's actual outbound text
-    // becomes first-class conversation timeline evidence for that person.
+    // Keep the Keyboard Extension lightweight. Timeline SQLite writes, task extraction,
+    // contact learning and Evolution reconciliation are drained by the host app.
     let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !trimmed.isEmpty, let profile = HeartTargetService.shared.selectedProfile {
-      let message = ClawConversationMessage(
-        contactID: profile.id,
-        speaker: .me,
-        senderName: "我",
-        content: trimmed,
+    if !trimmed.isEmpty {
+      ClawKeyboardDeferredEventService.shared.enqueue(ClawDeferredKeyboardSession(
+        contactID: HeartTargetService.shared.selectedProfile?.id,
+        text: trimmed,
         occurredAt: startTime,
-        sourceType: "keyboard-session",
-        sourceRef: "clawtalk:\(entry.id.uuidString)",
-        confidence: 1
-      )
-      if (try? ClawMemoryStore.shared.appendConversation(message)) == true {
-        ClawSecretaryExtractor.shared.persistExtractedTasks(from: message)
-        // 人物画像属于重任务（数据库 + 可能的网络 AI），留给主 App 激活时处理，
-        // 避免在 Keyboard Extension 退出/切换过程中触发 jetsam。
-      }
+        sourceRef: "clawtalk:\(entry.id.uuidString)"
+      ))
     }
   }
 

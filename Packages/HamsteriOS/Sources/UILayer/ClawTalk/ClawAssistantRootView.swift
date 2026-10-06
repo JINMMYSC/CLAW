@@ -7,27 +7,39 @@ import UniformTypeIdentifiers
 /// CLAW 主 App：助手是首页，数据采集只是其中一个能力面板。
 struct ClawAssistantRootView: View {
   @ObservedObject var viewModel: ClawTalkViewModel
+  @State private var selectedTab: ClawAssistantTab = .assistant
 
   var body: some View {
-    TabView {
+    TabView(selection: $selectedTab) {
       ClawAssistantChatView()
         .tabItem { Label("助手", systemImage: "sparkles") }
+        .tag(ClawAssistantTab.assistant)
 
       ClawSecretaryTodayView()
         .tabItem { Label("今日", systemImage: "checklist") }
+        .tag(ClawAssistantTab.today)
 
-      ClawPeopleView()
+      ClawPeopleView(onUseProfile: { selectedTab = .assistant })
         .tabItem { Label("人物", systemImage: "person.2.fill") }
+        .tag(ClawAssistantTab.people)
 
       ClawMemoryCenterView()
         .tabItem { Label("记忆", systemImage: "brain.head.profile") }
+        .tag(ClawAssistantTab.memory)
 
-      ClawTalkRootView(viewModel: viewModel)
+      ClawTalkRootView(
+        viewModel: viewModel,
+        openAssistant: { selectedTab = .assistant },
+        openPeople: { selectedTab = .people },
+        openMemory: { selectedTab = .memory }
+      )
         .tabItem { Label("数据", systemImage: "tray.full.fill") }
+        .tag(ClawAssistantTab.data)
     }
     .navigationTitle("CLAW")
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
+      _ = ClawKeyboardDeferredEventService.shared.drainIntoHostServices()
       // Heavy maintenance belongs in the host app, never in Keyboard Extension.
       Task(priority: .utility) {
         await AutoInsightService.shared.runIfNeeded()
@@ -42,7 +54,14 @@ struct ClawAssistantRootView: View {
         ClawContactProfileLearner.shared.refreshIfNeeded(profileID: profile.id)
       }
     }
+    .onReceive(NotificationCenter.default.publisher(for: .clawVoiceCallRequested)) { _ in
+      selectedTab = .assistant
+    }
   }
+}
+
+private enum ClawAssistantTab: Hashable {
+  case assistant, today, people, memory, data
 }
 
 private struct ClawAssistantChatView: View {
@@ -110,10 +129,18 @@ private struct ClawAssistantChatView: View {
       chat.switchContext(contactID: profile?.id)
     }
     .onChange(of: chat.isSending) { sending in
-      if !sending { resumeHandsFreeIfIdle() }
+      if !sending { scheduleHandsFreeResume() }
     }
     .onChange(of: chat.isSpeaking) { speaking in
-      if !speaking { resumeHandsFreeIfIdle() }
+      if speaking {
+        // Never let STT listen to CLAW's own TTS output.
+        if callListening {
+          ClawVoiceInputService.shared.stop()
+          callListening = false
+        }
+      } else {
+        resumeHandsFreeIfIdle()
+      }
     }
   }
 
@@ -122,8 +149,37 @@ private struct ClawAssistantChatView: View {
       Image(systemName: "brain.head.profile").foregroundColor(.accentColor)
       VStack(alignment: .leading, spacing: 1) {
         Text("CLAW 私人助手").font(.headline)
-        Text(selectedProfileName.map { "当前对象：\($0) · 长期记忆已启用" } ?? "全局记忆 · 手机为记忆源")
-          .font(.caption).foregroundColor(.secondary).lineLimit(1)
+        Menu {
+          Button {
+            HeartTargetService.shared.clearSelection()
+          } label: {
+            if HeartTargetService.shared.selectedProfile == nil {
+              Label("全局模式", systemImage: "checkmark")
+            } else {
+              Text("全局模式")
+            }
+          }
+          ForEach(HeartTargetService.shared.profiles) { profile in
+            Button {
+              HeartTargetService.shared.select(id: profile.id)
+            } label: {
+              if HeartTargetService.shared.selectedProfile?.id == profile.id {
+                Label(profile.displayName, systemImage: "checkmark")
+              } else {
+                Text(profile.displayName)
+              }
+            }
+          }
+        } label: {
+          HStack(spacing: 3) {
+            Text(selectedProfileName.map { "当前对象：\($0)" } ?? "全局记忆")
+            Image(systemName: "chevron.down")
+              .font(.system(size: 9, weight: .semibold))
+          }
+          .font(.caption)
+          .foregroundColor(.secondary)
+          .lineLimit(1)
+        }
       }
       Spacer()
       Button("新对话") { chat.clearHistory() }
@@ -327,6 +383,12 @@ private struct ClawAssistantChatView: View {
     beginHandsFreeListening()
   }
 
+  private func scheduleHandsFreeResume() {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+      resumeHandsFreeIfIdle()
+    }
+  }
+
   private func withVoiceAuthorization(_ action: @escaping () -> Void) {
     switch ClawVoiceInputService.shared.authorizationStatus {
     case .authorized:
@@ -453,9 +515,11 @@ private struct ClawSecretaryTodayView: View {
 }
 
 private struct ClawPeopleView: View {
+  let onUseProfile: () -> Void
   @State private var profiles = HeartTargetService.shared.profiles
   @State private var selectedID = HeartTargetService.shared.selectedProfile?.id
   @State private var searchText = ""
+  @State private var editingProfile: HeartTargetProfile?
 
   private var filteredProfiles: [HeartTargetProfile] {
     let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -487,7 +551,7 @@ private struct ClawPeopleView: View {
 
         Section {
           if profiles.isEmpty {
-            Text("请到设置 → 聊天对象档案添加联系人。截图归档和帮你回会使用这里的对象。")
+            Text("还没有人物档案。点右上角 + 创建，截图归档和帮你回都会使用这里的对象。")
               .foregroundColor(.secondary)
           }
           ForEach(filteredProfiles) { profile in
@@ -519,6 +583,7 @@ private struct ClawPeopleView: View {
               Button {
                 HeartTargetService.shared.select(id: profile.id)
                 selectedID = profile.id
+                onUseProfile()
               } label: {
                 Image(systemName: selectedID == profile.id ? "checkmark.circle.fill" : "circle")
                   .font(.title3)
@@ -531,10 +596,15 @@ private struct ClawPeopleView: View {
               Button("设为当前") {
                 HeartTargetService.shared.select(id: profile.id)
                 selectedID = profile.id
+                onUseProfile()
               }
               .tint(.accentColor)
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+              Button("编辑") {
+                editingProfile = profile
+              }
+              .tint(.blue)
               Button("删除", role: .destructive) {
                 HeartTargetService.shared.delete(id: profile.id)
               }
@@ -546,11 +616,106 @@ private struct ClawPeopleView: View {
       }
       .navigationTitle("人物")
       .searchable(text: $searchText, prompt: "搜索姓名、别名或关系")
+      .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button {
+            editingProfile = HeartTargetProfile()
+          } label: {
+            Image(systemName: "plus")
+          }
+          .accessibilityLabel("新建人物档案")
+        }
+      }
+      .sheet(item: $editingProfile) { profile in
+        NavigationView {
+          ClawContactEditorView(profile: profile)
+        }
+      }
       .onReceive(NotificationCenter.default.publisher(for: .heartTargetProfilesDidChange)) { _ in
         profiles = HeartTargetService.shared.profiles
         selectedID = HeartTargetService.shared.selectedProfile?.id
       }
     }
+  }
+}
+
+private struct ClawContactEditorView: View {
+  @Environment(\.dismiss) private var dismiss
+  private let original: HeartTargetProfile
+
+  @State private var name: String
+  @State private var relationship: String
+  @State private var aliases: String
+  @State private var bio: String
+  @State private var isGroup: Bool
+
+  init(profile: HeartTargetProfile) {
+    original = profile
+    _name = State(initialValue: profile.name)
+    _relationship = State(initialValue: profile.relationship)
+    _aliases = State(initialValue: profile.aliases.joined(separator: "、"))
+    _bio = State(initialValue: profile.bio)
+    _isGroup = State(initialValue: profile.isGroup)
+  }
+
+  var body: some View {
+    Form {
+      Section("基本信息") {
+        TextField("姓名 / 群名", text: $name)
+        TextField("关系，例如朋友、客户、家人", text: $relationship)
+        TextField("备注名 / 昵称，多个用逗号分隔", text: $aliases)
+        Toggle("这是群聊", isOn: $isGroup)
+      }
+      Section("你的备注") {
+        TextEditor(text: $bio)
+          .frame(minHeight: 110)
+      } footer: {
+        Text("AI 自动形成的互动画像会与这里的手工备注分开保存，不会覆盖你的文字。")
+      }
+      if let image = original.avatarImage {
+        Section("当前头像") {
+          HStack {
+            Spacer()
+            Image(uiImage: image)
+              .resizable()
+              .scaledToFill()
+              .frame(width: 72, height: 72)
+              .clipShape(Circle())
+            Spacer()
+          }
+        } footer: {
+          Text("头像更换仍可在设置 → 聊天对象档案中完成；这里不会丢失现有头像。")
+        }
+      }
+    }
+    .navigationTitle(original.name.isEmpty ? "新建人物" : "编辑人物")
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .topBarLeading) {
+        Button("取消") { dismiss() }
+      }
+      ToolbarItem(placement: .topBarTrailing) {
+        Button("保存") {
+          save()
+        }
+        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      }
+    }
+  }
+
+  private func save() {
+    var profile = original
+    profile.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    profile.relationship = relationship.trimmingCharacters(in: .whitespacesAndNewlines)
+    profile.aliases = aliases
+      .components(separatedBy: CharacterSet(charactersIn: ",，、"))
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    profile.bio = bio.trimmingCharacters(in: .whitespacesAndNewlines)
+    profile.isGroup = isGroup
+    profile.autoCreated = false
+    _ = HeartTargetService.shared.upsert(profile)
+    dismiss()
   }
 }
 

@@ -72,8 +72,8 @@ public final class HeartTargetSettingsViewController: UITableViewController {
     let selected = service.selectedProfile?.id == profile.id
     cell.textLabel?.textColor = selected ? .systemBlue : .label
     let relationship = profile.relationship.isEmpty ? "未设置关系" : profile.relationship
-    let alias = profile.aliases.isEmpty ? "" : " · 别名 (profile.aliases.joined(separator: "、"))"
-    cell.detailTextLabel?.text = "(selected ? "当前 · " : "")(relationship)(alias)"
+    let alias = profile.aliases.isEmpty ? "" : " · 别名 \(profile.aliases.joined(separator: "、"))"
+    cell.detailTextLabel?.text = "\(selected ? "当前 · " : "")\(relationship)\(alias)"
     cell.detailTextLabel?.textColor = .secondaryLabel
     if let image = profile.avatarImage {
       cell.imageView?.image = image
@@ -82,7 +82,14 @@ public final class HeartTargetSettingsViewController: UITableViewController {
     } else {
       cell.imageView?.image = UIImage(systemName: "person.crop.circle")
     }
-    cell.accessoryType = .detailButton
+    let selectButton = UIButton(type: .system)
+    selectButton.tag = indexPath.row
+    selectButton.setImage(UIImage(systemName: selected ? "checkmark.circle.fill" : "circle"), for: .normal)
+    selectButton.tintColor = selected ? .systemBlue : .secondaryLabel
+    selectButton.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
+    selectButton.addTarget(self, action: #selector(selectProfileTapped(_:)), for: .touchUpInside)
+    selectButton.accessibilityLabel = selected ? "当前人物" : "设为当前人物"
+    cell.accessoryView = selectButton
     return cell
   }
 
@@ -94,14 +101,16 @@ public final class HeartTargetSettingsViewController: UITableViewController {
     }
     guard !service.profiles.isEmpty else { return }
     let profile = service.profiles[indexPath.row]
-    service.select(id: profile.id)
+    navigationController?.pushViewController(HeartTargetEditViewController(profile: profile), animated: true)
   }
 
   public override func tableView(_ tableView: UITableView, accessoryButtonTappedForRowWith indexPath: IndexPath) {
-    guard indexPath.section == 1, !service.profiles.isEmpty else { return }
-    let profile = service.profiles[indexPath.row]
-    let edit = HeartTargetEditViewController(profile: profile)
-    navigationController?.pushViewController(edit, animated: true)
+    // Selection now uses a dedicated check button in accessoryView.
+  }
+
+  @objc private func selectProfileTapped(_ sender: UIButton) {
+    guard sender.tag >= 0, sender.tag < service.profiles.count else { return }
+    service.select(id: service.profiles[sender.tag].id)
   }
 
   public override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {

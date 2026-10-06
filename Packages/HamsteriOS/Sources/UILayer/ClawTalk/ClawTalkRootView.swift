@@ -3,6 +3,9 @@ import SwiftUI
 
 struct ClawTalkRootView: View {
   @ObservedObject var viewModel: ClawTalkViewModel
+  var openAssistant: () -> Void = {}
+  var openPeople: () -> Void = {}
+  var openMemory: () -> Void = {}
   @State private var showDeleteAlert = false
   @State private var dateToDelete: Date?
   @State private var showDeleteSelectedAlert = false
@@ -18,6 +21,36 @@ struct ClawTalkRootView: View {
 
   var body: some View {
     List {
+      Section {
+        VStack(alignment: .leading, spacing: 12) {
+          HStack {
+            VStack(alignment: .leading, spacing: 3) {
+              Text("NOW CLAW TALK")
+                .font(.headline)
+              Text(HeartTargetService.shared.selectedProfile.map { "当前人物：\($0.displayName)" } ?? "当前：全局助手模式")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: ClawTalkPrivacyService.shared.isCollectionEnabled ? "waveform.and.mic" : "pause.circle")
+              .font(.title2)
+              .foregroundColor(ClawTalkPrivacyService.shared.isCollectionEnabled ? .accentColor : .orange)
+          }
+          HStack(spacing: 8) {
+            Button(action: openAssistant) { Label("助手", systemImage: "sparkles") }
+              .buttonStyle(.borderedProminent)
+            Button(action: openPeople) { Label("人物", systemImage: "person.2") }
+              .buttonStyle(.bordered)
+            Button(action: openMemory) { Label("记忆", systemImage: "brain.head.profile") }
+              .buttonStyle(.bordered)
+          }
+          .font(.caption)
+        }
+        .padding(.vertical, 4)
+      } footer: {
+        Text("这里负责数据来源、隐私、原始记录和备份；聊天、人物和长期记忆通过上方快捷入口进入对应工作区。")
+      }
+
       // 先展示当前状态：这个页面只负责数据、隐私和维护，不再与“助手”页抢职责。
       Section {
         statsRow
@@ -104,7 +137,7 @@ struct ClawTalkRootView: View {
         Text("说明")
       }
     }
-    .navigationTitle("CLAW 数据中心")
+    .navigationTitle("NOW CLAW TALK")
     .sheet(isPresented: $showingPreview) { previewSheet }
     .sheet(isPresented: $showingAIChat) { aiChatSheet }
     .sheet(isPresented: $showingAISettings) { aiSettingsSheet }
