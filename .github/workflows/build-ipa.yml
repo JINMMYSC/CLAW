@@ -2,7 +2,7 @@ name: Build & Sign GuruIM IPA
 
 on:
   push:
-    branches: [main]
+    branches: [main, work/claw-voice-keyboard-bg]
   workflow_dispatch:
 
 jobs:
@@ -75,7 +75,7 @@ jobs:
 
   sign:
     needs: build
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/work/claw-voice-keyboard-bg'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
