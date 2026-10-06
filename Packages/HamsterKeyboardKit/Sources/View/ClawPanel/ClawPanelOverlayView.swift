@@ -1165,11 +1165,13 @@ private func fallbackToSystemDictation() {
       systemPrompt += "\n当前聊天对象：\(profile.displayName)\n\(profile.memoryContext)"
     }
 
+    let requestConfiguration = AIService.shared.currentRequestConfiguration
     AIService.shared.chat(
       messages: [
         AIMessage(role: "system", content: systemPrompt),
         AIMessage(role: "user", content: text),
-      ]
+      ],
+      configuration: requestConfiguration
     ) { [weak self] result in
       guard let self else { return }
       self.isLoading = false
