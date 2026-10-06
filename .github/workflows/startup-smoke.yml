@@ -3,7 +3,7 @@ name: iOS Startup Smoke
 on:
   workflow_dispatch:
   push:
-    branches: [main, work/claw-voice-keyboard-bg]
+    branches: [main, work/claw-voice-keyboard-bg, work/claw-productization-20261006]
     paths:
       - "Hamster/**"
       - "HamsterKeyboard/**"
