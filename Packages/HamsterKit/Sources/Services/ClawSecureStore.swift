@@ -43,13 +43,10 @@ public final class ClawSecureStore {
 
   public var sharedAccessGroup: String? {
     guard
-      let task = SecTaskCreateFromSelf(kCFAllocatorDefault),
-      let value = SecTaskCopyValueForEntitlement(task, "application-identifier" as CFString, nil),
-      let identifier = value as? String,
-      let prefix = identifier.split(separator: ".", maxSplits: 1).first,
-      !prefix.isEmpty
+      let value = Bundle.main.object(forInfoDictionaryKey: "ClawKeychainAccessGroup") as? String,
+      !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else { return nil }
-    return "\(prefix).\(HamsterConstants.appGroupName)"
+    return value
   }
 
   private func baseQuery(account: String) -> [String: Any] {
