@@ -989,7 +989,13 @@ private func fallbackToSystemDictation() {
   private func startCall() {
     guard !isCallActive else { return }
     if isKeyboardExtensionRuntime {
-      fallbackToSystemDictation()
+      // 第三方 Keyboard Extension 无法稳定长期占用麦克风。通话模式直接把用户
+      // 交给主 App 的 hands-free CLAW，会比在扩展里反复失败/被系统杀掉可靠得多。
+      actionHandler.handle(
+        .release,
+        on: .url(URL(string: HamsterConstants.appURLForGuruVoice), id: "openClawVoiceCall")
+      )
+      keyboardContext.clawPanelTab = -1
       return
     }
     switch ClawVoiceInputService.shared.authorizationStatus {
@@ -1480,3 +1486,4 @@ extension ClawPanelOverlayView: PHPickerViewControllerDelegate {
     }
   }
 }
+Process exited with code 0.

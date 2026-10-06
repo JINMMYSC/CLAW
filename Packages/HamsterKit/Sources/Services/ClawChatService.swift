@@ -54,8 +54,9 @@ public final class ClawChatService: NSObject, ObservableObject {
   private let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
   private let aiService = AIService.shared
 
-  private let historyKey = "claw_chat_history_v1"
+  private let legacyHistoryKey = "claw_chat_history_v1"
   private let autoSpeakKey = "claw_chat_auto_speak"
+  private var activeContextID: UUID?
   /// 单次请求携带的历史条数（防 context 无限膨胀）
   private static let maxHistoryMessages = 20
 
@@ -70,20 +71,48 @@ public final class ClawChatService: NSObject, ObservableObject {
     ClawEdgeTTSService.shared.onSpeakingChange = { [weak self] speaking in
       self?.isSpeaking = speaking
     }
+    activeContextID = HeartTargetService.shared.selectedProfile?.id
     loadHistory()
   }
 
   // MARK: - 记忆（持久化）
 
   private func loadHistory() {
-    guard let data = defaults?.data(forKey: historyKey),
-          let history = try? JSONDecoder().decode([ClawChatMessage].self, from: data)
-    else { return }
-    messages = history
+    let key = historyKey(for: activeContextID)
+    if let data = defaults?.data(forKey: key),
+       let history = try? JSONDecoder().decode([ClawChatMessage].self, from: data) {
+      messages = history
+      return
+    }
+    // Older builds stored one global conversation. Migrate it only into global mode,
+    // never into a person's scoped conversation.
+    if activeContextID == nil,
+       let legacy = defaults?.data(forKey: legacyHistoryKey),
+       let history = try? JSONDecoder().decode([ClawChatMessage].self, from: legacy) {
+      messages = history
+      defaults?.set(legacy, forKey: key)
+      return
+    }
+    messages = []
   }
 
   private func saveHistory() {
-    defaults?.set(try? JSONEncoder().encode(messages), forKey: historyKey)
+    defaults?.set(try? JSONEncoder().encode(messages), forKey: historyKey(for: activeContextID))
+  }
+
+  private func historyKey(for contactID: UUID?) -> String {
+    if let contactID { return "claw_chat_history_v2_contact_\(contactID.uuidString)" }
+    return "claw_chat_history_v2_global"
+  }
+
+  /// Switching people must also switch the visible assistant conversation.
+  /// This prevents one person's dialogue from remaining on screen after another person is selected.
+  public func switchContext(contactID: UUID?) {
+    guard activeContextID != contactID else { return }
+    stopSpeaking()
+    saveHistory()
+    activeContextID = contactID
+    loadHistory()
   }
 
   /// 新对话：清空历史
@@ -108,9 +137,12 @@ public final class ClawChatService: NSObject, ObservableObject {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, !isSending else { return }
 
+    let selectedContactID = HeartTargetService.shared.selectedProfile?.id
+    if activeContextID != selectedContactID {
+      switchContext(contactID: selectedContactID)
+    }
     messages.append(ClawChatMessage(role: "user", content: trimmed))
     saveHistory()
-    let selectedContactID = HeartTargetService.shared.selectedProfile?.id
     let userTimelineMessage = ClawConversationMessage(
       contactID: selectedContactID,
       speaker: .me,
@@ -155,7 +187,7 @@ public final class ClawChatService: NSObject, ObservableObject {
 
   /// system 中只注入当前任务相关的全局习惯、当前联系人记忆/时间线和开放事项。
   private func buildAPIMessages() -> [AIMessage] {
-    let profile = HeartTargetService.shared.selectedProfile
+    let profile = activeContextID.flatMap { HeartTargetService.shared.profile(id: $0) }
     var system = "你是 CLAW，用户手机里的长期私人 AI 助手。你可以自然聊天，也可以帮助用户回顾人物、事件、任务和下一步。只使用提供给你的可追溯上下文，不要把一个联系人的信息套到另一个人身上。回复默认自然、简洁、可执行。"
     if let profile, !profile.memoryContext.isEmpty {
       system += "\n\n当前对象：\(profile.displayName)\n\(profile.memoryContext)"
@@ -188,3 +220,4 @@ public final class ClawChatService: NSObject, ObservableObject {
     isSpeaking = false
   }
 }
+Process exited with code 0.

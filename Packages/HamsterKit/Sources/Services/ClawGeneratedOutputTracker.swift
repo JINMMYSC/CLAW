@@ -67,7 +67,11 @@ public final class ClawGeneratedOutputTracker {
       variantID: pending.experimentVariantID,
       action: .edited
     )
-    _ = ClawEvolutionEngine.shared.evolveIfNeeded(skillID: pending.skillID)
+    // Evolution may scan feedback/memory and write a new Skill version. Defer that heavier
+    // work to the host app instead of doing it while a Keyboard Extension is disappearing.
+    if Bundle.main.bundleURL.pathExtension.lowercased() != "appex" {
+      _ = ClawEvolutionEngine.shared.evolveIfNeeded(skillID: pending.skillID)
+    }
     return true
   }
 
@@ -89,3 +93,4 @@ public final class ClawGeneratedOutputTracker {
   }
 }
 
+Process exited with code 0.

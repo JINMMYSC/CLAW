@@ -27,6 +27,21 @@ struct ClawAssistantRootView: View {
     }
     .navigationTitle("CLAW")
     .navigationBarTitleDisplayMode(.inline)
+    .onAppear {
+      // Heavy maintenance belongs in the host app, never in Keyboard Extension.
+      Task(priority: .utility) {
+        await AutoInsightService.shared.runIfNeeded()
+        await SmartFreqService.shared.runIfNeeded()
+        if let skills = try? ClawMemoryStore.shared.skills() {
+          for skill in skills {
+            _ = ClawEvolutionEngine.shared.evolveIfNeeded(skillID: skill.id)
+          }
+        }
+      }
+      for profile in HeartTargetService.shared.profiles {
+        ClawContactProfileLearner.shared.refreshIfNeeded(profileID: profile.id)
+      }
+    }
   }
 }
 
@@ -34,8 +49,11 @@ private struct ClawAssistantChatView: View {
   @ObservedObject private var chat = ClawChatService.shared
   @State private var input = ""
   @State private var recording = false
+  @State private var callActive = false
+  @State private var callListening = false
   @State private var voiceHint = ""
   @State private var voiceMode = ClawVoiceInputService.shared.languageMode
+  @State private var selectedProfileName = HeartTargetService.shared.selectedProfile?.displayName
 
   var body: some View {
     VStack(spacing: 0) {
@@ -70,6 +88,33 @@ private struct ClawAssistantChatView: View {
       composer
     }
     .background(Color(.systemGroupedBackground))
+    .onAppear {
+      let profile = HeartTargetService.shared.selectedProfile
+      selectedProfileName = profile?.displayName
+      chat.switchContext(contactID: profile?.id)
+      let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
+      if defaults?.bool(forKey: HamsterConstants.clawVoiceCallLaunchKey) == true {
+        defaults?.set(false, forKey: HamsterConstants.clawVoiceCallLaunchKey)
+        startHandsFreeCall()
+      }
+    }
+    .onDisappear {
+      stopHandsFreeCall()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .clawVoiceCallRequested)) { _ in
+      startHandsFreeCall()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .heartTargetProfilesDidChange)) { _ in
+      let profile = HeartTargetService.shared.selectedProfile
+      selectedProfileName = profile?.displayName
+      chat.switchContext(contactID: profile?.id)
+    }
+    .onChange(of: chat.isSending) { sending in
+      if !sending { resumeHandsFreeIfIdle() }
+    }
+    .onChange(of: chat.isSpeaking) { speaking in
+      if !speaking { resumeHandsFreeIfIdle() }
+    }
   }
 
   private var contextHeader: some View {
@@ -77,7 +122,7 @@ private struct ClawAssistantChatView: View {
       Image(systemName: "brain.head.profile").foregroundColor(.accentColor)
       VStack(alignment: .leading, spacing: 1) {
         Text("CLAW 私人助手").font(.headline)
-        Text(HeartTargetService.shared.selectedProfile.map { "当前对象：\($0.displayName) · 长期记忆已启用" } ?? "全局记忆 · 手机为记忆源")
+        Text(selectedProfileName.map { "当前对象：\($0) · 长期记忆已启用" } ?? "全局记忆 · 手机为记忆源")
           .font(.caption).foregroundColor(.secondary).lineLimit(1)
       }
       Spacer()
@@ -167,6 +212,13 @@ private struct ClawAssistantChatView: View {
             .font(.system(size: 30))
             .foregroundColor(recording ? .red : .accentColor)
         }
+        Button {
+          callActive ? stopHandsFreeCall() : startHandsFreeCall()
+        } label: {
+          Image(systemName: callActive ? "phone.down.circle.fill" : "phone.circle.fill")
+            .font(.system(size: 30))
+            .foregroundColor(callActive ? .red : .green)
+        }
         TextField("问 CLAW…", text: $input)
           .textFieldStyle(.roundedBorder)
           .onSubmit { send(input) }
@@ -191,22 +243,104 @@ private struct ClawAssistantChatView: View {
   }
 
   private func toggleVoice() {
+    if callActive { stopHandsFreeCall() }
     if recording {
       ClawVoiceInputService.shared.stop()
       recording = false
       voiceHint = "正在完成识别…"
       return
     }
-    recording = true
-    voiceHint = "正在听…点停止结束"
-    ClawVoiceInputService.shared.start { result in
+    withVoiceAuthorization {
+      recording = true
+      voiceHint = "正在听…点停止结束"
+      ClawVoiceInputService.shared.start { result in
+        recording = false
+        switch result {
+        case .success(let text):
+          voiceHint = ""
+          send(text)
+        case .failure(let error):
+          voiceHint = "语音识别失败：\(error.localizedDescription)"
+        }
+      }
+    }
+  }
+
+  private func startHandsFreeCall() {
+    guard !callActive else { return }
+    withVoiceAuthorization {
+      callActive = true
       recording = false
-      switch result {
-      case .success(let text):
-        voiceHint = ""
-        send(text)
-      case .failure(let error):
-        voiceHint = "语音识别失败：\(error.localizedDescription)"
+      chat.stopSpeaking()
+      voiceHint = "通话模式 · 正在听…"
+      beginHandsFreeListening()
+    }
+  }
+
+  private func stopHandsFreeCall() {
+    guard callActive || callListening else { return }
+    callActive = false
+    callListening = false
+    ClawVoiceInputService.shared.stop()
+    chat.stopSpeaking()
+    voiceHint = ""
+  }
+
+  private func beginHandsFreeListening() {
+    guard callActive, !callListening, !chat.isSending, !chat.isSpeaking else { return }
+    callListening = true
+    voiceHint = "通话模式 · 正在听…"
+    ClawVoiceInputService.shared.startStreaming(
+      onPartial: { text in
+        DispatchQueue.main.async {
+          guard callActive else { return }
+          voiceHint = text.isEmpty ? "通话模式 · 正在听…" : "你：\(text)"
+        }
+      },
+      onSegment: { text in
+        DispatchQueue.main.async {
+          guard callActive else { return }
+          callListening = false
+          let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+          guard !trimmed.isEmpty else {
+            resumeHandsFreeIfIdle()
+            return
+          }
+          voiceHint = "CLAW 正在回答…"
+          chat.send(trimmed, forceSpeak: true)
+        }
+      },
+      onError: { error in
+        DispatchQueue.main.async {
+          callListening = false
+          if callActive {
+            voiceHint = "通话中断：\(error.localizedDescription)"
+            callActive = false
+          }
+        }
+      }
+    )
+  }
+
+  private func resumeHandsFreeIfIdle() {
+    guard callActive, !callListening, !chat.isSending, !chat.isSpeaking else { return }
+    beginHandsFreeListening()
+  }
+
+  private func withVoiceAuthorization(_ action: @escaping () -> Void) {
+    switch ClawVoiceInputService.shared.authorizationStatus {
+    case .authorized:
+      action()
+    case .denied:
+      voiceHint = "请在系统设置中允许 CLAW 使用麦克风和语音识别"
+    case .undetermined:
+      voiceHint = "正在请求语音权限…"
+      ClawVoiceInputService.shared.requestAuthorization { granted in
+        if granted {
+          action()
+        } else {
+          voiceHint = "未获得麦克风/语音识别权限"
+        }
       }
     }
   }
@@ -321,6 +455,17 @@ private struct ClawSecretaryTodayView: View {
 private struct ClawPeopleView: View {
   @State private var profiles = HeartTargetService.shared.profiles
   @State private var selectedID = HeartTargetService.shared.selectedProfile?.id
+  @State private var searchText = ""
+
+  private var filteredProfiles: [HeartTargetProfile] {
+    let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !query.isEmpty else { return profiles }
+    return profiles.filter { profile in
+      profile.displayName.lowercased().contains(query)
+        || profile.relationship.lowercased().contains(query)
+        || profile.aliases.contains(where: { $0.lowercased().contains(query) })
+    }
+  }
 
   var body: some View {
     NavigationView {
@@ -345,37 +490,54 @@ private struct ClawPeopleView: View {
             Text("请到设置 → 聊天对象档案添加联系人。截图归档和帮你回会使用这里的对象。")
               .foregroundColor(.secondary)
           }
-          ForEach(profiles) { profile in
-            NavigationLink {
-              ClawContactDetailView(profile: profile)
-            } label: {
-              HStack(spacing: 10) {
-                Group {
-                  if let image = profile.avatarImage { Image(uiImage: image).resizable() }
-                  else { Image(systemName: "person.crop.circle.fill").resizable().foregroundColor(.secondary) }
-                }
-                .frame(width: 36, height: 36).clipShape(Circle())
-                VStack(alignment: .leading, spacing: 2) {
-                  HStack(spacing: 5) {
-                    Text(profile.displayName)
-                    if profile.isGroup {
-                      Text("群").font(.caption2).padding(.horizontal, 4).background(Color.blue.opacity(0.12)).clipShape(Capsule())
-                    }
-                    if profile.autoCreated {
-                      Text("自动识别").font(.caption2).padding(.horizontal, 4).background(Color.orange.opacity(0.12)).clipShape(Capsule())
-                    }
+          ForEach(filteredProfiles) { profile in
+            HStack(spacing: 8) {
+              NavigationLink {
+                ClawContactDetailView(profile: profile)
+              } label: {
+                HStack(spacing: 10) {
+                  Group {
+                    if let image = profile.avatarImage { Image(uiImage: image).resizable() }
+                    else { Image(systemName: "person.crop.circle.fill").resizable().foregroundColor(.secondary) }
                   }
-                  Text(profile.relationship.isEmpty ? (profile.bio.isEmpty ? "尚未形成画像" : profile.bio) : profile.relationship)
-                    .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                  .frame(width: 36, height: 36).clipShape(Circle())
+                  VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                      Text(profile.displayName)
+                      if profile.isGroup {
+                        Text("群").font(.caption2).padding(.horizontal, 4).background(Color.blue.opacity(0.12)).clipShape(Capsule())
+                      }
+                      if profile.autoCreated {
+                        Text("自动识别").font(.caption2).padding(.horizontal, 4).background(Color.orange.opacity(0.12)).clipShape(Capsule())
+                      }
+                    }
+                    Text(profile.relationship.isEmpty ? (profile.bio.isEmpty ? "尚未形成画像" : profile.bio) : profile.relationship)
+                      .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                  }
                 }
-                Spacer()
-                if selectedID == profile.id { Image(systemName: "checkmark.circle.fill").foregroundColor(.accentColor) }
               }
-              .contentShape(Rectangle())
-              .simultaneousGesture(TapGesture().onEnded {
+              Button {
                 HeartTargetService.shared.select(id: profile.id)
                 selectedID = profile.id
-              })
+              } label: {
+                Image(systemName: selectedID == profile.id ? "checkmark.circle.fill" : "circle")
+                  .font(.title3)
+                  .foregroundColor(selectedID == profile.id ? .accentColor : .secondary)
+              }
+              .buttonStyle(.plain)
+              .accessibilityLabel(selectedID == profile.id ? "当前人物" : "设为当前人物")
+            }
+            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+              Button("设为当前") {
+                HeartTargetService.shared.select(id: profile.id)
+                selectedID = profile.id
+              }
+              .tint(.accentColor)
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+              Button("删除", role: .destructive) {
+                HeartTargetService.shared.delete(id: profile.id)
+              }
             }
           }
         } header: {
@@ -383,6 +545,7 @@ private struct ClawPeopleView: View {
         }
       }
       .navigationTitle("人物")
+      .searchable(text: $searchText, prompt: "搜索姓名、别名或关系")
       .onReceive(NotificationCenter.default.publisher(for: .heartTargetProfilesDidChange)) { _ in
         profiles = HeartTargetService.shared.profiles
         selectedID = HeartTargetService.shared.selectedProfile?.id
@@ -395,9 +558,19 @@ private struct ClawContactDetailView: View {
   let profile: HeartTargetProfile
   @State private var timeline: [ClawConversationMessage] = []
   @State private var memories: [ClawMemoryItem] = []
+  @State private var isSelected = false
 
   var body: some View {
     List {
+      Section {
+        Button {
+          HeartTargetService.shared.select(id: profile.id)
+          isSelected = true
+        } label: {
+          Label(isSelected ? "当前助手人物" : "设为当前助手人物", systemImage: isSelected ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")
+        }
+        .disabled(isSelected)
+      }
       Section {
         if profile.autoCreated {
           Button("确认这个人物档案") {
@@ -408,6 +581,15 @@ private struct ClawContactDetailView: View {
         }
         if !profile.relationship.isEmpty {
           HStack { Text("关系"); Spacer(); Text(profile.relationship).foregroundColor(.secondary) }
+        }
+        if !profile.aliases.isEmpty {
+          HStack {
+            Text("别名")
+            Spacer()
+            Text(profile.aliases.joined(separator: "、"))
+              .foregroundColor(.secondary)
+              .multilineTextAlignment(.trailing)
+          }
         }
         if !profile.bio.isEmpty { Text(profile.bio) }
         if !profile.learnedSummary.isEmpty { Text(profile.learnedSummary).foregroundColor(.secondary) }
@@ -446,8 +628,12 @@ private struct ClawContactDetailView: View {
     }
     .navigationTitle(profile.displayName)
     .onAppear {
+      isSelected = HeartTargetService.shared.selectedProfile?.id == profile.id
       timeline = (try? ClawMemoryStore.shared.conversation(contactID: profile.id, limit: 200)) ?? []
       memories = (try? ClawMemoryStore.shared.memories(scope: "contact", subjectID: profile.id, limit: 100)) ?? []
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .heartTargetProfilesDidChange)) { _ in
+      isSelected = HeartTargetService.shared.selectedProfile?.id == profile.id
     }
   }
 }
@@ -978,3 +1164,4 @@ private struct ClawMemoryDocumentPicker: UIViewControllerRepresentable {
     }
   }
 }
+Process exited with code 0.

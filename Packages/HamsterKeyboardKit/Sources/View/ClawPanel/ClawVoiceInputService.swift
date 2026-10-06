@@ -26,6 +26,7 @@ public final class ClawVoiceInputService: NSObject {
   private let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
   private let languageModeKey = "claw_voice_language_mode_v1"
   private let silenceIntervalKey = "claw_voice_silence_interval_v1"
+  private let preferOnDeviceKey = "claw_voice_prefer_on_device_v1"
   private var audioEngine: AVAudioEngine?
   private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
   private var recognitionTask: SFSpeechRecognitionTask?
@@ -50,6 +51,12 @@ public final class ClawVoiceInputService: NSObject {
       return stored > 0 ? min(1.8, max(0.7, stored)) : 1.0
     }
     set { defaults?.set(min(1.8, max(0.7, newValue)), forKey: silenceIntervalKey) }
+  }
+
+  /// 默认优先可靠性，不强制本地识别。用户明确开启后才要求 on-device。
+  public var preferOnDeviceRecognition: Bool {
+    get { defaults?.bool(forKey: preferOnDeviceKey) ?? false }
+    set { defaults?.set(newValue, forKey: preferOnDeviceKey) }
   }
 
   private var streamingPartial: ((String) -> Void)?
@@ -79,6 +86,23 @@ public final class ClawVoiceInputService: NSObject {
     return .undetermined
   }
 
+  /// 仅主 App 调用。键盘扩展不会主动弹权限框。
+  public func requestAuthorization(completion: @escaping (Bool) -> Void) {
+    guard !isKeyboardExtensionRuntime else {
+      completion(false)
+      return
+    }
+    SFSpeechRecognizer.requestAuthorization { speechStatus in
+      guard speechStatus == .authorized else {
+        DispatchQueue.main.async { completion(false) }
+        return
+      }
+      AVAudioSession.sharedInstance().requestRecordPermission { granted in
+        DispatchQueue.main.async { completion(granted) }
+      }
+    }
+  }
+
   private var isKeyboardExtensionRuntime: Bool {
     Bundle.main.bundleURL.pathExtension.lowercased() == "appex"
   }
@@ -99,7 +123,7 @@ public final class ClawVoiceInputService: NSObject {
     let audioEngine = AVAudioEngine()
     let request = SFSpeechAudioBufferRecognitionRequest()
     request.shouldReportPartialResults = false
-    if recognizer.supportsOnDeviceRecognition {
+    if preferOnDeviceRecognition, recognizer.supportsOnDeviceRecognition {
       request.requiresOnDeviceRecognition = true
     }
 
@@ -169,7 +193,7 @@ public final class ClawVoiceInputService: NSObject {
     let audioEngine = AVAudioEngine()
     let request = SFSpeechAudioBufferRecognitionRequest()
     request.shouldReportPartialResults = true
-    if recognizer.supportsOnDeviceRecognition {
+    if preferOnDeviceRecognition, recognizer.supportsOnDeviceRecognition {
       request.requiresOnDeviceRecognition = true
     }
 
@@ -352,3 +376,4 @@ public enum ClawVoiceError: LocalizedError {
     }
   }
 }
+Process exited with code 0.

@@ -17,7 +17,6 @@ public final class HeartTargetSettingsViewController: UITableViewController {
 
   public override func viewDidLoad() {
     super.viewDidLoad()
-    tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
     navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addTapped))
     NotificationCenter.default.addObserver(self, selector: #selector(profilesChanged), name: .heartTargetProfilesDidChange, object: nil)
   }
@@ -35,26 +34,47 @@ public final class HeartTargetSettingsViewController: UITableViewController {
     navigationController?.pushViewController(edit, animated: true)
   }
 
-  public override func numberOfSections(in tableView: UITableView) -> Int { 1 }
+  public override func numberOfSections(in tableView: UITableView) -> Int { 2 }
 
   public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-    let count = service.profiles.count
-    return count == 0 ? 1 : count
+    if section == 0 { return 1 }
+    return max(1, service.profiles.count)
+  }
+
+  public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+    section == 0 ? "助手当前上下文" : "人物档案"
   }
 
   public override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-    let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
+    if indexPath.section == 0 {
+      let cell = tableView.dequeueReusableCell(withIdentifier: "global")
+        ?? UITableViewCell(style: .subtitle, reuseIdentifier: "global")
+      cell.textLabel?.text = "全局模式"
+      cell.detailTextLabel?.text = "只使用你的个人长期记忆，不混入任何联系人"
+      cell.imageView?.image = UIImage(systemName: "person.crop.circle.dashed")
+      cell.accessoryType = service.selectedProfile == nil ? .checkmark : .none
+      cell.textLabel?.textColor = service.selectedProfile == nil ? .systemBlue : .label
+      return cell
+    }
+
+    let cell = tableView.dequeueReusableCell(withIdentifier: "profile")
+      ?? UITableViewCell(style: .subtitle, reuseIdentifier: "profile")
     if service.profiles.isEmpty {
       cell.textLabel?.text = "暂无档案，点击右上角 + 添加"
       cell.textLabel?.textColor = .secondaryLabel
       cell.accessoryType = .none
       cell.imageView?.image = nil
+      cell.detailTextLabel?.text = "添加后可在键盘和助手中快速切换"
       return cell
     }
     let profile = service.profiles[indexPath.row]
     cell.textLabel?.text = profile.displayName
-    cell.textLabel?.textColor = .label
-    cell.detailTextLabel?.text = profile.bio.isEmpty ? "未填写描述" : profile.bio
+    let selected = service.selectedProfile?.id == profile.id
+    cell.textLabel?.textColor = selected ? .systemBlue : .label
+    let relationship = profile.relationship.isEmpty ? "未设置关系" : profile.relationship
+    let alias = profile.aliases.isEmpty ? "" : " · 别名 (profile.aliases.joined(separator: "、"))"
+    cell.detailTextLabel?.text = "(selected ? "当前 · " : "")(relationship)(alias)"
+    cell.detailTextLabel?.textColor = .secondaryLabel
     if let image = profile.avatarImage {
       cell.imageView?.image = image
       cell.imageView?.layer.cornerRadius = 16
@@ -62,23 +82,54 @@ public final class HeartTargetSettingsViewController: UITableViewController {
     } else {
       cell.imageView?.image = UIImage(systemName: "person.crop.circle")
     }
-    cell.accessoryType = .disclosureIndicator
+    cell.accessoryType = .detailButton
     return cell
   }
 
   public override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     tableView.deselectRow(at: indexPath, animated: true)
+    if indexPath.section == 0 {
+      service.clearSelection()
+      return
+    }
     guard !service.profiles.isEmpty else { return }
+    let profile = service.profiles[indexPath.row]
+    service.select(id: profile.id)
+  }
+
+  public override func tableView(_ tableView: UITableView, accessoryButtonTappedForRowWith indexPath: IndexPath) {
+    guard indexPath.section == 1, !service.profiles.isEmpty else { return }
     let profile = service.profiles[indexPath.row]
     let edit = HeartTargetEditViewController(profile: profile)
     navigationController?.pushViewController(edit, animated: true)
   }
 
   public override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
-    guard editingStyle == .delete, !service.profiles.isEmpty else { return }
+    guard editingStyle == .delete, indexPath.section == 1, !service.profiles.isEmpty else { return }
     let profile = service.profiles[indexPath.row]
     service.delete(id: profile.id)
     tableView.reloadData()
+  }
+
+  public override func tableView(
+    _ tableView: UITableView,
+    trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+  ) -> UISwipeActionsConfiguration? {
+    guard indexPath.section == 1, !service.profiles.isEmpty else { return nil }
+    let profile = service.profiles[indexPath.row]
+    let edit = UIContextualAction(style: .normal, title: "编辑") { [weak self] _, _, done in
+      guard let self else { done(false); return }
+      self.navigationController?.pushViewController(HeartTargetEditViewController(profile: profile), animated: true)
+      done(true)
+    }
+    edit.backgroundColor = .systemBlue
+    let delete = UIContextualAction(style: .destructive, title: "删除") { [weak self] _, _, done in
+      self?.service.delete(id: profile.id)
+      done(true)
+    }
+    let config = UISwipeActionsConfiguration(actions: [delete, edit])
+    config.performsFirstActionWithFullSwipe = false
+    return config
   }
 }
 
@@ -279,3 +330,4 @@ public final class HeartTargetEditViewController: UITableViewController, PHPicke
     bio = textView.text
   }
 }
+Process exited with code 0.

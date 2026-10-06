@@ -45,7 +45,18 @@ public enum HamsterConstants {
   /// Keyboard brain-icon opens the ClawTalk page URL (point to ClawTalk deep link when integrating).
   public static let appURLForGuru = "hamster://app.lgm.7517/clawTalk"
 
+  /// Keyboard phone button opens the CLAW host app directly into hands-free voice mode.
+  public static let appURLForGuruVoice = "hamster://app.lgm.7517/clawTalk?voiceCall=1"
+
+  /// Shared one-shot launch flag consumed by the host assistant after a voice deep link.
+  public static let clawVoiceCallLaunchKey = "claw_voice_call_launch_v1"
+
   /// Keyboard long-press AI opens the main app keyboard-settings page (ClawTalk deep link).
   public static let appURLForKeyboardSettings = "hamster://keyboardSettings"
 
 }
+
+public extension Notification.Name {
+  static let clawVoiceCallRequested = Notification.Name("clawVoiceCallRequested")
+}
+Process exited with code 0.

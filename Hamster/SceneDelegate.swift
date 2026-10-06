@@ -43,6 +43,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
 
       // url.query(): 获取 `URL` 查询参数
       // url.lastPathComponent 获取 `URL` 中 `/a/b` 中最后一个 b
+      if url.query?.contains("voiceCall=1") == true {
+        UserDefaults(suiteName: HamsterConstants.appGroupName)?
+          .set(true, forKey: HamsterConstants.clawVoiceCallLaunchKey)
+        NotificationCenter.default.post(name: .clawVoiceCallRequested, object: nil)
+      }
       let components = url.lastPathComponent
       if let subView = SettingsSubView(rawValue: components) {
         HamsterAppDependencyContainer.shared.mainViewModel.navigation(subView)
@@ -83,6 +88,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
 
       // url.query(): 获取 `URL` 查询参数
       // url.lastPathComponent 获取 `URL` 中 `/a/b` 中最后一个 b
+      if url.query?.contains("voiceCall=1") == true {
+        UserDefaults(suiteName: HamsterConstants.appGroupName)?
+          .set(true, forKey: HamsterConstants.clawVoiceCallLaunchKey)
+        NotificationCenter.default.post(name: .clawVoiceCallRequested, object: nil)
+      }
       let components = url.lastPathComponent
       if let subView = SettingsSubView(rawValue: components) {
         HamsterAppDependencyContainer.shared.mainViewModel.navigation(subView)
@@ -137,3 +147,4 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
     // to restore the scene back to its current state.
   }
 }
+Process exited with code 0.

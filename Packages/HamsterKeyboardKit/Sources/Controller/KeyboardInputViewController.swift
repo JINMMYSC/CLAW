@@ -67,16 +67,6 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
       clawTalkBeginSession()
       // 注意：不在键盘内自动读取剪贴板。iOS 16+ 读取剪贴板内容会弹「xx想从微信粘贴」提示，
       // 改为在 ClawTalk 剪贴板页面手动「立即记录」，避免输入时反复弹窗打扰。
-
-      // 每日洞察：满足间隔条件时后台触发 AI 分析
-      Task.detached(priority: .background) {
-        await AutoInsightService.shared.runIfNeeded()
-      }
-
-      // 智能调频：满足间隔条件时后台触发 AI 分析
-      Task.detached(priority: .background) {
-        await SmartFreqService.shared.runIfNeeded()
-      }
     }
 
     // fix: 屏幕边缘按键触摸延迟
@@ -1044,8 +1034,8 @@ private extension KeyboardInputViewController {
           }
         }
 
-          // ClawTalk: 提交上屏后投喂实时建议引擎
-          ClawSuggestionEngine.shared.feed(commitText)
+          // 键盘主输入链路必须保持轻量。不要在用户连续打字时从 Extension 自动发起
+          // 网络 AI 请求；实时建议只在用户主动打开 CLAW 面板后启用。
 
         // 非嵌入模式在 CandidateWordsView.swift 中处理，直接输入 Label 中
         guard self.keyboardContext.enableEmbeddedInputMode else { return }
@@ -1318,7 +1308,8 @@ extension KeyboardInputViewController {
       )
       if (try? ClawMemoryStore.shared.appendConversation(message)) == true {
         ClawSecretaryExtractor.shared.persistExtractedTasks(from: message)
-        ClawContactProfileLearner.shared.refreshIfNeeded(profileID: profile.id)
+        // 人物画像属于重任务（数据库 + 可能的网络 AI），留给主 App 激活时处理，
+        // 避免在 Keyboard Extension 退出/切换过程中触发 jetsam。
       }
     }
   }
@@ -1428,3 +1419,4 @@ extension UIKeyboardType {
     }
   }
 }
+Process exited with code 0.
