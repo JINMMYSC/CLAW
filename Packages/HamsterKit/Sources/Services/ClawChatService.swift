@@ -124,16 +124,15 @@ public final class ClawChatService: NSObject, ObservableObject {
     stopSpeaking()
 
     // 请求级锁定 provider/model，避免与 AutoInsight/键盘其它 AI 请求相互改全局状态。
-    let provider = aiService.selectedProvider
-    let model = aiService.selectedModel
-    guard !aiService.apiKey(for: provider).isEmpty else {
+    let requestConfiguration = aiService.currentRequestConfiguration
+    guard !aiService.apiKey(for: requestConfiguration.provider).isEmpty else {
       isSending = false
-      postAssistant("还没有配置 \(provider.rawValue) API Key，请打开 CLAW 主程序的 AI 设置完成配置。")
+      postAssistant("还没有配置 \(requestConfiguration.provider.rawValue) API Key，请打开 CLAW 主程序的 AI 设置完成配置。")
       return
     }
 
     let apiMessages = buildAPIMessages()
-    aiService.chat(messages: apiMessages, provider: provider, model: model) { [weak self] result in
+    aiService.chat(messages: apiMessages, configuration: requestConfiguration) { [weak self] result in
       guard let self else { return }
       self.isSending = false
       switch result {
