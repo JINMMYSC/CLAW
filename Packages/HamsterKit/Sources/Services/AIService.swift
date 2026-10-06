@@ -1,7 +1,7 @@
 import Foundation
 
 /// 支持的 AI 提供商
-public enum AIProvider: String, Codable, CaseIterable {
+public enum AIProvider: String, Codable, CaseIterable, Equatable {
   case openai      = "OpenAI"
   case openrouter  = "OpenRouter"
   case claude      = "Claude"
@@ -74,11 +74,24 @@ public struct AIUsage: Codable {
   }
 }
 
+public struct AIRequestConfiguration: Equatable {
+  public let provider: AIProvider
+  public let model: String
+  public let maxTokens: Int
+
+  public init(provider: AIProvider, model: String? = nil, maxTokens: Int = 4096) {
+    self.provider = provider
+    self.model = model ?? provider.defaultModel
+    self.maxTokens = max(256, maxTokens)
+  }
+}
+
 /// AI 服务 - 统一封装 OpenAI / OpenRouter / Claude API
 public class AIService {
   public static let shared = AIService()
 
   private let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
+  private let secureStore = ClawSecureStore.shared
 
   // MARK: - Config Storage
 
@@ -95,12 +108,54 @@ public class AIService {
     set { defaults?.set(newValue, forKey: "ai_model") }
   }
 
+  public var currentRequestConfiguration: AIRequestConfiguration {
+    let provider = selectedProvider
+    return AIRequestConfiguration(provider: provider, model: selectedModel)
+  }
+
   public func apiKey(for provider: AIProvider) -> String {
-    defaults?.string(forKey: "ai_key_\(provider.rawValue)") ?? ""
+    let account = secureAccount(for: provider)
+    do {
+      if let secure = try secureStore.string(for: account), !secure.isEmpty {
+        return secure
+      }
+    } catch {}
+
+    let legacyKey = legacyDefaultsKey(for: provider)
+    guard let legacy = defaults?.string(forKey: legacyKey), !legacy.isEmpty else { return "" }
+    do {
+      try secureStore.setString(legacy, for: account)
+      defaults?.removeObject(forKey: legacyKey)
+    } catch {
+      LogService.shared.log("Keychain migration unavailable for \(provider.rawValue)", level: .warn, tag: "AI")
+    }
+    return legacy
   }
 
   public func setApiKey(_ key: String, for provider: AIProvider) {
-    defaults?.set(key, forKey: "ai_key_\(provider.rawValue)")
+    let cleaned = key.trimmingCharacters(in: .whitespacesAndNewlines)
+    let account = secureAccount(for: provider)
+    let legacyKey = legacyDefaultsKey(for: provider)
+    if cleaned.isEmpty {
+      try? secureStore.remove(account)
+      defaults?.removeObject(forKey: legacyKey)
+      return
+    }
+    do {
+      try secureStore.setString(cleaned, for: account)
+      defaults?.removeObject(forKey: legacyKey)
+    } catch {
+      defaults?.set(cleaned, forKey: legacyKey)
+      LogService.shared.log("Keychain write unavailable for \(provider.rawValue); using compatibility storage", level: .warn, tag: "AI")
+    }
+  }
+
+  private func secureAccount(for provider: AIProvider) -> String {
+    "ai-key-\(provider.rawValue.lowercased())"
+  }
+
+  private func legacyDefaultsKey(for provider: AIProvider) -> String {
+    "ai_key_\(provider.rawValue)"
   }
 
   // MARK: - Prompt Management
@@ -163,9 +218,7 @@ public class AIService {
     messages: [AIMessage],
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
   ) {
-    let provider = selectedProvider
-    let model = selectedModel
-    chatWithUsage(messages: messages, provider: provider, model: model, completion: completion)
+    chatWithUsage(messages: messages, configuration: currentRequestConfiguration, completion: completion)
   }
 
   /// Request-scoped routing. This avoids mutating the process-wide selected provider/model when
@@ -176,7 +229,7 @@ public class AIService {
     model: String? = nil,
     completion: @escaping (Result<String, Error>) -> Void
   ) {
-    chatWithUsage(messages: messages, provider: provider, model: model ?? provider.defaultModel) { result in
+    chatWithUsage(messages: messages, configuration: AIRequestConfiguration(provider: provider, model: model)) { result in
       completion(result.map { $0.0 })
     }
   }
@@ -187,6 +240,29 @@ public class AIService {
     model: String,
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
   ) {
+    chatWithUsage(
+      messages: messages,
+      configuration: AIRequestConfiguration(provider: provider, model: model),
+      completion: completion
+    )
+  }
+
+  public func chat(
+    messages: [AIMessage],
+    configuration: AIRequestConfiguration,
+    completion: @escaping (Result<String, Error>) -> Void
+  ) {
+    chatWithUsage(messages: messages, configuration: configuration) { result in
+      completion(result.map { $0.0 })
+    }
+  }
+
+  public func chatWithUsage(
+    messages: [AIMessage],
+    configuration: AIRequestConfiguration,
+    completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
+  ) {
+    let provider = configuration.provider
     let key = apiKey(for: provider)
     guard !key.isEmpty else {
       completion(.failure(AIError.noAPIKey(provider)))
@@ -194,9 +270,22 @@ public class AIService {
     }
     switch provider {
     case .claude:
-      chatClaudeWithUsage(messages: messages, apiKey: key, model: model, completion: completion)
+      chatClaudeWithUsage(
+        messages: messages,
+        apiKey: key,
+        model: configuration.model,
+        maxTokens: configuration.maxTokens,
+        completion: completion
+      )
     default:
-      chatOpenAICompatWithUsage(messages: messages, provider: provider, apiKey: key, model: model, completion: completion)
+      chatOpenAICompatWithUsage(
+        messages: messages,
+        provider: provider,
+        apiKey: key,
+        model: configuration.model,
+        maxTokens: configuration.maxTokens,
+        completion: completion
+      )
     }
   }
 
@@ -207,6 +296,7 @@ public class AIService {
     provider: AIProvider,
     apiKey: String,
     model: String,
+    maxTokens: Int,
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
   ) {
     let urlString = "\(provider.baseURL)/chat/completions"
@@ -221,7 +311,7 @@ public class AIService {
     let body: [String: Any] = [
       "model": model,
       "messages": messages.map { ["role": $0.role, "content": $0.content] },
-      "max_tokens": 4096,
+      "max_tokens": maxTokens,
     ]
     req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
@@ -273,6 +363,7 @@ public class AIService {
     messages: [AIMessage],
     apiKey: String,
     model: String,
+    maxTokens: Int,
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
   ) {
     let urlString = "https://api.anthropic.com/v1/messages"
@@ -287,7 +378,7 @@ public class AIService {
     let chatMsgs = messages.filter { $0.role != "system" }
     var body: [String: Any] = [
       "model": model,
-      "max_tokens": 4096,
+      "max_tokens": maxTokens,
       "messages": chatMsgs.map { ["role": $0.role, "content": $0.content] },
     ]
     if let sys = systemMsg, !sys.isEmpty { body["system"] = sys }
