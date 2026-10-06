@@ -567,10 +567,10 @@ class KeyboardToolbarView: NibLessView {
 
   @objc func aiButtonLongPressed(_ sender: UILongPressGestureRecognizer) {
     guard sender.state == .began else { return }
-    // 长按 AI：deep link 跳主程序键盘设置页
+    // 长按 AI：从键盘快捷助手无缝续接到主 App 的完整 CLAW 助手。
     actionHandler.handle(
       .release,
-      on: .url(URL(string: HamsterConstants.appURLForKeyboardSettings), id: "openKeyboardSettings")
+      on: .url(URL(string: HamsterConstants.appURLForGuru), id: "openClawAssistant")
     )
   }
 

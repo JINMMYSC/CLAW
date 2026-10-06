@@ -395,10 +395,20 @@ private struct ClawMemoryCenterView: View {
           Button { exportPackage() } label: { Label("完整 CLAW 备份（.clawmemory）", systemImage: "shippingbox") }
           if let preview = importPreview {
             VStack(alignment: .leading, spacing: 6) {
-              Text("待导入：记忆 \(preview.candidates.count) · 任务 \(preview.tasks.count) · Skill \(preview.skills.count)")
+              Text("分析结果：新增 \(preview.newCount) · 重复 \(preview.duplicateCount) · 冲突 \(preview.conflictCount)")
                 .font(.subheadline)
+              if !preview.tasks.isEmpty || !preview.skills.isEmpty {
+                Text("附带：任务 \(preview.tasks.count) · Skill \(preview.skills.count)")
+                  .font(.caption).foregroundColor(.secondary)
+              }
+              if preview.conflictCount > 0 {
+                Text("冲突项不会自动覆盖手机 CLAW 的现有记忆；本次确认只写入无冲突的新记忆。")
+                  .font(.caption).foregroundColor(.orange)
+              }
               Text(preview.sourceName).font(.caption2).foregroundColor(.secondary)
-              Button("确认写入 Memory Core") { commit(preview) }.buttonStyle(.borderedProminent)
+              Button("确认写入 Memory Core") { commit(preview) }
+                .buttonStyle(.borderedProminent)
+                .disabled(preview.candidates.isEmpty && preview.tasks.isEmpty && preview.skills.isEmpty)
             }
           }
           if !status.isEmpty { Text(status).font(.caption).foregroundColor(.secondary) }

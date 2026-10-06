@@ -97,6 +97,49 @@ final class ClawMemoryCoreTests: XCTestCase {
     XCTAssertEqual(try store.memories().count, 3)
   }
 
+  func testImportPreviewSeparatesDuplicatesAndConflicts() throws {
+    let existing = ClawMemoryItem(
+      kind: .communicationPreference,
+      content: "客户消息偏好简短",
+      normalizedKey: "reply-style-client",
+      sourceType: "manual"
+    )
+    try store.upsertMemory(existing)
+    let exchange = ClawMemoryExchangeService(store: store)
+    let duplicate = ClawMemoryItem(
+      kind: .communicationPreference,
+      content: "客户消息偏好简短",
+      normalizedKey: "reply-style-client",
+      sourceType: "agent-import"
+    )
+    let conflict = ClawMemoryItem(
+      kind: .communicationPreference,
+      content: "客户消息偏好详细解释",
+      normalizedKey: "reply-style-client",
+      sourceType: "agent-import"
+    )
+    let fresh = ClawMemoryItem(
+      kind: .project,
+      content: "正在开发 CLAW",
+      normalizedKey: "project-claw",
+      sourceType: "agent-import"
+    )
+    let envelope = ClawMemoryExchangeEnvelope(
+      version: 1,
+      exportedAt: Date(),
+      memories: [duplicate, conflict, fresh],
+      tasks: []
+    )
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let preview = try exchange.previewImport(data: encoder.encode(envelope), fileName: "memory.json")
+
+    XCTAssertEqual(preview.duplicateCount, 1)
+    XCTAssertEqual(preview.conflictCount, 1)
+    XCTAssertEqual(preview.candidates.map(\.content), ["正在开发 CLAW"])
+    XCTAssertEqual(try exchange.commit(preview), 1)
+  }
+
   func testSkillPackageInstallAndEvolutionUseAcceptedReplies() throws {
     let skill = ClawSkillDefinition(
       id: "custom-reply",

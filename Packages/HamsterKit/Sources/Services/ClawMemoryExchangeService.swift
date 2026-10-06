@@ -6,6 +6,7 @@ public struct ClawMemoryImportPreview: Equatable {
   public var tasks: [ClawSecretaryTask]
   public var skills: [ClawSkillDefinition]
   public var duplicateCount: Int
+  public var conflictCount: Int
   public var sourceName: String
 
   public init(
@@ -13,14 +14,18 @@ public struct ClawMemoryImportPreview: Equatable {
     tasks: [ClawSecretaryTask] = [],
     skills: [ClawSkillDefinition] = [],
     duplicateCount: Int = 0,
+    conflictCount: Int = 0,
     sourceName: String
   ) {
     self.candidates = candidates
     self.tasks = tasks
     self.skills = skills
     self.duplicateCount = duplicateCount
+    self.conflictCount = conflictCount
     self.sourceName = sourceName
   }
+
+  public var newCount: Int { candidates.count }
 }
 
 /// Agent 记忆交换层。Markdown 面向人/通用 Agent，JSON/JSONL 面向机器；内部 canonical store 仍是 SQLite。
@@ -116,10 +121,10 @@ public final class ClawMemoryExchangeService {
     case "json":
       let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
       if let envelope = try? decoder.decode(ClawMemoryExchangeEnvelope.self, from: data) {
-        return ClawMemoryImportPreview(candidates: envelope.memories, sourceName: fileName)
+        return try classify(candidates: envelope.memories, sourceName: fileName)
       }
       if let items = try? decoder.decode([ClawMemoryItem].self, from: data) {
-        return ClawMemoryImportPreview(candidates: items, sourceName: fileName)
+        return try classify(candidates: items, sourceName: fileName)
       }
       fallthrough
     case "jsonl":
@@ -128,7 +133,7 @@ public final class ClawMemoryExchangeService {
       let rows = text.split(whereSeparator: \.isNewline).compactMap { line -> ClawMemoryItem? in
         try? decoder.decode(ClawMemoryItem.self, from: Data(line.utf8))
       }
-      if !rows.isEmpty { return ClawMemoryImportPreview(candidates: rows, sourceName: fileName) }
+      if !rows.isEmpty { return try classify(candidates: rows, sourceName: fileName) }
       fallthrough
     default:
       return previewMarkdown(String(decoding: data, as: UTF8.self), sourceName: fileName)
@@ -169,7 +174,7 @@ public final class ClawMemoryExchangeService {
     guard !memories.isEmpty || !tasks.isEmpty || !skills.isEmpty else {
       throw CocoaError(.fileReadCorruptFile)
     }
-    return ClawMemoryImportPreview(candidates: memories, tasks: tasks, skills: skills, sourceName: fileName)
+    return try classify(candidates: memories, tasks: tasks, skills: skills, sourceName: fileName)
   }
 
   private func previewMarkdown(_ markdown: String, sourceName: String) -> ClawMemoryImportPreview {
@@ -196,7 +201,73 @@ public final class ClawMemoryExchangeService {
         confidence: 0.8
       ))
     }
-    return ClawMemoryImportPreview(candidates: items, sourceName: sourceName)
+    return (try? classify(candidates: items, sourceName: sourceName))
+      ?? ClawMemoryImportPreview(candidates: items, sourceName: sourceName)
+  }
+
+  /// Import preview is intentionally conservative: exact semantic duplicates are skipped,
+  /// and same-key/different-content rows are reported as conflicts instead of silently
+  /// overwriting the user's mobile source of truth.
+  private func classify(
+    candidates: [ClawMemoryItem],
+    tasks: [ClawSecretaryTask] = [],
+    skills: [ClawSkillDefinition] = [],
+    sourceName: String
+  ) throws -> ClawMemoryImportPreview {
+    let existing = try store.memories(limit: 50_000)
+    var accepted: [ClawMemoryItem] = []
+    var duplicateCount = 0
+    var conflictCount = 0
+    var seen = Set<String>()
+
+    for item in candidates {
+      let content = item.content.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !content.isEmpty else { continue }
+      let semanticKey = [
+        item.kind.rawValue,
+        item.scope,
+        item.subjectID?.uuidString ?? "",
+        item.normalizedKey?.lowercased() ?? "",
+      ].joined(separator: "|")
+      let exactKey = semanticKey + "|" + content.lowercased()
+      guard seen.insert(exactKey).inserted else {
+        duplicateCount += 1
+        continue
+      }
+
+      if existing.contains(where: { existingItem in
+        existingItem.kind == item.kind
+          && existingItem.scope == item.scope
+          && existingItem.subjectID == item.subjectID
+          && existingItem.normalizedKey?.lowercased() == item.normalizedKey?.lowercased()
+          && existingItem.content.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == content.lowercased()
+      }) {
+        duplicateCount += 1
+        continue
+      }
+
+      if item.normalizedKey != nil,
+         existing.contains(where: { existingItem in
+           existingItem.kind == item.kind
+             && existingItem.scope == item.scope
+             && existingItem.subjectID == item.subjectID
+             && existingItem.normalizedKey?.lowercased() == item.normalizedKey?.lowercased()
+             && existingItem.content.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != content.lowercased()
+         }) {
+        conflictCount += 1
+        continue
+      }
+      accepted.append(item)
+    }
+
+    return ClawMemoryImportPreview(
+      candidates: accepted,
+      tasks: tasks,
+      skills: skills,
+      duplicateCount: duplicateCount,
+      conflictCount: conflictCount,
+      sourceName: sourceName
+    )
   }
 }
 
