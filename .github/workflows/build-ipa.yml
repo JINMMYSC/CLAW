@@ -5,6 +5,10 @@ on:
     branches: [main, work/claw-voice-keyboard-bg]
   workflow_dispatch:
 
+concurrency:
+  group: claw-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-15
