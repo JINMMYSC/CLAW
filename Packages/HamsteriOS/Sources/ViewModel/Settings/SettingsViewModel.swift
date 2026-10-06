@@ -36,6 +36,17 @@ public class SettingsViewModel: ObservableObject {
     }
   }
 
+  /// 当前键盘配色名：未启用主题时显示「系统默认」，启用时显示具体主题名。
+  var keyboardColorSchemaName: String {
+    let keyboard = HamsterConfigurationStore.shared.configuration.keyboard
+    guard keyboard?.enableColorSchema ?? false else { return "系统默认" }
+    let light = keyboard?.useColorSchemaForLight ?? ""
+    let dark = keyboard?.useColorSchemaForDark ?? ""
+    let theme = ClawTalkThemePresets.theme(forSchemaName: light)
+      ?? ClawTalkThemePresets.theme(forSchemaName: dark)
+    return theme?.displayName ?? "系统默认"
+  }
+
   public var enableAppleCloud: Bool {
     get {
       HamsterConfigurationStore.shared.configuration.general?.enableAppleCloud ?? false
@@ -151,7 +162,7 @@ public class SettingsViewModel: ObservableObject {
           icon: UIImage(systemName: "paintpalette")!,
           text: "键盘配色",
           accessoryType: .disclosureIndicator,
-          navigationLinkLabel: { [unowned self] in self.enableColorSchema ? "启用" : "禁用" },
+          navigationLinkLabel: { [unowned self] in self.keyboardColorSchemaName },
           navigationAction: { [unowned self] in
             self.navigate(.colorSchema)
           }

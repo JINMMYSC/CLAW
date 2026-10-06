@@ -41,8 +41,8 @@ public func uiColorFromHex(_ rgbHex: String) -> UIColor {
 /// ClawTalk 键盘主题（7 套，索引 0 为系统默认/苹果原生）
 public enum ClawTalkTheme: String, CaseIterable, Codable {
   case red = "clawtalk_red"
-  case white = "clawtalk_white"
-  case black = "clawtalk_black"
+  /// 「白」与「黑」已合并为「简约」：浅色=白，深色=黑。
+  case minimal = "clawtalk_minimal"
   case blackGold = "clawtalk_black_gold"
   case seaSaltBlue = "clawtalk_sea_blue"
   case forestGreen = "clawtalk_forest"
@@ -52,8 +52,7 @@ public enum ClawTalkTheme: String, CaseIterable, Codable {
   public var displayName: String {
     switch self {
     case .red: return "红"
-    case .white: return "白"
-    case .black: return "黑"
+    case .minimal: return "简约"
     case .blackGold: return "黑金"
     case .seaSaltBlue: return "海盐蓝"
     case .forestGreen: return "森林绿"
@@ -65,8 +64,7 @@ public enum ClawTalkTheme: String, CaseIterable, Codable {
   public var displaySubtitle: String {
     switch self {
     case .red: return "ClawTalk 品牌红"
-    case .white: return "简约纯净白"
-    case .black: return "深邃酷黑"
+    case .minimal: return "浅色白 · 深色黑"
     case .blackGold: return "黑金质感"
     case .seaSaltBlue: return "清爽海盐蓝"
     case .forestGreen: return "自然森林绿"
@@ -150,24 +148,13 @@ public enum ClawTalkThemePresets {
           keycapText: "#F2F2F7", accent: "#C63E38", accentForeground: "#FFFFFF"
         )
       )
-    case .white:
+    case .minimal:
+      // 浅色沿用原「白」，深色沿用原「黑」，两套都必须是真实可区分的明/暗底。
       return makePreset(
         theme: theme,
         light: ClawTalkThemeRGB(
           keyboardBackground: "#F2F2F7", keycapBase: "#FFFFFF", keycapPressed: "#E5E5EA",
           keycapText: "#1C1C1E", accent: "#6E6E73", accentForeground: "#FFFFFF"
-        ),
-        dark: ClawTalkThemeRGB(
-          keyboardBackground: "#1C1C1E", keycapBase: "#2C2C2E", keycapPressed: "#3A3A3C",
-          keycapText: "#FFFFFF", accent: "#98989D", accentForeground: "#1C1C1E"
-        )
-      )
-    case .black:
-      return makePreset(
-        theme: theme,
-        light: ClawTalkThemeRGB(
-          keyboardBackground: "#1C1C1E", keycapBase: "#2C2C2E", keycapPressed: "#3A3A3C",
-          keycapText: "#FFFFFF", accent: "#8E8E93", accentForeground: "#FFFFFF"
         ),
         dark: ClawTalkThemeRGB(
           keyboardBackground: "#000000", keycapBase: "#1C1C1E", keycapPressed: "#2C2C2E",
@@ -178,8 +165,8 @@ public enum ClawTalkThemePresets {
       return makePreset(
         theme: theme,
         light: ClawTalkThemeRGB(
-          keyboardBackground: "#141210", keycapBase: "#1F1D1A", keycapPressed: "#2E2B26",
-          keycapText: "#F5F1E8", accent: "#D4AF37", accentForeground: "#141210"
+          keyboardBackground: "#FAF6EC", keycapBase: "#FFFFFF", keycapPressed: "#F0E8D8",
+          keycapText: "#2A2419", accent: "#C9A227", accentForeground: "#2A2419"
         ),
         dark: ClawTalkThemeRGB(
           keyboardBackground: "#000000", keycapBase: "#1A1815", keycapPressed: "#292621",
@@ -228,13 +215,62 @@ public enum ClawTalkThemePresets {
   /// 按 schema 名（浅/深任一）找主题
   public static func theme(forSchemaName name: String?) -> ClawTalkTheme? {
     guard let name else { return nil }
-    return all.first { $0.lightSchemaName == name || $0.darkSchemaName == name }?.theme
+    let normalized = normalizedSchemaName(name)
+    return all.first { $0.lightSchemaName == normalized || $0.darkSchemaName == normalized }?.theme
   }
 
   /// 按 schema 名取内置预设 schema（键盘扩展兜底用）
   public static func schema(named name: String?) -> KeyboardColorSchema? {
     guard let name else { return nil }
-    return all.flatMap { [$0.lightSchema, $0.darkSchema] }.first { $0.schemaName == name }
+    let normalized = normalizedSchemaName(name)
+    return all.flatMap { [$0.lightSchema, $0.darkSchema] }.first { $0.schemaName == normalized }
+  }
+
+  // MARK: - 旧主题迁移（「白」「黑」→「简约」）
+
+  /// 旧 schema 名 → 新 schema 名。
+  public static let legacySchemaNames: [String: String] = [
+    "clawtalk_white": "clawtalk_minimal",
+    "clawtalk_white_dark": "clawtalk_minimal_dark",
+    "clawtalk_black": "clawtalk_minimal",
+    "clawtalk_black_dark": "clawtalk_minimal_dark",
+  ]
+
+  /// 把旧 schema 名规范成新名字；不是旧名则原样返回。
+  public static func normalizedSchemaName(_ name: String) -> String {
+    legacySchemaNames[name] ?? name
+  }
+
+  /// 迁移老配置：改写 useColorSchemaForLight/Dark，并用内置预设覆盖/注入 schema。
+  /// 返回非 nil 表示发生了迁移，调用方需要回写配置。
+  public static func migrateLegacyConfig(_ config: HamsterConfiguration) -> HamsterConfiguration? {
+    guard var keyboard = config.keyboard else { return nil }
+    let light = keyboard.useColorSchemaForLight ?? ""
+    let dark = keyboard.useColorSchemaForDark ?? ""
+    let mappedLight = normalizedSchemaName(light)
+    let mappedDark = normalizedSchemaName(dark)
+    let hasLegacyNames = mappedLight != light || mappedDark != dark
+    let existing = keyboard.colorSchemas ?? []
+    let hasLegacySchemas = existing.contains { legacySchemaNames[$0.schemaName ?? ""] != nil }
+    guard hasLegacyNames || hasLegacySchemas else { return nil }
+
+    // 丢掉旧主题的 schema 记录，注入当前全部内置预设，保证键盘扩展按新名字能解析到。
+    var schemas = existing.filter { legacySchemaNames[$0.schemaName ?? ""] == nil }
+    for theme in ClawTalkTheme.allCases {
+      let preset = preset(for: theme)
+      schemas.removeAll { $0.schemaName == preset.lightSchemaName || $0.schemaName == preset.darkSchemaName }
+      schemas.append(preset.lightSchema)
+      schemas.append(preset.darkSchema)
+    }
+    keyboard.colorSchemas = schemas
+    if hasLegacyNames {
+      keyboard.useColorSchemaForLight = mappedLight
+      keyboard.useColorSchemaForDark = mappedDark
+      keyboard.enableColorSchema = !mappedLight.isEmpty || !mappedDark.isEmpty
+    }
+    var migrated = config
+    migrated.keyboard = keyboard
+    return migrated
   }
 
   private static func makePreset(theme: ClawTalkTheme, light: ClawTalkThemeRGB, dark: ClawTalkThemeRGB) -> ClawTalkThemePreset {

@@ -25,10 +25,16 @@ public final class HamsterConfigurationStore {
   public var configuration: HamsterConfiguration {
     get {
       if let cached = cachedConfiguration { return cached }
-      let value =
+      var value =
         (try? HamsterConfigurationRepositories.shared.loadFromUserDefaults())
         ?? (try? HamsterConfigurationRepositories.shared.loadConfiguration())
         ?? HamsterConfiguration()
+      // 「白」「黑」合并为「简约」：旧配置里的 schema 名与词表需要一次性迁移，
+      // 否则设置页会显示「系统默认」而键盘仍在用旧主题色。
+      if let migrated = ClawTalkThemePresets.migrateLegacyConfig(value) {
+        value = migrated
+        persistConfiguration(migrated)
+      }
       cachedConfiguration = value
       return value
     }
