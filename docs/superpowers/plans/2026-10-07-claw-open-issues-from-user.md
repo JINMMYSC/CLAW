@@ -729,3 +729,34 @@ if let overrideDictFiles = configuration.rime?.overrideDictFiles, overrideDictFi
 ### 7. 执行时机与预算
 
 保留月度 token 预算；建议只在充电且空闲时跑；结果先落成待确认草稿，用户点应用才写入并重部署。
+
+### 附：新词现在是怎么造的、造了之后会怎样
+
+**生成流程（现状）**
+
+1. 触发：`SmartFreqService.runIfNeeded()`（助手页启动时）或设置页手动跑。
+2. 取数据：`loadClawTalkText` 读最近 `intervalMinutes` 的键盘输入记录。
+3. 交给 AI。提示词规定新词必须输出成 `NEW<TAB>全拼编码<TAB>词语`，并且限定「用户反复输入但标准词库可能没有的词/短语」「仅限多次输入的非标准词汇、缩写、网络用语」。
+4. 解析：`parseRules` 按 Tab 切开，`parts.count >= 3 && parts[0] == "NEW"` 才收，编码统一小写去空格。
+5. 落盘：`mergeNewPhrases` 把 `编码<TAB>词条` 追加进 `smart_freq_phrases.txt`，按行去重。
+6. 同步写一条 Memory Core：`kind = .reusablePhrase`、`content = "用户常用短语：xxx"`、`normalizedKey = "smartfreq:phrase:<word>"`、`sourceType = "smart-freq"`、`confidence = 0.78`，最多 30 条。
+7. 统计写进 `SmartFreqResult`（`newPhraseCount`、token 数），设置页能看到次数。
+
+**造了之后会怎样（现状）**
+
+- `smart_freq_phrases.txt` 没有任何程序读取，RIME 也不认它 → **对输入零影响**，打字时不会出现这个词。
+- Memory Core 那条会参与 AI 上下文检索 → 影响帮你回／超会说／助手的生成内容，但不影响候选词。
+- 所以在键盘上完全看不到变化。
+
+**要让它真的生效（即本节任务 1）**
+
+RIME 只认这两种落点：
+
+- `custom_phrase.txt`：格式 `编码<TAB>词条<TAB>权重`（如 `nihao	你好	1e8`），并要求 schema 引用 `custom_phrase` 表；
+- 或 `*.custom.yaml` 补丁，往对应 schema 的 `translator` 加词条／调权。
+
+写完必须触发一次 `deployment(...)` 让 RIME 重新编译，之后输入该编码才会出现这个词。
+
+**附加风险：编码可能造错**
+
+提示词要求「全拼编码 = 声母韵母连写无空格」，但中文分词边界、多音字、非标准词都会让 AI 给出错误编码。错误编码会污染词库——打这个词的编码会冒出一个不相干的词。所以接入 RIME 之前必须加校验（本地拼音转换比对，或 RIME 反查），并且走「草稿 → 用户确认 → 应用」的流程，保留版本与撤销。现在写进没人读的 txt，反而没有污染风险；一旦接上 RIME，校验就从可选项变成必需项。
