@@ -293,3 +293,42 @@ AI 侧（`ClawContextBuilder.build`）：
 ### 另外一点
 
 现在这个位置在「键盘相关」分组里，而外观属于整个 App，语义上有点偏。可以顺手把该分组改名，或把外观提到更通用的分组。
+
+## 十三、键盘配色的三个问题
+
+### 1. 设置页显示「启用／禁用」，应该显示选中的配色名
+
+`SettingsViewModel.swift` 第 154 行：
+
+```
+navigationLinkLabel: { [unowned self] in self.enableColorSchema ? "启用" : "禁用" }
+```
+
+应该改成显示当前配色名（含「系统默认」），例如「红」「黑金」「系统默认」。
+
+### 2. 选「系统默认」不生效，选了还是上一版
+
+根因在于配置是怎么传到键盘扩展的：
+
+- 键盘扩展**不是**从 App Group UserDefaults 读配置，而是从文件读：`KeyboardContext.swift` 第 299-300 行用 `Data(contentsOf: AppGroup/userData/build/hamster.plist)` 解码后赋给 `hamsterConfiguration`。
+- 这个赋值**只在 `KeyboardContext` 初始化时发生一次**（第 264 行声明，第 300 行是唯一赋值点）。扩展进程已经在运行时不会重新读。
+- 主程序写这份 plist 是异步的：`HamsterConfigurationStore.persistConfiguration` 里用 `Task { saveToUserDefaults + saveToPropertyList }`。
+
+所以选完配色回到键盘时，如果扩展进程还活着，`keyboardContext.hamsterConfiguration` 仍是旧值，键盘和设置页都会显示上一版，直到扩展进程被系统回收重建。
+
+另外还有一个显示层问题：`KeyboardColorViewModel.selectedIndex` 的 getter 在 schema 名解析不出来时返回 0，界面就会显示成「系统默认」，与实际不符。
+
+建议：主程序保存改为同步，或至少等待写入完成；扩展侧在 `viewWillAppear` / `viewDidLayoutSubviews` 里按需重读 plist（带节流）；或者在 App Group 放一个配置版本号，扩展发现版本变化才重载。
+
+### 3. 有的配色没有浅色／深色两种
+
+7 套主题在数据上**都**定义了 light 和 dark 两套 schema（`ClawTalkThemePresets`），但其中两套的浅色变体本身就是深色：
+
+- 黑：浅色变体键盘底 `#1C1C1E`、键帽 `#2C2C2E`
+- 黑金：浅色变体键盘底 `#141210`、键帽 `#1F1D1A`
+
+所以这两套在系统浅色模式下依然是黑的，看起来就像"没有浅色版"。
+
+另外 yaml 自带的两套 `solarized_dark`（昼熔月汐）与 `solarized_light`（日光熔金）是**单变体**设计——一套只管深色、一套只管浅色，和 7 套主题的双变体机制不是同一套逻辑，容易混淆。
+
+建议：对确实没有浅色变体的主题在设置页明确标注（例如「黑（仅深色）」），或者补一套真正的浅色变体；同时把 yaml 自带的单变体 schema 与内置主题在 UI 上区分开。
