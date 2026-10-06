@@ -25,6 +25,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
       let window = UIWindow(windowScene: windowScene)
       window.rootViewController = HamsterAppDependencyContainer.shared.makeRootController()
       window.tintColor = ClawTalkTheme.accent
+      // 主程序外观偏好（系统 / 浅色 / 深色），与键盘扩展共用同一份 App Group 值。
+      window.overrideUserInterfaceStyle = ClawAppearanceService.style.userInterfaceStyle
       self.window = window
       window.makeKeyAndVisible()
       // ClawTalk 品牌启动层：与 LaunchScreen 视觉一致，1.5s 淡出

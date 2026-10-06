@@ -47,6 +47,18 @@ public class SettingsViewModel: ObservableObject {
     return theme?.displayName ?? "系统默认"
   }
 
+  /// 外观偏好（系统 / 浅色 / 深色）。写入后立刻应用到所有窗口。
+  var appearanceStyle: ClawAppearanceStyle {
+    get { ClawAppearanceService.style }
+    set {
+      ClawAppearanceService.style = newValue
+      UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .flatMap { $0.windows }
+        .forEach { $0.overrideUserInterfaceStyle = newValue.userInterfaceStyle }
+    }
+  }
+
   public var enableAppleCloud: Bool {
     get {
       HamsterConfigurationStore.shared.configuration.general?.enableAppleCloud ?? false
@@ -156,6 +168,19 @@ public class SettingsViewModel: ObservableObject {
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
             self.navigate(.keyboardSettings)
+          }
+        ),
+        .init(
+          icon: UIImage(systemName: "circle.lefthalf.filled")!,
+          text: "外观",
+          type: .pullDown,
+          textValue: { [unowned self] in self.appearanceStyle.displayName },
+          pullDownMenuActionsBuilder: { [unowned self] in
+            ClawAppearanceStyle.allCases.map { style in
+              UIAction(title: style.displayName, state: style == self.appearanceStyle ? .on : .off) { [unowned self] _ in
+                self.appearanceStyle = style
+              }
+            }
           }
         ),
         .init(

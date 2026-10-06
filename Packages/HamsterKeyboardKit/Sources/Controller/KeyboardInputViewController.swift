@@ -166,6 +166,11 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
     keyboardContext.sync(with: self)
     keyboardTextContext.sync(with: self)
     syncKeyboardBackgroundColor()
+    // 跟随主程序设置的外观（App Group 共享）。只在值不同时赋值，避免 trait 变化回环。
+    let sharedStyle = ClawAppearanceService.style.userInterfaceStyle
+    if overrideUserInterfaceStyle != sharedStyle {
+      overrideUserInterfaceStyle = sharedStyle
+    }
   }
 
   // MARK: - Combine
