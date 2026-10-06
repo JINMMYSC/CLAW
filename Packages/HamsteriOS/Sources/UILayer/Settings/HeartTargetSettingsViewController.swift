@@ -89,8 +89,12 @@ public final class HeartTargetEditViewController: UITableViewController, PHPicke
   private var avatarImage: UIImage?
   private var name = ""
   private var bio = ""
+  private var relationship = ""
+  private var aliasesText = ""
 
   private let nameField = UITextField()
+  private let relationshipField = UITextField()
+  private let aliasesField = UITextField()
   private let bioView = UITextView()
   private let avatarCellImageView = UIImageView()
 
@@ -100,6 +104,8 @@ public final class HeartTargetEditViewController: UITableViewController, PHPicke
     title = profile == nil ? "新建档案" : "编辑档案"
     name = profile?.name ?? ""
     bio = profile?.bio ?? ""
+    relationship = profile?.relationship ?? ""
+    aliasesText = profile?.aliases.joined(separator: "、") ?? ""
     avatarImage = profile?.avatarImage
   }
 
@@ -124,6 +130,11 @@ public final class HeartTargetEditViewController: UITableViewController, PHPicke
     var profile = existing ?? HeartTargetProfile()
     profile.name = trimmedName
     profile.bio = bio.trimmingCharacters(in: .whitespacesAndNewlines)
+    profile.relationship = relationship.trimmingCharacters(in: .whitespacesAndNewlines)
+    profile.aliases = aliasesText
+      .components(separatedBy: CharacterSet(charactersIn: "、,，;；"))
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
     profile.avatarData = avatarImage?.jpegData(compressionQuality: 0.8)
     service.upsert(profile)
     navigationController?.popViewController(animated: true)
@@ -164,13 +175,13 @@ public final class HeartTargetEditViewController: UITableViewController, PHPicke
   }
 
   public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-    section == 1 ? 2 : 1
+    section == 1 ? 4 : 1
   }
 
   public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
     switch section {
     case 0: return "头像"
-    case 1: return "信息（名称与描述会作为 AI 聊天对象背景）"
+    case 1: return "人物与关系（名称/别名用于截图自动匹配）"
     default: return nil
     }
   }
@@ -205,6 +216,22 @@ public final class HeartTargetEditViewController: UITableViewController, PHPicke
         nameField.frame = CGRect(x: 20, y: 7, width: cell.contentView.bounds.width - 40, height: 30)
         nameField.autoresizingMask = [.flexibleWidth]
         cell.contentView.addSubview(nameField)
+      } else if indexPath.row == 1 {
+        relationshipField.text = relationship
+        relationshipField.placeholder = "关系，例如：朋友 / 客户 / 家人"
+        relationshipField.delegate = self
+        relationshipField.frame = CGRect(x: 20, y: 7, width: cell.contentView.bounds.width - 40, height: 30)
+        relationshipField.autoresizingMask = [.flexibleWidth]
+        relationshipField.tag = 101
+        cell.contentView.addSubview(relationshipField)
+      } else if indexPath.row == 2 {
+        aliasesField.text = aliasesText
+        aliasesField.placeholder = "备注名/昵称，多个用逗号分隔"
+        aliasesField.delegate = self
+        aliasesField.frame = CGRect(x: 20, y: 7, width: cell.contentView.bounds.width - 40, height: 30)
+        aliasesField.autoresizingMask = [.flexibleWidth]
+        aliasesField.tag = 102
+        cell.contentView.addSubview(aliasesField)
       } else {
         bioView.text = bio
         bioView.font = .systemFont(ofSize: 15)
@@ -229,7 +256,7 @@ public final class HeartTargetEditViewController: UITableViewController, PHPicke
 
   public override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
     if indexPath.section == 0 { return 80 }
-    if indexPath.section == 1 { return indexPath.row == 0 ? 50 : 100 }
+    if indexPath.section == 1 { return indexPath.row == 3 ? 100 : 50 }
     return 44
   }
 
@@ -241,7 +268,11 @@ public final class HeartTargetEditViewController: UITableViewController, PHPicke
   }
 
   public func textFieldDidChangeSelection(_ textField: UITextField) {
-    name = textField.text ?? ""
+    switch textField.tag {
+    case 101: relationship = textField.text ?? ""
+    case 102: aliasesText = textField.text ?? ""
+    default: name = textField.text ?? ""
+    }
   }
 
   public func textViewDidChange(_ textView: UITextView) {

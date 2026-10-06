@@ -31,7 +31,7 @@ public struct HamsterConfiguration: Codable, Hashable, CustomStringConvertible {
   public init(
     general: GeneralConfiguration? = nil,
     toolbar: KeyboardToolbarConfiguration? = nil,
-    keyboard: KeyboardConfiguration? = nil,
+    keyboard: KeyboardConfiguration? = KeyboardConfiguration(useIOSNativeLayout: true),
     rime: RimeConfiguration? = nil,
     swipe: KeyboardSwipeConfiguration? = nil,
     keyboards: [Keyboard]? = nil
@@ -54,6 +54,11 @@ public struct HamsterConfiguration: Codable, Hashable, CustomStringConvertible {
       self.keyboard = keyboard
     } else if let keyboard = try? container.decodeIfPresent(KeyboardConfiguration.self, forKey: .keyboard) {
       self.keyboard = keyboard
+    }
+    // Fresh/default configurations use the existing iOS-native layout. An explicitly
+    // persisted false value is preserved by KeyboardConfiguration's decoder.
+    if self.keyboard == nil {
+      self.keyboard = KeyboardConfiguration(useIOSNativeLayout: true)
     }
 
     self.rime = try container.decodeIfPresent(RimeConfiguration.self, forKey: .rime)

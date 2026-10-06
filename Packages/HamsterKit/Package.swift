@@ -24,7 +24,12 @@ let package = Package(
         "ZIPFoundation",
         "Yams",
       ],
-      path: "Sources"),
+      path: "Sources",
+      linkerSettings: [
+        .linkedLibrary("sqlite3"),
+        .linkedFramework("Security"),
+        .linkedFramework("NaturalLanguage"),
+      ]),
     .testTarget(
       name: "HamsterKitTests",
       dependencies: ["HamsterKit"],

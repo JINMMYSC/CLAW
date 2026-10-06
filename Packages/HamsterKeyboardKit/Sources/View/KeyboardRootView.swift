@@ -239,7 +239,11 @@ class KeyboardRootView: NibLessView {
   }
 
   override func setupAppearance() {
-    backgroundColor = appearance.backgroundStyle.backgroundColor
+    if keyboardContext.useIOSNativeLayout {
+      backgroundColor = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme).board
+    } else {
+      backgroundColor = appearance.backgroundStyle.backgroundColor
+    }
     contentMode = .redraw
   }
 
@@ -332,7 +336,7 @@ class KeyboardRootView: NibLessView {
           guard let self = self else { return }
           guard let heightConstraint = self.toolbarHeightConstraint else { return }
           if self.keyboardContext.candidatesViewState.isCollapse() {
-            let panelHeight: CGFloat = tab >= 0 ? ClawPanelOverlayView.panelHeight : 0
+            let panelHeight = ClawPanelOverlayView.preferredHeight(for: tab)
             // IOS 原生布局：面板展开时候选栏固定顶行，工具栏高度多一行
             let extra = (tab >= 0 && self.keyboardContext.useIOSNativeLayout) ? self.keyboardContext.heightOfToolbar : 0
             heightConstraint.constant = self.keyboardContext.heightOfToolbar + extra + panelHeight
@@ -434,7 +438,7 @@ class KeyboardRootView: NibLessView {
     if candidateViewState.isCollapse() {
       // 键盘显示
       let panelExpanded = keyboardContext.clawPanelTab >= 0
-      let panelHeight: CGFloat = panelExpanded ? ClawPanelOverlayView.panelHeight : 0
+      let panelHeight = panelExpanded ? ClawPanelOverlayView.preferredHeight(for: keyboardContext.clawPanelTab) : 0
       // IOS 原生布局：面板展开时候选栏固定顶行，工具栏高度多一行
       let extra = (panelExpanded && keyboardContext.useIOSNativeLayout) ? keyboardContext.heightOfToolbar : 0
       toolbarHeightConstraint?.constant = keyboardContext.heightOfToolbar + extra + panelHeight

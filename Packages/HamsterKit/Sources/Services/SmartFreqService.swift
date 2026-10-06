@@ -158,7 +158,8 @@ NEW\t全拼编码\t词语
     let prompt = Self.defaultPrompt
       .replacingOccurrences(of: "{data}", with: clawTalkText)
 
-    let result = await callAIWithUsage(prompt: prompt)
+    let requestConfiguration = AIService.shared.currentRequestConfiguration
+    let result = await callAIWithUsage(prompt: prompt, configuration: requestConfiguration)
 
     guard case .success(let (response, usage)) = result else {
       if case .failure(let error) = result {
@@ -172,6 +173,29 @@ NEW\t全拼编码\t词语
     // 合并写入文件
     mergeFreqRules(freqRules)
     mergeNewPhrases(newPhrases)
+
+    // Mirror durable lexical learning into the shared Memory Core so rewrite/reply Skills
+    // can benefit from the same phrases instead of SmartFreq owning a private silo.
+    for rule in freqRules.filter({ $0.action == "boost" }).prefix(30) {
+      try? ClawMemoryStore.shared.upsertMemory(ClawMemoryItem(
+        kind: .reusablePhrase,
+        content: "用户常用词：(rule.word)",
+        normalizedKey: "smartfreq:boost:(rule.word.lowercased())",
+        sourceType: "smart-freq",
+        sourceRef: rule.code,
+        confidence: 0.82
+      ))
+    }
+    for phrase in newPhrases.prefix(30) {
+      try? ClawMemoryStore.shared.upsertMemory(ClawMemoryItem(
+        kind: .reusablePhrase,
+        content: "用户常用短语：(phrase.word)",
+        normalizedKey: "smartfreq:phrase:(phrase.word.lowercased())",
+        sourceType: "smart-freq",
+        sourceRef: phrase.code,
+        confidence: 0.78
+      ))
+    }
 
     let entryCount = clawTalkText.components(separatedBy: "\n").filter { !$0.isEmpty }.count
     let tokensUsed = usage?.totalTokens ?? 0
@@ -218,10 +242,13 @@ NEW\t全拼编码\t词语
 
   // MARK: - AI Call
 
-  private func callAIWithUsage(prompt: String) async -> Result<(String, AIUsage?), Error> {
+  private func callAIWithUsage(
+    prompt: String,
+    configuration: AIRequestConfiguration
+  ) async -> Result<(String, AIUsage?), Error> {
     await withCheckedContinuation { continuation in
       let messages = [AIMessage(role: "user", content: prompt)]
-      AIService.shared.chatWithUsage(messages: messages) { result in
+      AIService.shared.chatWithUsage(messages: messages, configuration: configuration) { result in
         continuation.resume(returning: result)
       }
     }

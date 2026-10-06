@@ -19,8 +19,19 @@ extension UIView {
 // MARK: - 业务面板覆盖层（AI语音助手 / 帮你回 / 超会说）
 
 public final class ClawPanelOverlayView: UIView {
-  /// 面板展开高度（标题 + 内容区 + 输入行），压缩后不再遮挡聊天界面
-  public static let panelHeight: CGFloat = 150
+  /// 键盘 AI 面板分档高度。任何 tab 都不会膨胀成半屏聊天窗口。
+  public static let compactHeight: CGFloat = 140
+  public static let normalHeight: CGFloat = 175
+  public static let expandedHeight: CGFloat = 205
+
+  public static func preferredHeight(for tab: Int) -> CGFloat {
+    switch tab {
+    case PanelTab.ai.rawValue: return expandedHeight
+    case PanelTab.helpReply.rawValue: return normalHeight
+    case PanelTab.superTalk.rawValue: return 160
+    default: return 0
+    }
+  }
 
   enum PanelTab: Int {
     case ai = 0
@@ -35,6 +46,41 @@ public final class ClawPanelOverlayView: UIView {
   // 标题
   private let titleLabel = UILabel()
   private let closeButton = UIButton(type: .system)
+  private let screenshotButton = UIButton(type: .system)
+  private let styleButton = UIButton(type: .system)
+
+  private enum ToneStyle: String, CaseIterable {
+    case likeMe
+    case natural
+    case concise
+    case considerate
+    case formal
+    case humorous
+
+    var title: String {
+      switch self {
+      case .likeMe: return "更像我"
+      case .natural: return "自然"
+      case .concise: return "简短"
+      case .considerate: return "有分寸"
+      case .formal: return "正式"
+      case .humorous: return "幽默"
+      }
+    }
+
+    var instruction: String {
+      switch self {
+      case .likeMe: return "优先模仿用户长期确认过的表达习惯与最终修改版本。"
+      case .natural: return "表达自然口语化，不要模板腔。"
+      case .concise: return "尽量压缩到最少必要文字，直接表达核心意思。"
+      case .considerate: return "语气有分寸，照顾对方感受，但不要过度讨好。"
+      case .formal: return "语气专业、清晰、正式，但避免官话。"
+      case .humorous: return "允许轻度幽默和松弛感，但不要油腻或冒犯。"
+      }
+    }
+  }
+
+  private var selectedToneStyle: ToneStyle = .likeMe
 
   // 内容区（按 tab 切换）
 
@@ -48,6 +94,13 @@ public final class ClawPanelOverlayView: UIView {
   // 结果展示：可滚动/可选中复制 + 复制按钮
   private let resultTextView = UITextView()
   private let copyButton = UIButton(type: .system)
+  /// “帮你回”专用多候选卡。与“超会说”的单结果视图分开，避免三个 tab 只是换标题。
+  private let replyCandidatesScrollView = UIScrollView()
+  private let replyCandidatesStack = UIStackView()
+  private var replyCandidatesHeightConstraint: NSLayoutConstraint!
+  private var currentReplyCandidates: [String] = []
+  private var lastAnalysisInput = ""
+  private var currentExperimentVariantID: String?
 
   // 实时建议条（右侧空余区域）
   private let suggestionStrip = ClawSuggestionStripView()
@@ -156,6 +209,18 @@ public final class ClawPanelOverlayView: UIView {
     closeButton.tintColor = ClawPanelPalette.titleBlue
     closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
 
+    screenshotButton.setImage(UIImage(systemName: "photo.on.rectangle"), for: .normal)
+    screenshotButton.tintColor = ClawPanelPalette.brandBlue
+    screenshotButton.accessibilityLabel = "导入聊天截图"
+    screenshotButton.addTarget(self, action: #selector(screenshotTapped), for: .touchUpInside)
+
+    styleButton.titleLabel?.font = .systemFont(ofSize: 12, weight: .semibold)
+    styleButton.setTitleColor(ClawPanelPalette.deepBlue, for: .normal)
+    styleButton.backgroundColor = ClawPanelPalette.capsuleNormal
+    styleButton.layer.cornerRadius = 10
+    styleButton.showsMenuAsPrimaryAction = true
+    refreshStyleMenu()
+
     newChatButton.setTitle("新对话", for: .normal)
     newChatButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
     newChatButton.setTitleColor(ClawPanelPalette.deepBlue, for: .normal)
@@ -205,6 +270,7 @@ public final class ClawPanelOverlayView: UIView {
     micButton.tintColor = ClawPanelPalette.brandBlue
     micButton.backgroundColor = ClawPanelPalette.inputBackground
     micButton.layer.cornerRadius = 18
+    micButton.addTarget(self, action: #selector(micTapped), for: .touchUpInside)
     let micLongPress = UILongPressGestureRecognizer(target: self, action: #selector(micLongPressed(_:)))
     micLongPress.minimumPressDuration = 0.3
     micButton.addGestureRecognizer(micLongPress)
@@ -235,7 +301,16 @@ public final class ClawPanelOverlayView: UIView {
     resultTextView.textContainerInset = UIEdgeInsets(top: 4, left: 4, bottom: 4, right: 44)
     resultTextView.isHidden = true
 
-    copyButton.setTitle("复制", for: .normal)
+    replyCandidatesScrollView.showsHorizontalScrollIndicator = false
+    replyCandidatesScrollView.alwaysBounceHorizontal = true
+    replyCandidatesScrollView.isHidden = true
+    replyCandidatesStack.axis = .horizontal
+    replyCandidatesStack.alignment = .fill
+    replyCandidatesStack.spacing = 8
+    replyCandidatesStack.translatesAutoresizingMaskIntoConstraints = false
+    replyCandidatesScrollView.addSubview(replyCandidatesStack)
+
+    copyButton.setTitle("插入", for: .normal)
     copyButton.setTitleColor(ClawPanelPalette.brandBlue, for: .normal)
     copyButton.titleLabel?.font = .systemFont(ofSize: 12, weight: .semibold)
     copyButton.backgroundColor = ClawPanelPalette.capsuleNormal
@@ -260,7 +335,7 @@ public final class ClawPanelOverlayView: UIView {
   }
 
   private func setupConstraints() {
-    [titleLabel, closeButton, aiWaveContainer, inputRow, resultTextView, copyButton, suggestionStrip, heartTargetButton, chatListView, newChatButton, speakToggleButton].forEach {
+    [titleLabel, closeButton, screenshotButton, styleButton, aiWaveContainer, inputRow, resultTextView, copyButton, replyCandidatesScrollView, suggestionStrip, heartTargetButton, chatListView, newChatButton, speakToggleButton].forEach {
       $0.translatesAutoresizingMaskIntoConstraints = false
       addSubview($0)
     }
@@ -270,6 +345,7 @@ public final class ClawPanelOverlayView: UIView {
     }
 
     suggestionStripWidthConstraint = suggestionStrip.widthAnchor.constraint(equalToConstant: 0)
+    replyCandidatesHeightConstraint = replyCandidatesScrollView.heightAnchor.constraint(equalToConstant: 0)
     chatListHeightConstraint = chatListView.heightAnchor.constraint(equalToConstant: 0)
     chatListBottomToInput = chatListView.bottomAnchor.constraint(equalTo: inputRow.topAnchor, constant: -6)
     inputRowHeightConstraint = inputRow.heightAnchor.constraint(equalToConstant: AILayout.inputRowHeight)
@@ -295,8 +371,16 @@ public final class ClawPanelOverlayView: UIView {
       closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
       closeButton.widthAnchor.constraint(equalToConstant: 26),
       closeButton.heightAnchor.constraint(equalToConstant: 26),
+      screenshotButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+      screenshotButton.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -8),
+      screenshotButton.widthAnchor.constraint(equalToConstant: 28),
+      screenshotButton.heightAnchor.constraint(equalToConstant: 28),
+      styleButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+      styleButton.trailingAnchor.constraint(equalTo: screenshotButton.leadingAnchor, constant: -6),
+      styleButton.widthAnchor.constraint(equalToConstant: 64),
+      styleButton.heightAnchor.constraint(equalToConstant: 24),
       speakToggleButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-      speakToggleButton.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -8),
+      speakToggleButton.trailingAnchor.constraint(equalTo: screenshotButton.leadingAnchor, constant: -8),
       newChatButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
       newChatButton.trailingAnchor.constraint(equalTo: speakToggleButton.leadingAnchor, constant: -8),
 
@@ -352,6 +436,17 @@ public final class ClawPanelOverlayView: UIView {
       copyButton.widthAnchor.constraint(equalToConstant: 48),
       copyButton.heightAnchor.constraint(equalToConstant: 24),
 
+      replyCandidatesScrollView.topAnchor.constraint(equalTo: inputRow.bottomAnchor, constant: 6),
+      replyCandidatesScrollView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+      replyCandidatesScrollView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+      replyCandidatesHeightConstraint,
+
+      replyCandidatesStack.topAnchor.constraint(equalTo: replyCandidatesScrollView.contentLayoutGuide.topAnchor),
+      replyCandidatesStack.bottomAnchor.constraint(equalTo: replyCandidatesScrollView.contentLayoutGuide.bottomAnchor),
+      replyCandidatesStack.leadingAnchor.constraint(equalTo: replyCandidatesScrollView.contentLayoutGuide.leadingAnchor),
+      replyCandidatesStack.trailingAnchor.constraint(equalTo: replyCandidatesScrollView.contentLayoutGuide.trailingAnchor),
+      replyCandidatesStack.heightAnchor.constraint(equalTo: replyCandidatesScrollView.frameLayoutGuide.heightAnchor),
+
       suggestionStrip.topAnchor.constraint(equalTo: inputRow.bottomAnchor, constant: 6),
       suggestionStrip.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
       suggestionBottomToHeart,
@@ -371,6 +466,12 @@ public final class ClawPanelOverlayView: UIView {
       name: .heartTargetProfilesDidChange,
       object: nil
     )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(memoryPolicyDidChange),
+      name: .clawMemoryPolicyDidChange,
+      object: nil
+    )
 
     // 实时建议条跟随建议引擎
     ClawSuggestionEngine.shared.$suggestions
@@ -378,7 +479,7 @@ public final class ClawPanelOverlayView: UIView {
       .sink { [weak self] suggestions in
         guard let self else { return }
         self.suggestionStrip.update(suggestions: suggestions)
-        let showStrip = !suggestions.isEmpty && !self.isAITab
+        let showStrip = !suggestions.isEmpty && !self.isAITab && self.currentReplyCandidates.isEmpty
         self.suggestionStrip.isHidden = !showStrip
         self.suggestionStripWidthConstraint.constant = showStrip ? 140 : 0
         self.layoutIfNeeded()
@@ -416,6 +517,26 @@ public final class ClawPanelOverlayView: UIView {
     }
   }
 
+  @objc private func memoryPolicyDidChange() {
+    DispatchQueue.main.async { [weak self] in
+      self?.refreshHeartTargetMenu()
+    }
+  }
+
+  private func refreshStyleMenu() {
+    styleButton.setTitle(selectedToneStyle.title, for: .normal)
+    styleButton.menu = UIMenu(title: "表达风格", children: ToneStyle.allCases.map { style in
+      UIAction(title: style.title, state: style == selectedToneStyle ? .on : .off) { [weak self] _ in
+        guard let self else { return }
+        self.selectedToneStyle = style
+        self.refreshStyleMenu()
+        if !self.lastAnalysisInput.isEmpty, !self.isAITab {
+          self.runAnalysis(text: self.lastAnalysisInput, isRegeneration: true)
+        }
+      }
+    })
+  }
+
   // MARK: - Tab 刷新
 
   func refresh(for tab: Int) {
@@ -425,9 +546,21 @@ public final class ClawPanelOverlayView: UIView {
     let isHelp = panelTab == .helpReply
     let isSuper = panelTab == .superTalk
     let isAI = panelTab == .ai
+    styleButton.isHidden = isAI
+    refreshStyleMenu()
     inputRow.isHidden = false
-    actionButton.setTitle(isAI ? "发送" : (isHelp ? "读懂TA" : "优化"), for: .normal)
+    actionButton.setTitle(isAI ? "发送" : (isHelp ? "帮我回" : "优化"), for: .normal)
     titleLabel.text = panelTab == .ai ? "AI语音助手" : (isHelp ? "帮你回" : "超会说")
+    screenshotButton.isHidden = isSuper
+    if isAI {
+      screenshotButton.setImage(UIImage(systemName: "arrow.up.forward.app"), for: .normal)
+      screenshotButton.accessibilityLabel = "在主 App 继续"
+    } else {
+      screenshotButton.setImage(UIImage(systemName: "photo.on.rectangle"), for: .normal)
+      screenshotButton.accessibilityLabel = "导入聊天截图"
+    }
+    newChatButton.isHidden = !isAI
+    speakToggleButton.isHidden = !isAI
     if isCallActive { stopCall() }
     phoneButton.isHidden = !isAI
     if isAI {
@@ -441,6 +574,13 @@ public final class ClawPanelOverlayView: UIView {
     resultTextView.text = ""
     resultTextView.isHidden = true
     copyButton.isHidden = true
+    currentReplyCandidates = []
+    replyCandidatesStack.arrangedSubviews.forEach { view in
+      replyCandidatesStack.removeArrangedSubview(view)
+      view.removeFromSuperview()
+    }
+    replyCandidatesScrollView.isHidden = true
+    replyCandidatesHeightConstraint.constant = 0
     isListening = false
     isMicHeld = false
     micButton.tintColor = ClawPanelPalette.brandBlue
@@ -599,7 +739,8 @@ public final class ClawPanelOverlayView: UIView {
     chatStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
     chatListView.layoutIfNeeded()
     let chat = ClawChatService.shared
-    for message in chat.messages {
+    // 键盘里只保留最近两轮，完整会话在主 App 展开。
+    for message in chat.messages.suffix(4) {
       chatStackView.addArrangedSubview(makeBubble(for: message))
     }
     if chat.isSending {
@@ -703,13 +844,16 @@ public final class ClawPanelOverlayView: UIView {
       return
     }
     guard !isLoading else { return }
+    let previousResult = !currentReplyCandidates.isEmpty
+      ? currentReplyCandidates.joined(separator: "\n")
+      : (resultTextView.isHidden ? "" : (resultTextView.text ?? ""))
     let text = inputTextView.text ?? ""
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else {
       showResultMessage("请先输入或粘贴内容")
       return
     }
-    runAnalysis(text: trimmed)
+    runAnalysis(text: trimmed, isRegeneration: !previousResult.isEmpty && previousResult != "分析中…")
   }
 
   @objc private func actionButtonLongPressed(_ sender: UILongPressGestureRecognizer) {
@@ -717,7 +861,53 @@ public final class ClawPanelOverlayView: UIView {
     presentPhotoPicker()
   }
 
-  @objc private func micLongPressed(_ sender: UILongPressGestureRecognizer) {
+  @objc private func screenshotTapped() {
+    guard !isLoading else { return }
+    if isAITab {
+      actionHandler.handle(
+        .release,
+        on: .url(URL(string: HamsterConstants.appURLForGuru), id: "openClawAssistant")
+      )
+      return
+    }
+    presentPhotoPicker()
+  }
+
+  private var isKeyboardExtensionRuntime: Bool {
+  Bundle.main.bundleURL.pathExtension.lowercased() == "appex"
+}
+
+/// 自定义键盘扩展不能可靠直接占用麦克风；切到系统输入法，让用户使用系统听写。
+private func fallbackToSystemDictation() {
+  isMicHeld = false
+  isListening = false
+  ClawVoiceInputService.shared.stop()
+  updateMicUI(recording: false)
+  if let controller = clawParentViewController as? KeyboardInputViewController {
+    controller.selectNextKeyboard()
+    return
+  }
+  showResultMessage("键盘扩展无法直接使用麦克风，请切换到系统键盘后使用听写")
+}
+
+@objc private func micTapped() {
+  guard !isCallActive else { return }
+  if isKeyboardExtensionRuntime {
+    fallbackToSystemDictation()
+    return
+  }
+  if isListening {
+    isMicHeld = false
+    ClawVoiceInputService.shared.stop()
+    isListening = false
+    updateMicUI(recording: false)
+  } else {
+    isMicHeld = true
+    startVoiceInput()
+  }
+}
+
+@objc private func micLongPressed(_ sender: UILongPressGestureRecognizer) {
     switch sender.state {
     case .began:
       guard !isListening, !isCallActive else { return }
@@ -738,11 +928,17 @@ public final class ClawPanelOverlayView: UIView {
   /// 语音输入：按住说话 → STT（zh-Hans）转文字填入输入框
   /// 权限只在主程序申请；键盘扩展只读状态，避免系统权限框在扩展进程闪退
   private func startVoiceInput() {
+    if isKeyboardExtensionRuntime {
+      fallbackToSystemDictation()
+      return
+    }
     switch ClawVoiceInputService.shared.authorizationStatus {
     case .denied:
+      isMicHeld = false
       showResultMessage("麦克风/语音识别权限未开启，请到 ClawTalk 主程序或系统设置中开启")
       return
     case .undetermined:
+      isMicHeld = false
       showResultMessage("请先在 ClawTalk 主程序中授权麦克风与语音识别")
       return
     case .authorized:
@@ -754,6 +950,7 @@ public final class ClawPanelOverlayView: UIView {
     ClawVoiceInputService.shared.start { [weak self] result in
       DispatchQueue.main.async {
         guard let self else { return }
+        self.isMicHeld = false
         self.isListening = false
         self.updateMicUI(recording: false)
         switch result {
@@ -791,6 +988,10 @@ public final class ClawPanelOverlayView: UIView {
 
   private func startCall() {
     guard !isCallActive else { return }
+    if isKeyboardExtensionRuntime {
+      fallbackToSystemDictation()
+      return
+    }
     switch ClawVoiceInputService.shared.authorizationStatus {
     case .denied:
       ClawChatService.shared.postAssistant("麦克风/语音识别权限未开启，请到 ClawTalk 主程序或系统设置中开启")
@@ -903,25 +1104,38 @@ public final class ClawPanelOverlayView: UIView {
     } else if isAITab {
       actionButton.setTitle("发送", for: .normal)
     } else {
-      actionButton.setTitle(tab == PanelTab.helpReply.rawValue ? "读懂TA" : "优化", for: .normal)
+      actionButton.setTitle(tab == PanelTab.helpReply.rawValue ? "帮我回" : "优化", for: .normal)
     }
     updateWaveVisibility()
   }
 
-  /// 读懂TA 长按：上传聊天截图 → 本地 OCR → 文本填入输入框
+  /// 帮你回截图入口：上传聊天截图 → 本地 OCR/结构化时间线 → 文本填入输入框。
   private func presentPhotoPicker() {
     var config = PHPickerConfiguration()
     config.filter = .images
-    config.selectionLimit = 1
+    config.selectionLimit = 6
+    config.selection = .ordered
     let picker = PHPickerViewController(configuration: config)
     picker.delegate = self
     guard let vc = clawParentViewController else { return }
     vc.present(picker, animated: true)
   }
 
-  /// AI 分析（读懂TA / 优化），prompt 注入聊天对象档案
-  private func runAnalysis(text: String) {
+  /// AI 分析（帮你回 / 超会说），统一注入 Memory Core 检索出的相关上下文。
+  private func runAnalysis(text: String, isRegeneration: Bool = false) {
+    let previousExperimentVariantID = currentExperimentVariantID
+    if isRegeneration {
+      let skillID = keyboardContext.clawPanelTab == PanelTab.helpReply.rawValue ? "reply" : "rewrite"
+      ClawSkillRuntime.shared.recordExperimentFeedback(
+        skillID: skillID,
+        variantID: previousExperimentVariantID,
+        action: .regenerated
+      )
+    }
+    lastAnalysisInput = text
     isLoading = true
+    currentReplyCandidates = []
+    replyCandidatesScrollView.isHidden = true
     resultTextView.isHidden = false
     resultTextView.text = "分析中…"
     copyButton.isHidden = true
@@ -929,29 +1143,62 @@ public final class ClawPanelOverlayView: UIView {
 
     let panelTab = keyboardContext.clawPanelTab
     let profile = HeartTargetService.shared.selectedProfile
-    var systemPrompt: String
-    if panelTab == 1 {
-      systemPrompt = "你是情感沟通助手。请读懂对方的话，帮用户理解对方意图和情绪，并给出针对性的回复建议。保持简洁、有温度。"
+    let skillID = panelTab == PanelTab.helpReply.rawValue ? "reply" : "rewrite"
+    let trigger: ClawSkillTrigger = panelTab == PanelTab.helpReply.rawValue ? .keyboardHelpReply : .keyboardRewrite
+    let invocation = try? ClawSkillRuntime.shared.prepare(
+      skillID: skillID,
+      trigger: trigger,
+      input: text,
+      contactID: profile?.id
+    )
+    currentExperimentVariantID = invocation?.experimentVariantID
+    var systemPrompt = invocation?.systemPrompt ?? (panelTab == PanelTab.helpReply.rawValue
+      ? "你是 CLAW 的帮你回 Skill。根据当前聊天内容、聊天对象关系和用户自己的表达习惯生成可直接发送的回复。"
+      : "你是 CLAW 的超会说 Skill。保留用户原意，把这句话改得更自然、更有分寸、更像用户本人会说的话。")
+    systemPrompt += "\n当前风格要求：\(selectedToneStyle.instruction)"
+    if panelTab == PanelTab.helpReply.rawValue {
+      systemPrompt += "\n本次输出格式要求：恰好 3 条候选，分别偏自然、有分寸、简短；严格只返回 JSON 字符串数组，不要 Markdown、编号或解释。"
     } else {
-      systemPrompt = "你是表达优化助手。请帮用户把想说的话优化得更得体、更有说服力，保留原意。"
+      systemPrompt += "\n不要解释，不要加标题，只输出可直接替换原文的最终版本。"
     }
-    if let profile, !profile.bio.isEmpty {
-      systemPrompt += "\n聊天对象背景：\(profile.bio)"
+    if let profile, !profile.memoryContext.isEmpty {
+      systemPrompt += "\n当前聊天对象：\(profile.displayName)\n\(profile.memoryContext)"
     }
 
+    let requestConfiguration = AIService.shared.currentRequestConfiguration
     AIService.shared.chat(
       messages: [
         AIMessage(role: "system", content: systemPrompt),
         AIMessage(role: "user", content: text),
-      ]
+      ],
+      configuration: requestConfiguration
     ) { [weak self] result in
       guard let self else { return }
       self.isLoading = false
       self.actionButton.isEnabled = true
       switch result {
       case .success(let reply):
-        self.resultTextView.text = reply
-        self.copyButton.isHidden = false
+        let cleaned = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        if panelTab == PanelTab.helpReply.rawValue {
+          let candidates = self.parseReplyCandidates(cleaned)
+          self.currentReplyCandidates = candidates
+          self.showReplyCandidates(candidates)
+        } else {
+          self.resultTextView.text = cleaned
+          self.resultTextView.isHidden = false
+          self.copyButton.isHidden = false
+          self.replyCandidatesScrollView.isHidden = true
+        }
+        self.actionButton.setTitle("换一批", for: .normal)
+        if isRegeneration {
+          try? ClawMemoryStore.shared.recordFeedback(ClawEvolutionFeedback(
+            skillID: skillID,
+            contactID: profile?.id,
+            action: .regenerated,
+            originalText: text,
+            finalText: cleaned
+          ))
+        }
       case .failure(let error):
         self.resultTextView.text = "分析失败：\(error.localizedDescription)"
       }
@@ -967,33 +1214,123 @@ public final class ClawPanelOverlayView: UIView {
 
   @objc private func copyResultTapped() {
     guard let text = resultTextView.text, !text.isEmpty else { return }
-    UIPasteboard.general.string = text
+    acceptGeneratedText(text)
+  }
+
+  private func acceptGeneratedText(_ text: String) {
+    let original = lastAnalysisInput.isEmpty ? inputTextView.text : lastAnalysisInput
+    ClawPanelInputBridge.shared.send(text)
+    let skillID = keyboardContext.clawPanelTab == PanelTab.helpReply.rawValue ? "reply" : "rewrite"
+    ClawGeneratedOutputTracker.shared.markInserted(
+      skillID: skillID,
+      contactID: HeartTargetService.shared.selectedProfile?.id,
+      sourceText: original,
+      generatedText: text,
+      style: selectedToneStyle.rawValue,
+      experimentVariantID: currentExperimentVariantID
+    )
+    try? ClawMemoryStore.shared.recordFeedback(ClawEvolutionFeedback(
+      skillID: skillID,
+      contactID: HeartTargetService.shared.selectedProfile?.id,
+      action: .accepted,
+      originalText: original,
+      finalText: text
+    ))
+    ClawSkillRuntime.shared.recordExperimentFeedback(
+      skillID: skillID,
+      variantID: currentExperimentVariantID,
+      action: .accepted
+    )
+    _ = ClawEvolutionEngine.shared.evolveIfNeeded(skillID: skillID)
     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-    copyButton.setTitle("已复制", for: .normal)
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-      self?.copyButton.setTitle("复制", for: .normal)
+    keyboardContext.clawPanelTab = -1
+  }
+
+  private func parseReplyCandidates(_ raw: String) -> [String] {
+    let stripped = raw
+      .replacingOccurrences(of: "```json", with: "")
+      .replacingOccurrences(of: "```", with: "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    if let data = stripped.data(using: .utf8),
+       let values = try? JSONSerialization.jsonObject(with: data) as? [String] {
+      let cleaned = values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+      if !cleaned.isEmpty { return Array(cleaned.prefix(3)) }
     }
+    let lines = stripped
+      .components(separatedBy: .newlines)
+      .map { line in
+        line.replacingOccurrences(of: #"^\s*[-*\d.、)]+\s*"#, with: "", options: .regularExpression)
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+      .filter { !$0.isEmpty }
+    return Array((lines.isEmpty ? [stripped] : lines).prefix(3))
+  }
+
+  private func showReplyCandidates(_ candidates: [String]) {
+    replyCandidatesStack.arrangedSubviews.forEach { view in
+      replyCandidatesStack.removeArrangedSubview(view)
+      view.removeFromSuperview()
+    }
+    let labels = ["自然", "有分寸", "简短"]
+    for (index, text) in candidates.enumerated() {
+      let button = UIButton(type: .system)
+      button.translatesAutoresizingMaskIntoConstraints = false
+      button.tag = index
+      button.titleLabel?.font = .systemFont(ofSize: 12)
+      button.titleLabel?.numberOfLines = 3
+      button.titleLabel?.textAlignment = .left
+      button.contentHorizontalAlignment = .leading
+      button.contentEdgeInsets = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
+      button.backgroundColor = ClawPanelPalette.inputBackground
+      button.layer.cornerRadius = 10
+      button.clipsToBounds = true
+      let label = labels.indices.contains(index) ? labels[index] : "候选"
+      button.setTitle("\(label)\n\(text)", for: .normal)
+      button.setTitleColor(ClawPanelPalette.candidateText, for: .normal)
+      button.addTarget(self, action: #selector(replyCandidateTapped(_:)), for: .touchUpInside)
+      NSLayoutConstraint.activate([
+        button.widthAnchor.constraint(equalToConstant: 172),
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 48),
+      ])
+      replyCandidatesStack.addArrangedSubview(button)
+    }
+    resultTextView.isHidden = true
+    copyButton.isHidden = true
+    suggestionStrip.isHidden = true
+    replyCandidatesHeightConstraint.constant = candidates.isEmpty ? 0 : 54
+    replyCandidatesScrollView.isHidden = candidates.isEmpty
+  }
+
+  @objc private func replyCandidateTapped(_ sender: UIButton) {
+    guard currentReplyCandidates.indices.contains(sender.tag) else { return }
+    acceptGeneratedText(currentReplyCandidates[sender.tag])
   }
 
   // MARK: - 聊天对象
 
   private func refreshHeartTargetMenu() {
     let profiles = HeartTargetService.shared.profiles
-    let selected = HeartTargetService.shared.selectedProfile?.displayName ?? "未选择"
-    heartTargetButton.setTitle("聊天对象：\(selected) ⇄", for: .normal)
+    let profile = HeartTargetService.shared.selectedProfile
+    let selected = profile?.displayName ?? "全局"
+    let pack = ClawContextBuilder.shared.build(contactID: profile?.id, includeTasks: false)
+    let screenshotCount = pack.recentConversation.filter { $0.sourceType.lowercased().contains("screenshot") }.count
+    let contextText = ClawMemoryPolicyService.shared.temporaryMode
+      ? "临时模式"
+      : "🧠习惯\(pack.globalMemories.count)/对象\(pack.contactMemories.count) · 💬\(pack.recentConversation.count) · 📷\(screenshotCount)"
+    heartTargetButton.setTitle("👤 \(selected) · \(contextText)", for: .normal)
 
-    if profiles.isEmpty {
-      heartTargetButton.menu = UIMenu(children: [
-        UIAction(title: "暂无档案，请到设置添加", attributes: .disabled) { _ in },
-      ])
-      return
-    }
-    let actions = profiles.enumerated().map { index, profile in
+    var actions: [UIAction] = [
+      UIAction(title: "全局（不混联系人）", state: HeartTargetService.shared.selectedProfile == nil ? .on : .off) { _ in
+        HeartTargetService.shared.clearSelection()
+        self.refreshHeartTargetMenu()
+      },
+    ]
+    actions.append(contentsOf: profiles.enumerated().map { index, profile in
       UIAction(title: profile.displayName, state: index == HeartTargetService.shared.selectedIndex ? .on : .off) { _ in
         HeartTargetService.shared.select(at: index)
         self.refreshHeartTargetMenu()
       }
-    }
+    })
     heartTargetButton.menu = UIMenu(children: actions)
   }
 }
@@ -1027,22 +1364,117 @@ extension ClawPanelOverlayView: UITextViewDelegate {
 extension ClawPanelOverlayView: PHPickerViewControllerDelegate {
   public func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
     picker.dismiss(animated: true)
-    guard let itemProvider = results.first?.itemProvider,
-          itemProvider.canLoadObject(ofClass: UIImage.self) else { return }
-    itemProvider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
-      guard let image = object as? UIImage else { return }
-      VisionOCRService.shared.recognizeText(in: image) { result in
-        guard let self else { return }
-        switch result {
-        case .success(let text):
-          let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-          if trimmed.isEmpty {
-            self.showResultMessage("未识别到文字")
-          } else {
-            self.appendTextToInput(trimmed)
+    guard !results.isEmpty else { return }
+    showResultMessage("正在识别 1/\(results.count)…")
+    processScreenshotResults(results, index: 0, transcripts: [], insertedTotal: 0)
+  }
+
+  private func processScreenshotResults(
+    _ results: [PHPickerResult],
+    index: Int,
+    transcripts: [String],
+    insertedTotal: Int
+  ) {
+    guard index < results.count else {
+      let combined = transcripts
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .joined(separator: "\n")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      refreshHeartTargetMenu()
+      guard !combined.isEmpty else {
+        showResultMessage("这些截图没有识别到可用聊天文字")
+        return
+      }
+      inputTextView.text = combined
+      ClawSuggestionEngine.shared.feed(combined)
+      showResultMessage("已归档 \(insertedTotal) 条聊天记录，正在生成回复…")
+      runAnalysis(text: combined)
+      return
+    }
+
+    let provider = results[index].itemProvider
+    guard provider.canLoadObject(ofClass: UIImage.self) else {
+      processScreenshotResults(results, index: index + 1, transcripts: transcripts, insertedTotal: insertedTotal)
+      return
+    }
+    provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
+      guard let self else { return }
+      guard let image = object as? UIImage else {
+        DispatchQueue.main.async {
+          self.processScreenshotResults(
+            results,
+            index: index + 1,
+            transcripts: transcripts,
+            insertedTotal: insertedTotal
+          )
+        }
+        return
+      }
+      let sourceRef = image.jpegData(compressionQuality: 0.88)
+        .flatMap { ClawScreenshotEvidenceStore.shared.saveJPEG($0) }
+        ?? "screenshot:\(UUID().uuidString)"
+      VisionOCRService.shared.recognizeLines(in: image) { result in
+        DispatchQueue.main.async {
+          switch result {
+          case .success(let lines):
+            let selected = HeartTargetService.shared.selectedProfile
+            let firstPass = ClawScreenshotChatParser.shared.parse(
+              lines: lines,
+              contactID: selected?.id,
+              contactName: selected?.displayName,
+              sourceRef: sourceRef
+            )
+            let resolution = ClawContactIdentityResolver.shared.resolve(
+              displayTitle: firstPass.detectedTitle,
+              allowCreate: true
+            )
+            let profile = resolution.profile ?? selected
+            if let profile { HeartTargetService.shared.select(id: profile.id) }
+            let parsed = ClawScreenshotChatParser.shared.parse(
+              lines: lines,
+              contactID: profile?.id,
+              contactName: profile?.displayName,
+              sourceRef: sourceRef
+            )
+            var inserted = 0
+            for message in parsed.messages {
+              if (try? ClawMemoryStore.shared.appendConversation(message)) == true {
+                inserted += 1
+                ClawSecretaryExtractor.shared.persistExtractedTasks(from: message)
+              }
+            }
+            if inserted > 0, let profileID = profile?.id {
+              ClawContactProfileLearner.shared.refreshIfNeeded(profileID: profileID)
+            }
+            let transcript = parsed.messages.map { message -> String in
+              let speaker: String
+              switch message.speaker {
+              case .me: speaker = "我"
+              case .other: speaker = message.senderName ?? profile?.displayName ?? "对方"
+              case .assistant: speaker = "CLAW"
+              case .system: speaker = "系统"
+              case .unknown: speaker = message.senderName ?? "未知"
+              }
+              return "\(speaker)：\(message.content)"
+            }.joined(separator: "\n")
+            var next = transcripts
+            let text = transcript.isEmpty ? parsed.rawText : transcript
+            if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { next.append(text) }
+            self.showResultMessage("正在识别 \(min(index + 2, results.count))/\(results.count)…")
+            self.processScreenshotResults(
+              results,
+              index: index + 1,
+              transcripts: next,
+              insertedTotal: insertedTotal + inserted
+            )
+          case .failure:
+            self.processScreenshotResults(
+              results,
+              index: index + 1,
+              transcripts: transcripts,
+              insertedTotal: insertedTotal
+            )
           }
-        case .failure(let error):
-          self.showResultMessage("识别失败：\(error.localizedDescription)")
         }
       }
     }

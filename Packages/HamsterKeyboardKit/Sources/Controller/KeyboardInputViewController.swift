@@ -44,6 +44,7 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
     // setupNextKeyboardBehavior()
     // KeyboardUrlOpener.shared.controller = self
     setupCombineRIMEInput()
+    syncKeyboardBackgroundColor()
 
     // ClawTalk: 面板输入桥接（面板输入框聚焦时按键直输进面板，否则直接上屏）
     ClawPanelInputBridge.shared.sendText = { [weak self] text in
@@ -174,6 +175,7 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
   open func viewWillSyncWithContext() {
     keyboardContext.sync(with: self)
     keyboardTextContext.sync(with: self)
+    syncKeyboardBackgroundColor()
   }
 
   // MARK: - Combine
@@ -652,7 +654,7 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
   }
 
   open func selectNextKeyboard() {
-    // advanceToNextInputMode()
+    advanceToNextInputMode()
   }
 
   open func selectNextLocale() {
@@ -891,6 +893,18 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
 // MARK: - Private Functions
 
 private extension KeyboardInputViewController {
+  /// 同步系统 input view / safe area 与当前键盘主题背景，避免底部透出系统颜色。
+  func syncKeyboardBackgroundColor() {
+    let backgroundColor: UIColor
+    if keyboardContext.useIOSNativeLayout {
+      backgroundColor = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme).board
+    } else {
+      backgroundColor = keyboardAppearance.backgroundStyle.backgroundColor ?? ClawPanelPalette.keyboardBackground
+    }
+    view.backgroundColor = backgroundColor
+    inputView?.backgroundColor = backgroundColor
+  }
+
   /// 刷新属性
   func refreshProperties() {
     refreshLayoutProvider()
@@ -1272,16 +1286,41 @@ extension KeyboardInputViewController {
 
     guard ClawTalkPrivacyService.shared.isCollectionEnabled, !wasBlocked else { return }
 
+    // If an AI reply/rewrite was inserted during this keyboard session, compare the
+    // eventual typed buffer with that generated text. Meaningful edits become Evolution feedback.
+    _ = ClawGeneratedOutputTracker.shared.reconcile(finalSessionText: typed)
+
     // 去重：裁掉 context 尾部与 typed 头部的重叠部分
     // （同一输入框多次唤起键盘时，上次打的内容会出现在下次的 context 末尾）
     let context = clawTalkDeduplicateContext(rawContext, typed: typed)
     let appCtx  = clawTalkAppContext()
-    ClawTalkDataService.shared.saveSession(ClawTalkEntry(
+    let entry = ClawTalkEntry(
       startTime: startTime,
       text: typed,
       context: context,
       appContext: appCtx
-    ))
+    )
+    ClawTalkDataService.shared.saveSession(entry)
+
+    // When a chat target is explicitly selected, the keyboard's actual outbound text
+    // becomes first-class conversation timeline evidence for that person.
+    let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmed.isEmpty, let profile = HeartTargetService.shared.selectedProfile {
+      let message = ClawConversationMessage(
+        contactID: profile.id,
+        speaker: .me,
+        senderName: "我",
+        content: trimmed,
+        occurredAt: startTime,
+        sourceType: "keyboard-session",
+        sourceRef: "clawtalk:\(entry.id.uuidString)",
+        confidence: 1
+      )
+      if (try? ClawMemoryStore.shared.appendConversation(message)) == true {
+        ClawSecretaryExtractor.shared.persistExtractedTasks(from: message)
+        ClawContactProfileLearner.shared.refreshIfNeeded(profileID: profile.id)
+      }
+    }
   }
 
   /// 去重：若 context 尾部与 typed 前缀有重叠，裁掉重叠部分
