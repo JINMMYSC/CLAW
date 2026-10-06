@@ -376,3 +376,42 @@ navigationLinkLabel: { [unowned self] in self.enableColorSchema ? "启用" : "�
 验收规则（避免以后再出现同名不同色的情况）：每套主题的两个变体必须"底色亮度可区分"——浅色变体的底色亮度要明显高于深色变体。按现有色值，浅色变体底色的相对亮度应大于 0.6，深色变体应小于 0.2。这条可以写成一条单测或校验脚本，在 CI 里对 7 套主题跑一遍。
 
 另外「系统默认」不算主题，它直接回落苹果原生外观、自动跟随系统深浅色，不需要两套色值。
+
+## 十四、主题底色与键盘底部「下巴」颜色不一致
+
+用户反馈：键盘主题的底色和底部那条不一样，接缝处像断层。
+
+### 现状：键盘里有三套互相独立的取色来源
+
+1. **主题色**：`StandardKeyboardAppearance.hamsterColor()` 解析出的 `backColor` / `buttonBackColor`，来自 `KeyboardColorSchema`。键盘本体与根视图用它。
+2. **`ClawPanelPalette`**：工具栏、功能行、CLAW 面板用它。它有独立的静态 `activeTheme`，靠 `ClawPanelPalette.sync(with:)` 从 `keyboardContext.hamsterConfiguration` 推导，且只在 `KeyboardToolbarView.setupAppearance()` 与 `ClawPanelOverlayView.refresh(for:)` 里被调用。
+3. **`IOSNativePalette.board`**：只在「iOS 原生布局」开启时使用。
+
+关键点：`StandardKeyboardAppearance.backgroundStyle` 里有这样一段
+
+```
+if keyboardContext.useIOSNativeLayout {
+  style.backgroundColor = IOSNativePalette.current(...).board   // 系统灰
+  return style
+}
+```
+
+也就是**开着 iOS 原生布局时，键盘本体与底部一律用系统灰，主题色不参与**；而工具栏与面板按钮仍走 `ClawPanelPalette` 的主题取色。这种"一半主题色、一半系统色"最容易看出一条断层。
+
+### 底部那条是谁画的
+
+- 控制器侧：`KeyboardInputViewController.syncKeyboardBackgroundColor()` 会把 `view.backgroundColor` 与 `inputView?.backgroundColor` 一起设成当前底色（原生布局 → `IOSNativePalette.board`；否则 → `backgroundStyle.backgroundColor`，即主题 `backColor`）。
+- 根视图：`KeyboardRootView.setupAppearance()` 按同样规则取色。
+- 原生布局下最后一排按键只留 `metrics.bottomKeyInset`（有 Home Indicator 时 4pt）贴底，所以那条细缝显示的是 `IOSNativeKeyboardView.backgroundColor`，也就是 `palette.board`。
+
+### 建议改法：单点取色 + 变化时主动刷新
+
+1. 抽一个单点取色函数，例如 `currentKeyboardBoardColor(context)`，按"是否原生布局 + 是否启用主题 + 深浅色"返回唯一色值。
+2. 让 `StandardKeyboardAppearance.backgroundStyle`、`KeyboardRootView.setupAppearance`、`IOSNativeKeyboardView` 的 `backgroundColor`、`syncKeyboardBackgroundColor()` 四处都走这个函数，避免各自取色。
+3. 主题切换或深浅色变化时主动调用一次 `syncKeyboardBackgroundColor()`，不要只依赖 `viewWillSyncWithContext()` 的被动触发。
+4. 若希望"原生布局也吃主题色"（断层会自然消失），就把原生布局分支里的 `board` 从 `IOSNativePalette.board` 换成主题底色；若想保持系统灰，则要保证工具栏与面板在该路径下也不使用主题色。
+
+### 需要用户确认两点
+
+1. 现在「iOS 原生布局」是开还是关——两条路径的修法不同。
+2. 断层位置是候选栏／功能行与键盘之间，还是最后一排按键下面那条细缝。
