@@ -124,3 +124,38 @@
 5. Memory Flush 与 Standing Intent。
 6. CLAW Dream：先做 Light，再做 REM / Deep / Audit。
 7. 加密、导出、多设备同步。
+
+## 八、聊天对象档案合并（方向已定）
+
+用户决定：**只保留「助手 → 人物」，删除「设置 → 聊天对象档案」整页。**
+
+### 现状：两套并存
+
+- 「设置 → 聊天对象档案」：`HeartTargetSettingsViewController`（列表）+ `HeartTargetEditViewController`（编辑：头像、姓名、关系、别名、备注）。**有头像选择，没有群聊开关。**
+- 「助手 → 人物」：`ClawPeopleView` + `ClawContactEditorView`（姓名/群名、关系、别名、群聊开关、备注）+ `ClawContactDetailView`（设为当前、确认档案、画像、长期记忆、聊天时间线）。**有群聊开关，没有头像编辑。**
+
+### 合并前必须先做的一步
+
+把头像选择搬进「助手 → 人物」的编辑页。否则删掉设置页之后，头像就彻底改不了了。
+可参照 `HeartTargetEditViewController` 里现成的 `PHPickerViewController` 实现。
+
+### 需要改动的确切位置
+
+1. 删除整文件：`Packages/HamsteriOS/Sources/UILayer/Settings/HeartTargetSettingsViewController.swift`（列表页 + 编辑页都在里面）。
+2. `Packages/HamsteriOS/Sources/ViewModel/Settings/SettingsViewModel.swift` 约 175-182 行：删掉「聊天对象档案」这一项。
+3. `Packages/HamsteriOS/Sources/Model/SettingsSubView.swift` 第 64-65 行：删掉 `case heartTargets`。
+4. `Packages/HamsteriOS/Sources/UILayer/Main/MainViewController.swift`：协议里的 `makeHeartTargetSettingsViewController()`（约 30 行）、lazy 属性（84-85 行）、`.heartTargets` 分支（201-202 行）、`presentHeartTargetSettingsViewController()`（277-279 行）。
+5. `Packages/HamsteriOS/Sources/HamsterAppDependencyContainer.swift` 第 381-383 行：删掉工厂方法。
+6. `Packages/HamsteriOS/Sources/UILayer/ClawTalk/ClawAssistantRootView.swift` 第 710 行：删掉"头像更换仍可在设置 → 聊天对象档案中完成"，改成就地选头像。
+
+### 确认过不受影响的地方
+
+- 深链 `hamster://keyboardSettings` 指向键盘设置页，不是这一页，两者无关。
+- 删页面不删数据：档案仍存在 App Group 里，`HeartTargetService` 不动。
+
+### 后续可做的档案增强（尚未确认，仅备选）
+
+- 补字段：身份层（电话、微信号、公司职位、邮箱、生日）；关系层（关系类型改为可选项、亲疏、认识来源、共同项目）；沟通层（称呼偏好、语言、语气、回复长度、禁忌话题）；状态层（最近互动摘要、未完成事项）。
+- 交互：行内三枚小按钮（设为当前/编辑/删除）收进长按或左滑；删除加二次确认；详情页支持就地编辑；搜索支持拼音与首字母；列表按客户/朋友/家人/群聊分组筛选；详情页增加「未完成事项」区块。
+- 身份：支持把两份档案「合并到某人」，把别名、头像、记忆、时间线一并迁移。
+- 注意：`HeartTargetService.delete(id:)` 只从列表移除，挂在原 contact ID 下的记忆、聊天时间线、任务会变成孤儿数据，删除流程需要一并处理。
