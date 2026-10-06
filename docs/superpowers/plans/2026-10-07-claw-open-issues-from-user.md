@@ -441,3 +441,27 @@ if keyboardContext.useIOSNativeLayout {
 
 - 变红 → 那块属于扩展，能改，问题只是取色没统一，按本节方案修即可。
 - 不变 → 那块不在扩展视图内，只能保证扩展自身铺满，颜色由系统决定。
+
+### 用户已定方案：底部做渐变过渡，不追求改掉下巴
+
+用户判断下巴那块改不了，于是提出：让主题底色在键盘最底部**渐变过渡**到下巴的颜色，这样不会出现一条生硬的分界线。这个方案可行，记录如下。
+
+做法：在键盘最底部叠一层竖直渐变，高度取底部安全区（`view.safeAreaInsets.bottom`，为 0 时用 8-12pt 常量），从上到下：
+
+- 顶部色 = 当前主题的 `backColor`（与缝隙同色）
+- 底部色 = 近似系统键盘底色
+
+底层视图用 `CAGradientLayer`，`isUserInteractionEnabled = false`，插在背景层之上、按键之下，避免挡到最后一排按键。
+
+近似系统底色的取值（代码里已有现成常量，不必新调色）：
+
+- 亮色：`#D1D4DA`（`IOSNativePalette.board` 亮色）或 `#D1D4D9`（`ClawPanelThemeColors.system` 亮色）
+- 暗色：`#1C1C1E`（`IOSNativePalette.board` 暗色）或 `#17181A`（`ClawPanelThemeColors.system` 暗色）
+
+用哪个变体可以顺着系统走，也可以用 `keyboardContext.keyboardAppearance`（取自宿主 App 的 `textDocumentProxy.keyboardAppearance`）判断，那个更接近系统实际渲染的键盘背景。
+
+注意事项：
+
+1. 渐变层的两个色值必须跟随主题与深浅色变化一起刷新，否则会和第十四节的接缝问题一样留下不同步。
+2. 渐变只负责"消除硬边"。如果下巴真实颜色与我们的近似值差得较多，接缝会从"硬线"变成"轻微色差"，不会再突兀，但也不会完全消失。
+3. 高度不要太大，8-14pt 足够；过高会让键盘底部看起来发虚。
