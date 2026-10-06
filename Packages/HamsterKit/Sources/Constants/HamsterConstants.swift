@@ -59,4 +59,3 @@ public enum HamsterConstants {
 public extension Notification.Name {
   static let clawVoiceCallRequested = Notification.Name("clawVoiceCallRequested")
 }
-Process exited with code 0.

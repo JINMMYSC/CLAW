@@ -1405,18 +1405,5 @@ extension KeyboardInputViewController {
 
 private enum AssociatedKeys {
   static var textBuffer = "clawTalkTextBuffer"
-  static var sessionStartTime = "clawTalkSessionStartTime"
-  static var initialContext = "clawTalkInitialContext"
-  static var sessionBlocked = "clawTalkSessionBlocked"
-}
 
-extension UIKeyboardType {
-  var isNumberType: Bool {
-    switch self {
-    // 数字键盘
-    case .numberPad, .numbersAndPunctuation, .phonePad, .decimalPad, .asciiCapableNumberPad: return true
-    default: return false
-    }
-  }
-}
-Process exited with code 0.
+[Showing lines 1-1407 of 1422 (50.0KB limit). Use offset=1408 to continue.]

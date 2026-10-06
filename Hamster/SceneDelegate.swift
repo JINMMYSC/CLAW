@@ -147,4 +147,3 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
     // to restore the scene back to its current state.
   }
 }
-Process exited with code 0.

@@ -751,4 +751,3 @@ struct PromptEditorView: View {
     }
   }
 }
-Process exited with code 0.

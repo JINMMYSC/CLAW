@@ -220,4 +220,3 @@ public final class ClawChatService: NSObject, ObservableObject {
     isSpeaking = false
   }
 }
-Process exited with code 0.

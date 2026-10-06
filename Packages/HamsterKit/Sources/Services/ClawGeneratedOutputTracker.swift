@@ -93,4 +93,3 @@ public final class ClawGeneratedOutputTracker {
   }
 }
 
-Process exited with code 0.
