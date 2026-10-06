@@ -149,27 +149,36 @@ public class AutoInsightService {
     updatedCfg.lastRunDate = Date()
     config = updatedCfg
 
-    await run()
+    _ = await run()
+  }
+
+  /// 一次执行的结果。用于把"点了没反应"的静默返回变成可提示的原因。
+  public enum RunOutcome: Equatable {
+    case success(entries: Int)
+    case noAPIKey(provider: String)
+    case noData
+    case failed(message: String)
   }
 
   /// 手动立即触发分析（忽略时间间隔限制）
-  public func runNow() async {
+  @discardableResult
+  public func runNow() async -> RunOutcome {
     let log = LogService.shared
     let provider = AIService.shared.selectedProvider
     guard !AIService.shared.apiKey(for: provider).isEmpty else {
       log.log("手动触发失败：\(provider.rawValue) API Key 未配置", level: .error, tag: "AutoInsight")
-      return
+      return .noAPIKey(provider: provider.rawValue)
     }
     var cfg = config
     cfg.lastRunDate = Date()
     config = cfg
     log.log("手动触发分析", tag: "AutoInsight")
-    await run()
+    return await run()
   }
 
   // MARK: - Core Analysis
 
-  private func run() async {
+  private func run() async -> RunOutcome {
     let log = LogService.shared
     let cfg = config
     log.log("开始分析（间隔 \(cfg.intervalMinutes) 分钟内的数据）", tag: "AutoInsight")
@@ -183,7 +192,7 @@ public class AutoInsightService {
 
     guard !clawTalkText.isEmpty || !clipboardText.isEmpty else {
       log.log("无 ClawTalk 及剪贴板数据，跳过本次分析", level: .warn, tag: "AutoInsight")
-      return
+      return .noData
     }
     log.log("ClawTalk \(clawTalkCount) 条 + 剪贴板 \(clipCount) 条，发起两路并发 AI 请求", tag: "AutoInsight")
 
@@ -294,6 +303,11 @@ public class AutoInsightService {
 
     // 发送本地通知
     await scheduleNotification()
+
+    if spiritualOK || taskOK {
+      return .success(entries: entryCount)
+    }
+    return .failed(message: "AI 调用失败，请检查 API Key 与网络")
   }
 
   // MARK: - Data Loading

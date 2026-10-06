@@ -31,6 +31,8 @@ public struct AutoInsightRootView: View {
   @StateObject private var viewModel = AutoInsightViewModel()
   @State private var selectedResult: AutoInsightResult?
   @State private var showSettings = false
+  /// 手动触发后的结果提示，避免"点了没反应"。
+  @State private var runMessage: String?
 
   public init() {}
 
@@ -52,7 +54,10 @@ public struct AutoInsightRootView: View {
       .toolbar {
         ToolbarItemGroup(placement: .navigationBarTrailing) {
           Button {
-            viewModel.triggerNow()
+            Task {
+              await viewModel.triggerNow()
+              runMessage = viewModel.lastRunMessage
+            }
           } label: {
             if viewModel.isRunning {
               ProgressView()
@@ -80,6 +85,18 @@ public struct AutoInsightRootView: View {
         .onDisappear { viewModel.reload() }
     }
     .onAppear { viewModel.reload() }
+    .alert(
+      "每日洞察",
+      isPresented: Binding(
+        get: { runMessage != nil },
+        set: { if !$0 { runMessage = nil } }
+      ),
+      presenting: runMessage
+    ) { _ in
+      Button("好", role: .cancel) { runMessage = nil }
+    } message: { text in
+      Text(text)
+    }
   }
 
   // MARK: Empty state — 未开启
