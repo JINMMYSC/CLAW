@@ -169,4 +169,90 @@ final class ClawMemoryCoreTests: XCTestCase {
     XCTAssertEqual(snapshot?.version, 2)
     XCTAssertTrue((try store.memories(scope: "global")).contains { $0.sourceType == "evolution-engine" })
   }
+
+  func testMemoryCanBeEditedArchivedAndDeleted() throws {
+    let item = ClawMemoryItem(
+      kind: .fact,
+      content: "旧内容",
+      normalizedKey: "editable",
+      sourceType: "manual"
+    )
+    try store.upsertMemory(item)
+    XCTAssertTrue(try store.updateMemory(id: item.id, content: "新内容", confidence: 0.9))
+    XCTAssertEqual(try store.memory(id: item.id)?.content, "新内容")
+    XCTAssertTrue(try store.setMemoryStatus(id: item.id, status: .archived))
+    XCTAssertNil(try store.memory(id: item.id))
+
+    let second = ClawMemoryItem(kind: .fact, content: "删除我", sourceType: "manual")
+    try store.upsertMemory(second)
+    XCTAssertTrue(try store.deleteMemory(id: second.id))
+    XCTAssertNil(try store.memory(id: second.id))
+  }
+
+  func testSkillRuntimeEnforcesTriggerAndBuildsScopedContext() throws {
+    let contact = UUID()
+    try store.upsertMemory(ClawMemoryItem(
+      kind: .communicationPreference,
+      content: "回复尽量简短",
+      normalizedKey: "short",
+      sourceType: "manual"
+    ))
+    try store.upsertMemory(ClawMemoryItem(
+      kind: .contactStyle,
+      scope: "contact",
+      subjectID: contact,
+      content: "对这个人少用表情",
+      normalizedKey: "no-emoji",
+      sourceType: "manual"
+    ))
+    let skill = ClawSkillDefinition(
+      id: "runtime-test",
+      name: "运行时测试",
+      summary: "test",
+      systemPrompt: "直接回复",
+      permissions: ["memory.global", "memory.contact"],
+      triggers: [.keyboardHelpReply],
+      toolIDs: ["memory.search"]
+    )
+    try store.saveSkill(skill)
+    let runtime = ClawSkillRuntime(store: store)
+    let invocation = try runtime.prepare(
+      skillID: "runtime-test",
+      trigger: .keyboardHelpReply,
+      input: "怎么回复",
+      contactID: contact
+    )
+    XCTAssertTrue(invocation.systemPrompt.contains("回复尽量简短"))
+    XCTAssertTrue(invocation.systemPrompt.contains("对这个人少用表情"))
+    XCTAssertThrowsError(try runtime.prepare(
+      skillID: "runtime-test",
+      trigger: .dailyReview,
+      input: "test",
+      contactID: contact
+    ))
+  }
+
+  func testProactiveSecretarySurfacesOverdueAndWaitingItems() throws {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let overdue = ClawSecretaryTask(
+      title: "发报价",
+      dueAt: now.addingTimeInterval(-3_600),
+      createdAt: now.addingTimeInterval(-86_400),
+      sourceType: "test"
+    )
+    let waiting = ClawSecretaryTask(
+      kind: .waitingFor,
+      title: "等客户回复",
+      createdAt: now.addingTimeInterval(-3 * 86_400),
+      sourceType: "test"
+    )
+    try store.upsertTask(overdue)
+    try store.upsertTask(waiting)
+    let secretary = ClawProactiveSecretaryService(store: store)
+    let suggestions = secretary.suggestions(now: now)
+    XCTAssertEqual(suggestions.count, 2)
+    XCTAssertEqual(suggestions.first?.taskID, overdue.id)
+    XCTAssertTrue(secretary.complete(taskID: overdue.id))
+    XCTAssertEqual(try store.tasks(status: .open).count, 1)
+  }
 }

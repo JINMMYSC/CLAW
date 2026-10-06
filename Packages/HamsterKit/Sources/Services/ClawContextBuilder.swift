@@ -61,12 +61,20 @@ public final class ClawContextBuilder {
     self.store = store
   }
 
-  public func build(contactID: UUID?, includeTasks: Bool = true) -> ClawContextPack {
-    let globals = (try? store.memories(scope: "global", limit: 40)) ?? []
+  public func build(contactID: UUID?, includeTasks: Bool = true, query: String? = nil) -> ClawContextPack {
+    if ClawMemoryPolicyService.shared.temporaryMode {
+      return ClawContextPack()
+    }
+    let policy = ClawMemoryPolicyService.shared
+    let rawGlobals = ((try? store.memories(scope: "global", limit: 80)) ?? [])
+      .filter { policy.isSourceEnabled($0.sourceType) }
+    let globals = rank(rawGlobals, query: query).prefix(40).map { $0 }
     let contactMemories: [ClawMemoryItem]
     let timeline: [ClawConversationMessage]
     if let contactID {
-      contactMemories = (try? store.memories(scope: "contact", subjectID: contactID, limit: 40)) ?? []
+      let rawContact = ((try? store.memories(scope: "contact", subjectID: contactID, limit: 80)) ?? [])
+        .filter { policy.isSourceEnabled($0.sourceType) }
+      contactMemories = rank(rawContact, query: query).prefix(40).map { $0 }
       timeline = (try? store.conversation(contactID: contactID, limit: 32)) ?? []
     } else {
       contactMemories = []
@@ -80,5 +88,46 @@ public final class ClawContextBuilder {
       recentConversation: timeline,
       openTasks: relevantTasks
     )
+  }
+
+  private func rank(_ items: [ClawMemoryItem], query: String?) -> [ClawMemoryItem] {
+    guard let query, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return items.sorted { $0.lastObservedAt > $1.lastObservedAt }
+    }
+    let queryTokens = tokens(query)
+    let now = Date()
+    return items.sorted { lhs, rhs in
+      score(lhs, queryTokens: queryTokens, now: now) > score(rhs, queryTokens: queryTokens, now: now)
+    }
+  }
+
+  private func score(_ item: ClawMemoryItem, queryTokens: Set<String>, now: Date) -> Double {
+    let memoryTokens = tokens(item.content)
+    let overlap = Double(queryTokens.intersection(memoryTokens).count)
+    let ageDays = max(0, now.timeIntervalSince(item.lastObservedAt) / 86_400)
+    let recency = exp(-ageDays / 90)
+    let exactKeyBoost = item.normalizedKey.map { key in
+      queryTokens.contains(where: { key.lowercased().contains($0) }) ? 1.5 : 0
+    } ?? 0
+    return overlap * 3 + item.confidence * 1.5 + recency + exactKeyBoost
+  }
+
+  private func tokens(_ text: String) -> Set<String> {
+    let normalized = text.lowercased()
+    let words = normalized
+      .components(separatedBy: CharacterSet.alphanumerics.inverted)
+      .filter { $0.count >= 2 }
+    let compact = String(normalized.unicodeScalars.filter {
+      !CharacterSet.whitespacesAndNewlines.contains($0)
+        && !CharacterSet.punctuationCharacters.contains($0)
+    })
+    let chars = Array(compact)
+    var grams: [String] = []
+    if chars.count >= 2 {
+      for index in 0..<(chars.count - 1) {
+        grams.append(String(chars[index...index + 1]))
+      }
+    }
+    return Set(words + grams)
   }
 }

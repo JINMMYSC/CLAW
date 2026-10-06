@@ -38,11 +38,17 @@ public final class ClawSkillImportService {
   @discardableResult
   public func install(_ skills: [ClawSkillDefinition]) throws -> Int {
     var count = 0
+    let runtime = ClawSkillRuntime(store: store)
     for var skill in skills where validate(skill) {
       // External packages never install executable permissions. Unknown permission strings are
       // kept declarative and must still be mediated by CLAW's built-in tool layer.
       skill.version = max(1, skill.version)
+      if let existing = try store.skills().first(where: { $0.id == skill.id }) {
+        runtime.captureVersion(existing)
+        skill.version = max(skill.version, existing.version + 1)
+      }
       try store.saveSkill(skill)
+      runtime.captureVersion(skill)
       count += 1
     }
     return count
@@ -60,6 +66,15 @@ public final class ClawSkillImportService {
     let id = skill.id.trimmingCharacters(in: .whitespacesAndNewlines)
     let name = skill.name.trimmingCharacters(in: .whitespacesAndNewlines)
     let prompt = skill.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    return !id.isEmpty && id.count <= 80 && !name.isEmpty && name.count <= 80 && !prompt.isEmpty && prompt.count <= 20_000
+    guard !id.isEmpty && id.count <= 80 && !name.isEmpty && name.count <= 80 && !prompt.isEmpty && prompt.count <= 20_000 else {
+      return false
+    }
+    let tools = Set(skill.toolIDs ?? [])
+    guard tools.isSubset(of: ClawSkillRuntime.shared.supportedTools) else { return false }
+    let allowedPermissions: Set<String> = [
+      "memory.global", "memory.contact", "conversation.current", "conversation.write",
+      "tasks.read", "tasks.write", "photos.selected",
+    ]
+    return Set(skill.permissions).isSubset(of: allowedPermissions)
   }
 }

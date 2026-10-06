@@ -174,6 +174,10 @@ public struct ClawSkillDefinition: Codable, Identifiable, Equatable {
   public var acceptedCount: Int
   public var regeneratedCount: Int
   public var editedCount: Int
+  /// Optional declarative runtime metadata. Missing fields keep older saved Skills compatible.
+  public var triggers: [ClawSkillTrigger]?
+  public var workflow: [ClawSkillStep]?
+  public var toolIDs: [String]?
 
   public init(
     id: String,
@@ -186,7 +190,10 @@ public struct ClawSkillDefinition: Codable, Identifiable, Equatable {
     learnedDirective: String? = nil,
     acceptedCount: Int = 0,
     regeneratedCount: Int = 0,
-    editedCount: Int = 0
+    editedCount: Int = 0,
+    triggers: [ClawSkillTrigger]? = nil,
+    workflow: [ClawSkillStep]? = nil,
+    toolIDs: [String]? = nil
   ) {
     self.id = id
     self.name = name
@@ -199,11 +206,42 @@ public struct ClawSkillDefinition: Codable, Identifiable, Equatable {
     self.acceptedCount = acceptedCount
     self.regeneratedCount = regeneratedCount
     self.editedCount = editedCount
+    self.triggers = triggers
+    self.workflow = workflow
+    self.toolIDs = toolIDs
   }
 
   public var effectivePrompt: String {
     guard let learnedDirective, !learnedDirective.isEmpty else { return systemPrompt }
     return systemPrompt + "\n\n用户长期反馈学习规则：\n" + learnedDirective
+  }
+}
+
+public enum ClawSkillTrigger: String, Codable, CaseIterable {
+  case manual
+  case keyboardHelpReply
+  case keyboardRewrite
+  case screenshotImported
+  case assistant
+  case dailyReview
+}
+
+public enum ClawSkillStepKind: String, Codable {
+  case context
+  case instruction
+  case tool
+}
+
+/// Declarative-only step interpreted by CLAW's built-in runtime. It never executes downloaded Swift/scripts.
+public struct ClawSkillStep: Codable, Equatable, Identifiable {
+  public var id: UUID
+  public var kind: ClawSkillStepKind
+  public var value: String
+
+  public init(id: UUID = UUID(), kind: ClawSkillStepKind, value: String) {
+    self.id = id
+    self.kind = kind
+    self.value = value
   }
 }
 
@@ -480,6 +518,61 @@ public final class ClawMemoryStore {
     return result
   }
 
+  public func memory(id: UUID) throws -> ClawMemoryItem? {
+    try memories(limit: 50_000).first(where: { $0.id == id })
+  }
+
+  @discardableResult
+  public func updateMemory(id: UUID, content: String, confidence: Double? = nil) throws -> Bool {
+    guard var item = try memory(id: id) else { return false }
+    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return false }
+    item.content = trimmed
+    item.confidence = confidence ?? item.confidence
+    item.updatedAt = Date()
+    item.lastObservedAt = Date()
+    try upsertMemory(item)
+    return true
+  }
+
+  @discardableResult
+  public func setMemoryStatus(id: UUID, status: ClawMemoryStatus) throws -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("UPDATE memory_items SET status = ?, updated_at = ? WHERE id = ?;")
+    defer { sqlite3_finalize(statement) }
+    bindText(status.rawValue, at: 1, in: statement)
+    sqlite3_bind_double(statement, 2, Date().timeIntervalSince1970)
+    bindText(id.uuidString, at: 3, in: statement)
+    guard sqlite3_step(statement) == SQLITE_DONE else {
+      throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+    }
+    return sqlite3_changes(try requireDB()) > 0
+  }
+
+  @discardableResult
+  public func deleteMemory(id: UUID) throws -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("DELETE FROM memory_items WHERE id = ?;")
+    defer { sqlite3_finalize(statement) }
+    bindText(id.uuidString, at: 1, in: statement)
+    guard sqlite3_step(statement) == SQLITE_DONE else {
+      throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+    }
+    return sqlite3_changes(try requireDB()) > 0
+  }
+
+  @discardableResult
+  public func deleteMemories(sourceType: String) throws -> Int {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("DELETE FROM memory_items WHERE source_type = ?;")
+    defer { sqlite3_finalize(statement) }
+    bindText(sourceType, at: 1, in: statement)
+    guard sqlite3_step(statement) == SQLITE_DONE else {
+      throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+    }
+    return Int(sqlite3_changes(try requireDB()))
+  }
+
   @discardableResult
   public func appendConversation(_ message: ClawConversationMessage) throws -> Bool {
     let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -542,6 +635,33 @@ public final class ClawMemoryStore {
     return rows.reversed()
   }
 
+  /// Full timeline across all contacts, used only for explicit backup/export flows.
+  public func allConversation(limit: Int = 20_000) throws -> [ClawConversationMessage] {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("SELECT id,contact_id,speaker,sender_name,content,occurred_at,source_type,source_ref,confidence FROM conversation_messages ORDER BY occurred_at ASC LIMIT ?;")
+    defer { sqlite3_finalize(statement) }
+    sqlite3_bind_int(statement, 1, Int32(max(1, limit)))
+    var rows: [ClawConversationMessage] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      guard let idText = text(statement, 0), let id = UUID(uuidString: idText),
+            let speakerText = text(statement, 2), let speaker = ClawConversationSpeaker(rawValue: speakerText),
+            let content = text(statement, 4), let sourceType = text(statement, 6)
+      else { continue }
+      rows.append(ClawConversationMessage(
+        id: id,
+        contactID: text(statement, 1).flatMap(UUID.init(uuidString:)),
+        speaker: speaker,
+        senderName: text(statement, 3),
+        content: content,
+        occurredAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 5)),
+        sourceType: sourceType,
+        sourceRef: text(statement, 7),
+        confidence: sqlite3_column_double(statement, 8)
+      ))
+    }
+    return rows
+  }
+
   @discardableResult
   public func upsertTask(_ task: ClawSecretaryTask) throws -> ClawSecretaryTask {
     lock.lock(); defer { lock.unlock() }
@@ -589,6 +709,32 @@ public final class ClawMemoryStore {
       ))
     }
     return result
+  }
+
+  @discardableResult
+  public func setTaskStatus(id: UUID, status: ClawTaskStatus) throws -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("UPDATE secretary_tasks SET status = ? WHERE id = ?;")
+    defer { sqlite3_finalize(statement) }
+    bindText(status.rawValue, at: 1, in: statement)
+    bindText(id.uuidString, at: 2, in: statement)
+    guard sqlite3_step(statement) == SQLITE_DONE else {
+      throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+    }
+    return sqlite3_changes(try requireDB()) > 0
+  }
+
+  @discardableResult
+  public func snoozeTask(id: UUID, until: Date) throws -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("UPDATE secretary_tasks SET due_at = ? WHERE id = ?;")
+    defer { sqlite3_finalize(statement) }
+    sqlite3_bind_double(statement, 1, until.timeIntervalSince1970)
+    bindText(id.uuidString, at: 2, in: statement)
+    guard sqlite3_step(statement) == SQLITE_DONE else {
+      throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+    }
+    return sqlite3_changes(try requireDB()) > 0
   }
 
   public func saveSkill(_ skill: ClawSkillDefinition) throws {
@@ -670,16 +816,35 @@ public final class ClawMemoryStore {
   }
 
   private func seedBuiltInSkillsIfNeeded() {
-    guard (try? skills().isEmpty) == true else { return }
     let builtIns = [
-      ClawSkillDefinition(id: "reply", name: "帮你回", summary: "结合当前聊天、对象关系与用户表达习惯生成回复", systemPrompt: "理解对方真实意图和情绪，生成自然、简洁、像用户本人会说的话。", permissions: ["memory.global", "memory.contact", "conversation.current"]),
-      ClawSkillDefinition(id: "rewrite", name: "超会说", summary: "保留原意并优化表达", systemPrompt: "保留用户原意，减少 AI 腔，让表达自然、有分寸，并优先遵循用户长期语言习惯。", permissions: ["memory.global", "memory.contact"]),
-      ClawSkillDefinition(id: "screenshot-chat", name: "聊天截图理解", summary: "把聊天截图转成结构化时间线", systemPrompt: "识别聊天对象、发言方、顺序、时间和正文，不臆造不可见内容。", permissions: ["photos.selected", "memory.contact"]),
-      ClawSkillDefinition(id: "contact-profile", name: "人物画像", summary: "从有来源的互动中更新联系人画像", systemPrompt: "只从可追溯证据提炼稳定特征，区分事实与推断。", permissions: ["memory.contact"]),
-      ClawSkillDefinition(id: "task-extract", name: "任务提取", summary: "从对话识别承诺、等待、截止日期和下一步", systemPrompt: "只在语义足够明确时创建任务或承诺，并保留来源。", permissions: ["conversation.current", "tasks.write"]),
-      ClawSkillDefinition(id: "daily-secretary", name: "今日秘书", summary: "整理当天重要事项和下一步", systemPrompt: "优先未完成承诺、截止日期、等待回复和高相关近期事件，避免无意义打扰。", permissions: ["memory.global", "memory.contact", "tasks.read"]),
+      ClawSkillDefinition(id: "reply", name: "帮你回", summary: "结合当前聊天、对象关系与用户表达习惯生成回复", systemPrompt: "理解对方真实意图和情绪，生成自然、简洁、像用户本人会说的话。", permissions: ["memory.global", "memory.contact", "conversation.current"], triggers: [.manual, .keyboardHelpReply, .screenshotImported], toolIDs: ["memory.search", "conversation.current"]),
+      ClawSkillDefinition(id: "rewrite", name: "超会说", summary: "保留原意并优化表达", systemPrompt: "保留用户原意，减少 AI 腔，让表达自然、有分寸，并优先遵循用户长期语言习惯。", permissions: ["memory.global", "memory.contact"], triggers: [.manual, .keyboardRewrite], toolIDs: ["memory.search"]),
+      ClawSkillDefinition(id: "screenshot-chat", name: "聊天截图理解", summary: "把聊天截图转成结构化时间线", systemPrompt: "识别聊天对象、发言方、顺序、时间和正文，不臆造不可见内容。", permissions: ["photos.selected", "memory.contact"], triggers: [.screenshotImported], toolIDs: ["conversation.write"]),
+      ClawSkillDefinition(id: "contact-profile", name: "人物画像", summary: "从有来源的互动中更新联系人画像", systemPrompt: "只从可追溯证据提炼稳定特征，区分事实与推断。", permissions: ["memory.contact"], triggers: [.screenshotImported, .dailyReview], toolIDs: ["memory.contact"]),
+      ClawSkillDefinition(id: "task-extract", name: "任务提取", summary: "从对话识别承诺、等待、截止日期和下一步", systemPrompt: "只在语义足够明确时创建任务或承诺，并保留来源。", permissions: ["conversation.current", "tasks.write"], triggers: [.screenshotImported, .assistant], toolIDs: ["tasks.write"]),
+      ClawSkillDefinition(id: "daily-secretary", name: "今日秘书", summary: "整理当天重要事项和下一步", systemPrompt: "优先未完成承诺、截止日期、等待回复和高相关近期事件，避免无意义打扰。", permissions: ["memory.global", "memory.contact", "tasks.read"], triggers: [.dailyReview, .manual], toolIDs: ["memory.search", "tasks.read"]),
     ]
-    for skill in builtIns { try? saveSkill(skill) }
+    let existing = (try? skills()) ?? []
+    for builtIn in builtIns {
+      if var old = existing.first(where: { $0.id == builtIn.id }) {
+        var changed = false
+        if old.triggers == nil {
+          old.triggers = builtIn.triggers
+          changed = true
+        }
+        if old.toolIDs == nil {
+          old.toolIDs = builtIn.toolIDs
+          changed = true
+        }
+        if old.workflow == nil, builtIn.workflow != nil {
+          old.workflow = builtIn.workflow
+          changed = true
+        }
+        if changed { try? saveSkill(old) }
+      } else {
+        try? saveSkill(builtIn)
+      }
+    }
   }
 
   private static func fingerprint(contactID: UUID?, speaker: ClawConversationSpeaker, content: String, occurredAt: Date) -> String {

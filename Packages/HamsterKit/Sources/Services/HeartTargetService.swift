@@ -18,6 +18,13 @@ public struct HeartTargetProfile: Codable, Identifiable, Equatable {
   public var learnedSummary: String
   /// 备注名/昵称，用于截图顶部标题匹配。
   public var aliases: [String]
+  /// 是否由截图/聊天上下文自动创建，用户可后续确认和编辑。
+  public var autoCreated: Bool
+  /// 群聊与单聊分开建档，避免把群组上下文当成一个自然人。
+  public var isGroup: Bool
+  /// 可选头像指纹，为未来头像匹配/同名消歧保留稳定入口。
+  public var avatarFingerprint: String?
+  public var lastSeenAt: Date?
   public var updatedAt: Date
 
   public init(
@@ -28,6 +35,10 @@ public struct HeartTargetProfile: Codable, Identifiable, Equatable {
     relationship: String = "",
     learnedSummary: String = "",
     aliases: [String] = [],
+    autoCreated: Bool = false,
+    isGroup: Bool = false,
+    avatarFingerprint: String? = nil,
+    lastSeenAt: Date? = nil,
     updatedAt: Date = Date()
   ) {
     self.id = id
@@ -37,11 +48,15 @@ public struct HeartTargetProfile: Codable, Identifiable, Equatable {
     self.relationship = relationship
     self.learnedSummary = learnedSummary
     self.aliases = aliases
+    self.autoCreated = autoCreated
+    self.isGroup = isGroup
+    self.avatarFingerprint = avatarFingerprint
+    self.lastSeenAt = lastSeenAt
     self.updatedAt = updatedAt
   }
 
   enum CodingKeys: String, CodingKey {
-    case id, name, bio, avatarData, relationship, learnedSummary, aliases, updatedAt
+    case id, name, bio, avatarData, relationship, learnedSummary, aliases, autoCreated, isGroup, avatarFingerprint, lastSeenAt, updatedAt
   }
 
   /// Backward-compatible decoding for profiles saved by older builds.
@@ -54,6 +69,10 @@ public struct HeartTargetProfile: Codable, Identifiable, Equatable {
     relationship = try c.decodeIfPresent(String.self, forKey: .relationship) ?? ""
     learnedSummary = try c.decodeIfPresent(String.self, forKey: .learnedSummary) ?? ""
     aliases = try c.decodeIfPresent([String].self, forKey: .aliases) ?? []
+    autoCreated = try c.decodeIfPresent(Bool.self, forKey: .autoCreated) ?? false
+    isGroup = try c.decodeIfPresent(Bool.self, forKey: .isGroup) ?? false
+    avatarFingerprint = try c.decodeIfPresent(String.self, forKey: .avatarFingerprint)
+    lastSeenAt = try c.decodeIfPresent(Date.self, forKey: .lastSeenAt)
     updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
   }
 
@@ -137,6 +156,10 @@ public class HeartTargetService {
     profiles.removeAll { $0.id == id }
     if selectedIndex >= profiles.count { selectedIndex = profiles.isEmpty ? -1 : profiles.count - 1 }
     persist()
+  }
+
+  public func profile(id: UUID) -> HeartTargetProfile? {
+    profiles.first(where: { $0.id == id })
   }
 
   public func select(at index: Int) {

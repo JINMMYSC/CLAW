@@ -192,6 +192,7 @@ private struct ClawAssistantChatView: View {
 private struct ClawSecretaryTodayView: View {
   @State private var tasks: [ClawSecretaryTask] = []
   @State private var memories: [ClawMemoryItem] = []
+  @State private var suggestions: [ClawSecretarySuggestion] = []
 
   var body: some View {
     NavigationView {
@@ -209,6 +210,39 @@ private struct ClawSecretaryTodayView: View {
         } header: {
           Text("秘书摘要")
         }
+        if !suggestions.isEmpty {
+          Section {
+            ForEach(suggestions.prefix(12)) { suggestion in
+              VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                  Image(systemName: suggestion.urgency >= .high ? "exclamationmark.circle.fill" : "clock.badge.exclamationmark")
+                    .foregroundColor(suggestion.urgency >= .high ? .orange : .accentColor)
+                  Text(suggestion.title).font(.body)
+                  Spacer()
+                }
+                Text(suggestion.detail).font(.caption).foregroundColor(.secondary)
+                HStack {
+                  Button("完成") {
+                    _ = ClawProactiveSecretaryService.shared.complete(taskID: suggestion.taskID)
+                    reload()
+                  }
+                  .buttonStyle(.borderedProminent)
+                  Button("明天再提醒") {
+                    _ = ClawProactiveSecretaryService.shared.snooze(taskID: suggestion.taskID, hours: 24)
+                    reload()
+                  }
+                  .buttonStyle(.bordered)
+                }
+                .font(.caption)
+              }
+              .padding(.vertical, 2)
+            }
+          } header: {
+            Text("CLAW 主动提醒")
+          } footer: {
+            Text("只有临近截止、已逾期或长时间等待的事项会主动提醒；低优先级内容留在今日列表，不频繁打扰。")
+          }
+        }
         Section {
           ForEach(tasks.prefix(20)) { task in
             VStack(alignment: .leading, spacing: 4) {
@@ -224,6 +258,13 @@ private struct ClawSecretaryTodayView: View {
                 Text(details).font(.caption).foregroundColor(.secondary).lineLimit(2)
               }
             }
+            .swipeActions(edge: .trailing) {
+              Button("完成") {
+                _ = ClawProactiveSecretaryService.shared.complete(taskID: task.id)
+                reload()
+              }
+              .tint(.green)
+            }
           }
         } header: {
           Text("下一步")
@@ -238,6 +279,8 @@ private struct ClawSecretaryTodayView: View {
   private func reload() {
     tasks = (try? ClawMemoryStore.shared.tasks(status: .open, limit: 100)) ?? []
     memories = (try? ClawMemoryStore.shared.memories(limit: 500)) ?? []
+    suggestions = ClawProactiveSecretaryService.shared.suggestions()
+    ClawProactiveSecretaryService.shared.refreshLocalNotifications()
   }
 }
 
@@ -279,7 +322,15 @@ private struct ClawPeopleView: View {
                 }
                 .frame(width: 36, height: 36).clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
-                  Text(profile.displayName)
+                  HStack(spacing: 5) {
+                    Text(profile.displayName)
+                    if profile.isGroup {
+                      Text("群").font(.caption2).padding(.horizontal, 4).background(Color.blue.opacity(0.12)).clipShape(Capsule())
+                    }
+                    if profile.autoCreated {
+                      Text("自动识别").font(.caption2).padding(.horizontal, 4).background(Color.orange.opacity(0.12)).clipShape(Capsule())
+                    }
+                  }
                   Text(profile.relationship.isEmpty ? (profile.bio.isEmpty ? "尚未形成画像" : profile.bio) : profile.relationship)
                     .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
@@ -314,12 +365,22 @@ private struct ClawContactDetailView: View {
   var body: some View {
     List {
       Section {
+        if profile.autoCreated {
+          Button("确认这个人物档案") {
+            var updated = profile
+            updated.autoCreated = false
+            _ = HeartTargetService.shared.upsert(updated)
+          }
+        }
         if !profile.relationship.isEmpty {
           HStack { Text("关系"); Spacer(); Text(profile.relationship).foregroundColor(.secondary) }
         }
         if !profile.bio.isEmpty { Text(profile.bio) }
         if !profile.learnedSummary.isEmpty { Text(profile.learnedSummary).foregroundColor(.secondary) }
         if profile.bio.isEmpty && profile.learnedSummary.isEmpty { Text("暂无画像").foregroundColor(.secondary) }
+        if let lastSeen = profile.lastSeenAt {
+          HStack { Text("最近识别"); Spacer(); Text(lastSeen, style: .relative).foregroundColor(.secondary) }
+        }
       } header: {
         Text("画像")
       }
@@ -360,10 +421,12 @@ private struct ClawContactDetailView: View {
 private struct ClawMemoryCenterView: View {
   @State private var memories: [ClawMemoryItem] = []
   @State private var skills: [ClawSkillDefinition] = []
+  @State private var editingMemory: ClawMemoryItem?
   @State private var showingImporter = false
   @State private var showingSkillImporter = false
   @State private var importPreview: ClawMemoryImportPreview?
   @State private var skillPreview: [ClawSkillDefinition] = []
+  @State private var temporaryMode = ClawMemoryPolicyService.shared.temporaryMode
   @State private var status = ""
 
   var body: some View {
@@ -378,10 +441,51 @@ private struct ClawMemoryCenterView: View {
         }
 
         Section {
+          Toggle("临时模式（本次 AI 不读取长期记忆）", isOn: Binding(
+            get: { temporaryMode },
+            set: { value in
+              temporaryMode = value
+              ClawMemoryPolicyService.shared.temporaryMode = value
+            }
+          ))
+          ForEach(sourceTypes, id: \.self) { source in
+            Toggle(source, isOn: Binding(
+              get: { ClawMemoryPolicyService.shared.isSourceEnabled(source) },
+              set: { ClawMemoryPolicyService.shared.setSource(source, enabled: $0) }
+            ))
+          }
+        } header: {
+          Text("记忆使用权限")
+        } footer: {
+          Text("关闭某个来源后，原数据仍保留，但不会进入 AI 上下文；可随时恢复。")
+        }
+
+        Section {
           ForEach(memories.prefix(30)) { item in
-            VStack(alignment: .leading, spacing: 3) {
-              Text(item.content)
-              Text("\(item.scope) · \(item.kind.rawValue) · \(item.sourceType)").font(.caption2).foregroundColor(.secondary)
+            Button {
+              editingMemory = item
+            } label: {
+              VStack(alignment: .leading, spacing: 3) {
+                Text(item.content).foregroundColor(.primary)
+                let provenance = ClawMemoryPolicyService.shared.provenance(for: item)
+                Text("\(provenance.displayName) · \(Int(item.confidence * 100))% · \(item.sourceType)")
+                  .font(.caption2).foregroundColor(.secondary)
+                if let ref = item.sourceRef, !ref.isEmpty {
+                  Text("来源：\(ref)").font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                }
+              }
+            }
+            .buttonStyle(.plain)
+            .swipeActions(edge: .trailing) {
+              Button("删除", role: .destructive) {
+                _ = try? ClawMemoryStore.shared.deleteMemory(id: item.id)
+                reload()
+              }
+              Button("归档") {
+                _ = try? ClawMemoryStore.shared.setMemoryStatus(id: item.id, status: .archived)
+                reload()
+              }
+              .tint(.orange)
             }
           }
         } header: {
@@ -390,7 +494,15 @@ private struct ClawMemoryCenterView: View {
 
         Section {
           Button { showingImporter = true } label: { Label("从电脑 Agent 导入", systemImage: "square.and.arrow.down") }
-          Button { exportMarkdown() } label: { Label("导出 Markdown 给 Agent", systemImage: "doc.plaintext") }
+          Menu {
+            ForEach(ClawAgentExportPreset.allCases) { preset in
+              Button(preset.displayName) { exportMarkdown(preset: preset, includeContacts: true) }
+            }
+            Divider()
+            Button("只导出我的个人记忆") { exportMarkdown(preset: .generic, includeContacts: false) }
+          } label: {
+            Label("导出 Markdown 给 Agent", systemImage: "doc.plaintext")
+          }
           Button { exportJSON() } label: { Label("导出 JSON", systemImage: "curlybraces") }
           Button { exportPackage() } label: { Label("完整 CLAW 备份（.clawmemory）", systemImage: "shippingbox") }
           if let preview = importPreview {
@@ -401,6 +513,10 @@ private struct ClawMemoryCenterView: View {
                 Text("附带：任务 \(preview.tasks.count) · Skill \(preview.skills.count)")
                   .font(.caption).foregroundColor(.secondary)
               }
+              if !preview.contacts.isEmpty || !preview.conversations.isEmpty {
+                Text("人物 \(preview.contacts.count) · 聊天时间线 \(preview.conversations.count)")
+                  .font(.caption).foregroundColor(.secondary)
+              }
               if preview.conflictCount > 0 {
                 Text("冲突项不会自动覆盖手机 CLAW 的现有记忆；本次确认只写入无冲突的新记忆。")
                   .font(.caption).foregroundColor(.orange)
@@ -408,7 +524,10 @@ private struct ClawMemoryCenterView: View {
               Text(preview.sourceName).font(.caption2).foregroundColor(.secondary)
               Button("确认写入 Memory Core") { commit(preview) }
                 .buttonStyle(.borderedProminent)
-                .disabled(preview.candidates.isEmpty && preview.tasks.isEmpty && preview.skills.isEmpty)
+                .disabled(
+                  preview.candidates.isEmpty && preview.tasks.isEmpty && preview.skills.isEmpty
+                    && preview.contacts.isEmpty && preview.conversations.isEmpty
+                )
             }
           }
           if !status.isEmpty { Text(status).font(.caption).foregroundColor(.secondary) }
@@ -432,12 +551,30 @@ private struct ClawMemoryCenterView: View {
             VStack(alignment: .leading, spacing: 4) {
               HStack { Text(skill.name); Spacer(); Text("v\(skill.version)").font(.caption).foregroundColor(.secondary) }
               Text(skill.summary).font(.caption).foregroundColor(.secondary)
-              Text("采用 \(skill.acceptedCount) · 修改 \(skill.editedCount) · 重生成 \(skill.regeneratedCount)")
+              let metrics = ClawSkillRuntime.shared.metrics(skillID: skill.id)
+              Text("采用 \(metrics.accepted) · 修改 \(metrics.edited) · 重生成 \(metrics.regenerated) · 命中率 \(Int(metrics.adoptionRate * 100))%")
                 .font(.caption2).foregroundColor(.secondary)
+              if let triggers = skill.triggers, !triggers.isEmpty {
+                Text("触发：\(triggers.map(\.rawValue).joined(separator: " · "))")
+                  .font(.caption2).foregroundColor(.secondary).lineLimit(2)
+              }
+              if let tools = skill.toolIDs, !tools.isEmpty {
+                Text("工具：\(tools.joined(separator: " · "))")
+                  .font(.caption2).foregroundColor(.secondary).lineLimit(2)
+              }
               if let learned = skill.learnedDirective, !learned.isEmpty {
                 Text("已进化：\(learned)")
                   .font(.caption2).foregroundColor(.accentColor).lineLimit(3)
               }
+              HStack {
+                Button(skill.enabled ? "停用" : "启用") { toggleSkill(skill) }
+                  .buttonStyle(.bordered)
+                if !ClawSkillRuntime.shared.versions(skillID: skill.id).isEmpty {
+                  Button("回滚上一版") { rollbackSkill(skill) }
+                    .buttonStyle(.bordered)
+                }
+              }
+              .font(.caption)
             }
           }
         } header: {
@@ -446,21 +583,22 @@ private struct ClawMemoryCenterView: View {
       }
       .navigationTitle("记忆中心")
       .onAppear(perform: reload)
+      .sheet(item: $editingMemory) { item in
+        ClawMemoryEditorView(item: item) {
+          editingMemory = nil
+          reload()
+        }
+      }
       .sheet(isPresented: $showingImporter) {
-        ClawMemoryDocumentPicker { url in
+        ClawMemoryDocumentPicker(allowsMultipleSelection: true) { urls in
           showingImporter = false
-          do {
-            let data = try Data(contentsOf: url)
-            importPreview = try ClawMemoryExchangeService.shared.previewImport(data: data, fileName: url.lastPathComponent)
-            status = "已分析文件，请确认后写入。"
-          } catch {
-            status = "导入分析失败：\(error.localizedDescription)"
-          }
+          analyzeImports(urls)
         }
       }
       .sheet(isPresented: $showingSkillImporter) {
-        ClawMemoryDocumentPicker { url in
+        ClawMemoryDocumentPicker(allowsMultipleSelection: false) { urls in
           showingSkillImporter = false
+          guard let url = urls.first else { return }
           do {
             skillPreview = try ClawSkillImportService.shared.preview(data: Data(contentsOf: url))
             status = "Skill 包已通过声明式校验，请确认安装。"
@@ -475,6 +613,11 @@ private struct ClawMemoryCenterView: View {
   private func reload() {
     memories = (try? ClawMemoryStore.shared.memories(limit: 1_000)) ?? []
     skills = (try? ClawMemoryStore.shared.skills()) ?? []
+    temporaryMode = ClawMemoryPolicyService.shared.temporaryMode
+  }
+
+  private var sourceTypes: [String] {
+    Array(Set(memories.map(\.sourceType))).sorted()
   }
 
   private func commit(_ preview: ClawMemoryImportPreview) {
@@ -497,10 +640,10 @@ private struct ClawMemoryCenterView: View {
     }
   }
 
-  private func exportMarkdown() {
+  private func exportMarkdown(preset: ClawAgentExportPreset, includeContacts: Bool) {
     do {
-      let text = try ClawMemoryExchangeService.shared.exportMarkdown()
-      let url = FileManager.default.temporaryDirectory.appendingPathComponent("CLAW-Memory.md")
+      let text = try ClawMemoryExchangeService.shared.exportMarkdown(preset: preset, includeContacts: includeContacts)
+      let url = FileManager.default.temporaryDirectory.appendingPathComponent("CLAW-Memory-\(preset.rawValue).md")
       try text.write(to: url, atomically: true, encoding: .utf8)
       share(url)
     } catch { status = "导出失败：\(error.localizedDescription)" }
@@ -522,6 +665,51 @@ private struct ClawMemoryCenterView: View {
     } catch { status = "完整备份失败：\(error.localizedDescription)" }
   }
 
+  private func analyzeImports(_ urls: [URL]) {
+    guard !urls.isEmpty else { return }
+    do {
+      var previews: [ClawMemoryImportPreview] = []
+      for url in urls {
+        let data = try Data(contentsOf: url)
+        previews.append(try ClawMemoryExchangeService.shared.previewImport(data: data, fileName: url.lastPathComponent))
+      }
+      importPreview = ClawMemoryImportPreview(
+        candidates: previews.flatMap(\.candidates),
+        tasks: previews.flatMap(\.tasks),
+        skills: previews.flatMap(\.skills),
+        contacts: previews.flatMap(\.contacts),
+        conversations: previews.flatMap(\.conversations),
+        duplicateCount: previews.reduce(0) { $0 + $1.duplicateCount },
+        conflictCount: previews.reduce(0) { $0 + $1.conflictCount },
+        sourceName: urls.count == 1 ? urls[0].lastPathComponent : "\(urls.count) 个文件"
+      )
+      status = "已分析 \(urls.count) 个文件，请确认后写入。"
+    } catch {
+      status = "导入分析失败：\(error.localizedDescription)"
+    }
+  }
+
+  private func toggleSkill(_ skill: ClawSkillDefinition) {
+    var updated = skill
+    ClawSkillRuntime.shared.captureVersion(skill)
+    updated.enabled.toggle()
+    updated.version += 1
+    try? ClawMemoryStore.shared.saveSkill(updated)
+    ClawSkillRuntime.shared.captureVersion(updated)
+    reload()
+  }
+
+  private func rollbackSkill(_ skill: ClawSkillDefinition) {
+    do {
+      if let rolled = try ClawSkillRuntime.shared.rollback(skillID: skill.id) {
+        status = "已将 \(rolled.name) 回滚为新的 v\(rolled.version)。"
+      }
+      reload()
+    } catch {
+      status = "Skill 回滚失败：\(error.localizedDescription)"
+    }
+  }
+
   private func share(_ url: URL) {
     guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
           let root = scene.windows.first(where: \.isKeyWindow)?.rootViewController else { return }
@@ -531,15 +719,79 @@ private struct ClawMemoryCenterView: View {
   }
 }
 
+private struct ClawMemoryEditorView: View {
+  let item: ClawMemoryItem
+  let onDone: () -> Void
+  @Environment(\.dismiss) private var dismiss
+  @State private var content: String
+  @State private var confidence: Double
+
+  init(item: ClawMemoryItem, onDone: @escaping () -> Void) {
+    self.item = item
+    self.onDone = onDone
+    _content = State(initialValue: item.content)
+    _confidence = State(initialValue: item.confidence)
+  }
+
+  var body: some View {
+    NavigationView {
+      Form {
+        Section("记忆内容") {
+          TextEditor(text: $content).frame(minHeight: 120)
+        }
+        Section("可信度") {
+          Slider(value: $confidence, in: 0...1, step: 0.05)
+          Text("\(Int(confidence * 100))%").foregroundColor(.secondary)
+        }
+        Section("来源") {
+          HStack {
+            Text("类型")
+            Spacer()
+            Text(ClawMemoryPolicyService.shared.provenance(for: item).displayName).foregroundColor(.secondary)
+          }
+          HStack {
+            Text("来源")
+            Spacer()
+            Text(item.sourceType).foregroundColor(.secondary)
+          }
+          if let ref = item.sourceRef { Text(ref).font(.caption).foregroundColor(.secondary) }
+        }
+        Section {
+          Button("删除这条记忆", role: .destructive) {
+            _ = try? ClawMemoryStore.shared.deleteMemory(id: item.id)
+            onDone()
+            dismiss()
+          }
+        }
+      }
+      .navigationTitle("编辑记忆")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("取消") { dismiss() }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("保存") {
+            _ = try? ClawMemoryStore.shared.updateMemory(id: item.id, content: content, confidence: confidence)
+            onDone()
+            dismiss()
+          }
+          .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+      }
+    }
+  }
+}
+
 private struct ClawMemoryDocumentPicker: UIViewControllerRepresentable {
-  var onPick: (URL) -> Void
+  var allowsMultipleSelection: Bool
+  var onPick: ([URL]) -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
 
   func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
     let types: [UTType] = [.plainText, .json, .data, .archive]
     let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
-    picker.allowsMultipleSelection = false
+    picker.allowsMultipleSelection = allowsMultipleSelection
     picker.delegate = context.coordinator
     return picker
   }
@@ -547,10 +799,10 @@ private struct ClawMemoryDocumentPicker: UIViewControllerRepresentable {
   func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
 
   final class Coordinator: NSObject, UIDocumentPickerDelegate {
-    let onPick: (URL) -> Void
-    init(onPick: @escaping (URL) -> Void) { self.onPick = onPick }
+    let onPick: ([URL]) -> Void
+    init(onPick: @escaping ([URL]) -> Void) { self.onPick = onPick }
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-      if let url = urls.first { onPick(url) }
+      onPick(urls)
     }
   }
 }

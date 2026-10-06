@@ -13,6 +13,10 @@ struct IntentProvider: AppShortcutsProvider {
     return [
       AppShortcut(intent: RimeSyncIntent(), phrases: ["RIME Sync ${applicationName}", "RIME 同步 ${applicationName}"]),
       AppShortcut(intent: RimeDeployIntent(), phrases: ["RIME Deploy ${applicationName}", "RIME 重新部署 ${applicationName}"]),
+      AppShortcut(intent: ClawImportScreenshotsIntent(), phrases: [
+        "Import chat screenshots with ${applicationName}",
+        "用 ${applicationName} 导入聊天截图",
+      ]),
     ]
   }
 }

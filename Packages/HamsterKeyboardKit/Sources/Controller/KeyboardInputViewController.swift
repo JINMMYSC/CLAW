@@ -1286,16 +1286,41 @@ extension KeyboardInputViewController {
 
     guard ClawTalkPrivacyService.shared.isCollectionEnabled, !wasBlocked else { return }
 
+    // If an AI reply/rewrite was inserted during this keyboard session, compare the
+    // eventual typed buffer with that generated text. Meaningful edits become Evolution feedback.
+    _ = ClawGeneratedOutputTracker.shared.reconcile(finalSessionText: typed)
+
     // 去重：裁掉 context 尾部与 typed 头部的重叠部分
     // （同一输入框多次唤起键盘时，上次打的内容会出现在下次的 context 末尾）
     let context = clawTalkDeduplicateContext(rawContext, typed: typed)
     let appCtx  = clawTalkAppContext()
-    ClawTalkDataService.shared.saveSession(ClawTalkEntry(
+    let entry = ClawTalkEntry(
       startTime: startTime,
       text: typed,
       context: context,
       appContext: appCtx
-    ))
+    )
+    ClawTalkDataService.shared.saveSession(entry)
+
+    // When a chat target is explicitly selected, the keyboard's actual outbound text
+    // becomes first-class conversation timeline evidence for that person.
+    let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmed.isEmpty, let profile = HeartTargetService.shared.selectedProfile {
+      let message = ClawConversationMessage(
+        contactID: profile.id,
+        speaker: .me,
+        senderName: "我",
+        content: trimmed,
+        occurredAt: startTime,
+        sourceType: "keyboard-session",
+        sourceRef: "clawtalk:(entry.id.uuidString)",
+        confidence: 1
+      )
+      if (try? ClawMemoryStore.shared.appendConversation(message)) == true {
+        ClawSecretaryExtractor.shared.persistExtractedTasks(from: message)
+        ClawContactProfileLearner.shared.refreshIfNeeded(profileID: profile.id)
+      }
+    }
   }
 
   /// 去重：若 context 尾部与 typed 前缀有重叠，裁掉重叠部分

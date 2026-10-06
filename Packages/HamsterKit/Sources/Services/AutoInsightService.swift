@@ -195,6 +195,16 @@ public class AutoInsightService {
     if !clipboardText.isEmpty {
       dataSections.append("【剪贴板内容】\n\(clipboardText)")
     }
+    let memoryContext = ClawContextBuilder.shared
+      .build(contactID: nil, includeTasks: true, query: "今天 未完成 承诺 等待 下一步 情绪 重点")
+      .promptBlock(maxCharacters: 4_000)
+    if !memoryContext.isEmpty {
+      dataSections.append("【CLAW Memory Core】\n\(memoryContext)")
+    }
+    let proactive = ClawProactiveSecretaryService.shared.suggestions().prefix(8)
+    if !proactive.isEmpty {
+      dataSections.append("【主动秘书信号】\n" + proactive.map { "- \($0.title)：\($0.detail)" }.joined(separator: "\n"))
+    }
     let combinedData = dataSections.joined(separator: "\n\n")
 
     let backgroundSection = cfg.personalBackground.isEmpty
@@ -254,6 +264,21 @@ public class AutoInsightService {
     allResults.insert(insight, at: 0)
     results = allResults
     log.log("结果已保存（共 \(allResults.count) 条）", tag: "AutoInsight")
+
+    // AutoInsight becomes a derived consumer/producer of the shared Memory Core instead
+    // of maintaining a completely isolated insight silo.
+    if taskOK {
+      let day = ClawTalkDataService.dateFormatter.string(from: Date())
+      let content = String(task.prefix(1_000))
+      try? ClawMemoryStore.shared.upsertMemory(ClawMemoryItem(
+        kind: .event,
+        content: content,
+        normalizedKey: "auto-insight-task:\(day)",
+        sourceType: "auto-insight",
+        sourceRef: insight.id.uuidString,
+        confidence: 0.68
+      ))
+    }
 
     // 两路均成功时清除已上送的剪贴板条目
     if spiritualOK && taskOK && !clipboardRefs.isEmpty {

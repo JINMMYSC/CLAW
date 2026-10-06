@@ -173,6 +173,29 @@ NEW\t全拼编码\t词语
     mergeFreqRules(freqRules)
     mergeNewPhrases(newPhrases)
 
+    // Mirror durable lexical learning into the shared Memory Core so rewrite/reply Skills
+    // can benefit from the same phrases instead of SmartFreq owning a private silo.
+    for rule in freqRules.filter({ $0.action == "boost" }).prefix(30) {
+      try? ClawMemoryStore.shared.upsertMemory(ClawMemoryItem(
+        kind: .reusablePhrase,
+        content: "用户常用词：(rule.word)",
+        normalizedKey: "smartfreq:boost:(rule.word.lowercased())",
+        sourceType: "smart-freq",
+        sourceRef: rule.code,
+        confidence: 0.82
+      ))
+    }
+    for phrase in newPhrases.prefix(30) {
+      try? ClawMemoryStore.shared.upsertMemory(ClawMemoryItem(
+        kind: .reusablePhrase,
+        content: "用户常用短语：(phrase.word)",
+        normalizedKey: "smartfreq:phrase:(phrase.word.lowercased())",
+        sourceType: "smart-freq",
+        sourceRef: phrase.code,
+        confidence: 0.78
+      ))
+    }
+
     let entryCount = clawTalkText.components(separatedBy: "\n").filter { !$0.isEmpty }.count
     let tokensUsed = usage?.totalTokens ?? 0
 
