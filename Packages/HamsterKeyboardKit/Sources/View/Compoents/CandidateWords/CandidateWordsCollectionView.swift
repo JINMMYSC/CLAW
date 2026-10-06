@@ -92,6 +92,16 @@ public class CandidateWordsCollectionView: UICollectionView {
     }
   }
 
+  /// 兜底：尺寸或状态变化后，确保布局与当前展开状态一致。
+  /// 订阅若因为时序问题没触发，展开时会出现"上面一大片空白、候选词仍是一行"。
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let expected = keyboardContext.candidatesViewState
+    guard candidatesViewState != expected else { return }
+    candidatesViewState = expected
+    changeLayout(expected)
+  }
+
   func setupStyle(_ style: CandidateBarStyle) {
     self.style = style
     self.reloadData()
