@@ -570,3 +570,49 @@ if keyboardContext.useIOSNativeLayout {
 2. 文案分开：没 Key 提示"请先在每日洞察设置里选择提供商并填入 API Key"；没数据提示"最近 24 小时没有可分析的输入记录"。
 3. 手动触发（闪电）语义上是"我现在就要看结果"，建议放宽数据窗口——例如手动触发回溯 7 天，或至少在有数据但都超出 24 小时时给出明确说明，而不是静默返回。
 4. `isRunning` 期间已经有了 ProgressView，但 guard 路径返回太快几乎看不到；配合上面的提示即可。
+
+## 十八、智能调频看起来不生效
+
+用户反馈：智能调频好像没什么变化，有些字打了很多次也不会提到前面。问这个功能到底能不能用。
+
+### 结论：这个功能目前是空转的
+
+`SmartFreqService` 跑完 AI 分析后，把结果写进两个文件：
+
+- `FileManager.appGroupUserDataDirectoryURL/smart_freq_rules.txt`
+- `FileManager.appGroupUserDataDirectoryURL/smart_freq_phrases.txt`
+
+但**全项目没有任何代码读取这两个文件**——搜索这两个文件名，命中的只有 `SmartFreqService` 自己（写入、合并去重、重置）。RIME 也不会认它们：既不是 yaml，也没有被任何 schema 引用。所以规则写进去之后，候选顺序不会发生任何变化，用户的观感就是"没反应"。
+
+它确实还做了一件事：把 boost 的词写进 Memory Core（`normalizedKey: "smartfreq:boost:…"`，`sourceType: "smart-freq"`）。但那影响的是 AI 的上下文检索，不影响键盘候选排序。
+
+调用点只有一个：`ClawAssistantRootView.onAppear` 里的 `await SmartFreqService.shared.runIfNeeded()`，加上设置页的 `SmartFreqViewModel`。也就是说它会被触发，只是产物没人消费。
+
+### 另一个叠加因素：RIME 自带的词频学习可能被覆盖
+
+`Resources/SharedSupport/hamster.yaml` 里 `overrideDictFiles: true`，注释写得很明确：
+
+```
+# RIME 重新部署时，是否覆盖词库文件
+# 如果使用自造词，需要改为 false, 否则部署时会覆盖键盘自造词文件
+```
+
+如果真机上的词频学习依赖 userdb／自造词，那么每次重新部署都会把它冲掉，"打了很多次也不上浮"就可能同时来自这里。
+
+### 现场判断方法
+
+去 App Group 的 RIME 用户目录看是否存在 `smart_freq_rules.txt` 与 `smart_freq_phrases.txt`：
+
+- 存在且非空 → 服务跑成功了，只是产物没人读，属于设计缺口；
+- 不存在或为空 → 服务本身也没跑成（`shouldRun` 要求已启用 + 有 API Key + 未超月度预算 + 满足间隔）。
+
+### 建议修法
+
+要让调频真正生效，必须落到 RIME 能读到的地方，例如：
+
+1. 写成 `*.custom.yaml`（给 `custom_phrase` 或 `translator` 加词条），并在写完后触发一次重部署；
+2. 或写 RIME 用户词典，同样需要重部署才生效。
+
+单纯写 txt 不会生效。
+
+更省事的一条路：直接启用 RIME 原生的用户词频学习（userdb），并把 `overrideDictFiles` 改为 `false`，这样"打多了自动上浮"是引擎行为，不依赖 AI，也不需要重部署。当前这套 AI 调频如果继续保留，更适合定位成"基于长期习惯的词条整理"，而不是实时调频。
