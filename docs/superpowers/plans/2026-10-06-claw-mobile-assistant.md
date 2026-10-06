@@ -2,79 +2,114 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Turn the current CLAW TALK build into a mobile-first personal assistant foundation with unified memory, contact timelines, improved keyboard AI surfaces, a host-app assistant home, skills/evolution foundations, and memory interchange.
+**Goal:** Turn the current CLAW TALK-focused build into a mobile-first personal assistant foundation while preserving the keyboard as a primary output surface.
 
-**Architecture:** Add a deep `ClawMemoryStore` module in HamsterKit backed by SQLite and expose focused interfaces for memories, conversation entries, tasks, feedback, and skills. Add `ClawContextBuilder` and reuse `ClawChatService` as the shared assistant conversation seam. Rework host and keyboard presentation around these shared modules without changing RIME fundamentals.
+**Architecture:** Add deep shared modules in HamsterKit for memory, timeline, context, assistant conversations, skills/evolution feedback, and import/export. Then adapt the keyboard and host app to consume those interfaces instead of creating more feature-specific state.
 
-**Tech Stack:** Swift 5.8, UIKit, SwiftUI, Combine, Vision, SQLite3, existing HamsterKit/HamsterKeyboardKit/HamsteriOS packages.
+**Tech Stack:** Swift 5.8, iOS 15+, SwiftUI/UIKit, Foundation, App Group storage, existing HamsterKit/HamsterKeyboardKit/HamsteriOS packages.
 
 ## Global Constraints
 
 - Minimum deployment target remains iOS 15.
-- Do not change existing signing identifiers, entitlements, RIME engine behavior, or App Group.
-- Do not download or execute arbitrary Swift/native code as skills.
-- Keep keyboard AI overlay at approximately 140/175/210pt adaptive heights so host chat remains visible.
-- Phone CLAW is the memory source of truth; desktop CLAW is out of scope.
+- Branch baseline is `work/claw-voice-keyboard-bg` at `2513275e9c85f93858e8208d306e53f430a3deae`.
+- Keyboard AI panel heights target compact 140 pt, standard 175 pt, expanded maximum 210 pt.
+- The host app and keyboard share the same assistant conversation state.
+- Contact memories and timelines must not leak across contacts.
+- Internal memory is structured; Markdown is not the canonical database.
+- Import/export supports Markdown, JSON/JSONL, and .clawmemory package metadata.
+- No credentials, Apple signing assets, provisioning profiles, or passwords are committed.
 
-### Task 1: Unified Memory Core
+---
 
-**Files:** create memory models/store/context/exchange files in `Packages/HamsterKit/Sources/Services/`; modify `Packages/HamsterKit/Package.swift` to link sqlite3; add unit tests under `Packages/HamsterKit/Tests/ClawMemory/`.
+### Task 1: Shared assistant foundation
 
-- [ ] Add SQLite schema and migrations for memory items, conversation messages, tasks, feedback, and skills.
-- [ ] Add typed CRUD/query interfaces and contact-scoped timeline retrieval.
-- [ ] Add Markdown/JSON/JSONL exchange parser/exporter.
-- [ ] Add context builder that produces global/contact/task context packs.
+**Files:**
+- Create: `Packages/HamsterKit/Sources/Models/ClawMemoryModels.swift`
+- Create: `Packages/HamsterKit/Sources/Services/ClawMemoryCore.swift`
+- Create: `Packages/HamsterKit/Sources/Services/ClawContextBuilder.swift`
+- Create: `Packages/HamsterKit/Tests/ClawMemory/ClawMemoryCoreTests.swift`
+
+- [ ] Add tests for scoped memory upsert/search, provenance, and contact isolation.
+- [ ] Implement the smallest shared Memory Core interface needed by keyboard and host.
+- [ ] Add context-pack construction from global + selected-contact memories.
 - [ ] Run HamsterKit tests.
 
-### Task 2: Contact Timeline and Screenshot Ingestion
+### Task 2: Person conversation timeline and screenshot ingestion seam
 
-**Files:** modify `HeartTargetService.swift`, `VisionOCRService.swift`, and keyboard panel screenshot flow; add screenshot parser.
+**Files:**
+- Modify: `Packages/HamsterKit/Sources/Services/HeartTargetService.swift`
+- Create: `Packages/HamsterKit/Sources/Models/ClawConversationModels.swift`
+- Create: `Packages/HamsterKit/Sources/Services/ClawConversationTimelineService.swift`
+- Create: `Packages/HamsterKit/Sources/Services/ClawScreenshotIngestionService.swift`
+- Create: `Packages/HamsterKit/Tests/ClawMemory/ClawConversationTimelineTests.swift`
 
-- [ ] Extend contact profile compatibly with relationship/learned fields.
-- [ ] Return positioned OCR observations and parse chat screenshot rows.
-- [ ] Deduplicate and persist screenshot-derived messages to the selected contact timeline.
-- [ ] Preserve raw OCR as evidence metadata, not as the canonical timeline format.
+- [ ] Add tests for per-contact append, dedupe, ordering, and source evidence.
+- [ ] Extend heart-target profiles with non-breaking assistant metadata.
+- [ ] Add a screenshot-ingestion interface that accepts structured OCR observations and resolves them to timeline messages.
+- [ ] Run HamsterKit tests.
 
-### Task 3: Shared Assistant Conversation and Context
+### Task 3: Shared assistant conversation, skills, and evolution feedback
 
-**Files:** modify `ClawChatService.swift`; add assistant-facing context helpers.
+**Files:**
+- Modify: `Packages/HamsterKit/Sources/Services/ClawChatService.swift`
+- Create: `Packages/HamsterKit/Sources/Models/ClawSkillModels.swift`
+- Create: `Packages/HamsterKit/Sources/Services/ClawSkillService.swift`
+- Create: `Packages/HamsterKit/Sources/Services/ClawEvolutionService.swift`
+- Create: `Packages/HamsterKit/Tests/ClawMemory/ClawSkillEvolutionTests.swift`
 
-- [ ] Fix persisted auto-speak default.
-- [ ] Stop globally mutating provider/model for a request where practical.
-- [ ] Inject Memory Core context into assistant requests.
-- [ ] Persist assistant conversation as a shared host/keyboard conversation.
+- [ ] Add tests for skill versioning and feedback aggregation.
+- [ ] Keep one shared conversation store usable from keyboard and host.
+- [ ] Add non-code skill definitions and adoption/edit feedback.
+- [ ] Run HamsterKit tests.
 
-### Task 4: Keyboard AI UX
+### Task 4: Memory exchange
 
-**Files:** modify `KeyboardToolbarView.swift`, `ClawPanelOverlayView.swift`, and suggestion helpers.
+**Files:**
+- Create: `Packages/HamsterKit/Sources/Services/ClawMemoryExchangeService.swift`
+- Create: `Packages/HamsterKit/Tests/ClawMemory/ClawMemoryExchangeTests.swift`
 
-- [ ] Add contact selector to the high-frequency toolbar/context surface.
-- [ ] Replace fixed 150pt height with adaptive 140/175/210pt heights.
-- [ ] Make screenshot action explicit on 帮你回.
-- [ ] Make 帮你回 return compact actionable reply choices and direct insert.
-- [ ] Make 超会说 expose replace/insert-oriented output and style intent.
-- [ ] Keep AI keyboard view short and point long conversations to host app.
+- [ ] Add failing tests for Markdown export, JSON round-trip, and duplicate import preview.
+- [ ] Implement import preview with add/update/conflict/duplicate counts.
+- [ ] Implement export for Markdown and JSON/JSONL plus .clawmemory manifest data.
+- [ ] Run HamsterKit tests.
 
-### Task 5: Host App Assistant Home
+### Task 5: Keyboard toolbar and three AI panels
 
-**Files:** replace `ClawTalkRootView.swift` presentation with assistant-first navigation while retaining data-management subviews; reuse `ClawTalkViewModel` where appropriate.
+**Files:**
+- Modify: `Packages/HamsterKeyboardKit/Sources/View/KeyboardToolbarView.swift`
+- Modify: `Packages/HamsterKeyboardKit/Sources/View/ClawPanel/ClawPanelOverlayView.swift`
+- Modify: `Packages/HamsterKeyboardKit/Sources/View/ClawPanel/ClawSuggestionEngine.swift`
 
-- [ ] Add assistant chat home using shared ClawChatService.
-- [ ] Add Today/Secretary, People, Memory, and Data Exchange tabs/sections.
-- [ ] Keep privacy, raw records, AI settings, AutoInsight, SmartFreq, and backup reachable.
+- [ ] Replace one fixed panel height with compact/standard/expanded height selection.
+- [ ] Make contact/context state visible in the panel.
+- [ ] Make screenshot ingestion an explicit help-reply action.
+- [ ] Make help-reply and super-talk layouts semantically distinct.
+- [ ] Keep AI quick chat compact and expose continuation in host app.
+- [ ] Run package/build checks.
 
-### Task 6: Skill and Evolution Foundations
+### Task 6: Host app assistant home
 
-**Files:** add skill registry/evolution feedback models and store methods; expose basic host-app visibility.
+**Files:**
+- Modify: `Packages/HamsteriOS/Sources/UILayer/ClawTalk/ClawTalkRootView.swift`
+- Modify: `Packages/HamsteriOS/Sources/UILayer/ClawTalk/ClawTalkViewController.swift`
+- Create: `Packages/HamsteriOS/Sources/UILayer/ClawTalk/ClawAssistantHomeView.swift`
+- Create: `Packages/HamsteriOS/Sources/ViewModel/ClawTalk/ClawAssistantViewModel.swift`
 
-- [ ] Seed declarative built-in skills for 帮你回, 超会说, screenshot understanding, contact profile, task extraction, and daily secretary.
-- [ ] Record accept/edit/regenerate feedback events.
-- [ ] Expose skill versions and simple performance counters without executable-code mutation.
+- [ ] Make assistant chat the primary CLAW screen.
+- [ ] Surface today/people/memory/data-management entry points.
+- [ ] Reuse shared assistant conversation state.
+- [ ] Keep existing data-management functions reachable.
+- [ ] Run package/build checks.
 
-### Task 7: Verification, GitHub and IPA
+### Task 7: Integration and verification
 
-- [ ] Run package tests/static checks available on the local machine.
-- [ ] Review final diff against this spec.
-- [ ] Commit and push the target branch.
-- [ ] Verify GitHub Actions run for the pushed commit.
-- [ ] Download the successful workflow IPA artifact and return it to the user.
+**Files:**
+- Modify only files required by compiler/test findings.
+
+- [ ] Run Swift package tests that are available on the current host.
+- [ ] Run repository static/build validation scripts.
+- [ ] Commit all changes on the CLAW feature branch.
+- [ ] Push branch and trigger GitHub Actions signing workflow.
+- [ ] Verify CI is green for the exact pushed SHA.
+- [ ] Download and return the IPA artifact.
+

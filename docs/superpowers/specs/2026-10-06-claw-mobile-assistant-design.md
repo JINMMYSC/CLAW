@@ -1,44 +1,52 @@
-# CLAW Mobile Assistant Design
+# CLAW Mobile Assistant Redesign
 
 ## Product goal
 
-CLAW is a mobile-first 24-hour personal AI assistant. The host app is the assistant's brain and control center; CLAW TALK Keyboard is an equally important real-time input/output and sensing surface. The phone is the source of truth for memory. Desktop agents only import selected CLAW memory or export selected memories back to the phone.
+CLAW is a mobile-first 24-hour personal AI assistant. The host app is the assistant brain and control center; CLAW TALK keyboard is an equally important high-frequency sensing, writing, and execution surface.
 
 ## Core architecture
 
-- `CLAW Memory Core`: local-first structured memory store shared by the host app and keyboard extension. Stores people, relationship context, conversation timeline entries, user preferences, tasks, commitments, waiting-for items, and evidence/provenance.
-- `ContextBuilder`: retrieves only relevant current context. Retrieval order for reply scenarios is current input/screenshot > selected contact timeline > selected contact profile/relationship memory > global user preferences.
-- `AssistantConversationService`: one persisted assistant conversation used by both keyboard quick-assistant and host-app assistant UI.
-- `Skill Registry`: declarative skill definitions (prompt, capability, permissions, version, metrics) rather than downloaded executable Swift code.
-- `Evolution Feedback`: records which suggestion was used, edited, regenerated, or discarded so prompts/preferences can improve without modifying executable code.
+1. **Memory Core** is the canonical source of truth for long-term knowledge.
+2. **Conversation Timeline** stores structured per-person chat history and source provenance.
+3. **Context Builder** assembles only the memories relevant to the current person, task, and surface.
+4. **Assistant Conversation** is shared between the host app and keyboard quick assistant.
+5. **Skills** define reusable prompt/workflow behavior; the first evolution loop learns from adoption/edit feedback without downloading or executing arbitrary Swift code.
+6. **Memory Exchange** imports/exports Markdown, JSON/JSONL, and a packaged .clawmemory archive.
 
-## Conversation/contact model
+## Keyboard design
 
-Each contact keeps a stable ID, display name, avatar, relationship metadata, manual bio, learned profile summary, and a chronological `ConversationMessage` timeline. Screenshot ingestion OCRs text, infers speaker ordering when possible, associates it with the selected/detected contact, deduplicates messages, stores provenance, and updates the timeline. Contacts never leak into each other's context.
+The keyboard must not materially cover the host chat screen.
 
-## Keyboard UX
+- compact panel: about 140 pt
+- standard panel: about 175 pt
+- expanded keyboard maximum: about 210 pt
+- help-reply uses reply cards and explicit screenshot entry
+- super-talk shows source text and optimized result
+- AI is a compact quick-assistant view; long sessions continue in the host app
+- current chat target remains visible and isolated from other contacts
 
-Toolbar prioritizes context and action: selected contact, 帮你回, 超会说, AI, then secondary controls. The AI overlay is adaptive rather than fixed at 150pt: compact around 140pt, normal around 175pt, expanded around 210pt. It must not become a half-screen chat surface.
+## Host app design
 
-- 帮你回: visible screenshot button, selected contact, concise reply suggestions, one-tap insert.
-- 超会说: original text to improved text, style chips, replace/insert action.
-- AI: short assistant view showing only recent turns; long-form interaction belongs in the host app.
+The primary CLAW host surface is an AI assistant conversation window, with access to people, memory, today/secretary state, and settings/data tools. Existing ClawTalk data management becomes a supporting tool instead of the primary product surface.
 
-## Host app UX
+## Memory and privacy
 
-The CLAW host surface starts with the assistant conversation, then exposes Today/Secretary, People, Memory, and Data Exchange. The existing raw-data tools remain accessible but stop being the conceptual home page.
+- internal store: structured local database abstraction with SQLite-ready schema
+- global and contact scopes are separated
+- every derived memory retains provenance and confidence
+- imported memories are previewed, deduplicated, conflict-checked, and then committed
+- raw screenshots remain evidence; structured messages are the canonical conversation representation
 
-## Memory exchange
+## Exchange formats
 
-Internal canonical storage is SQLite. External interchange supports Markdown, JSON, JSONL, and a `.clawmemory` package. Import always follows parse -> classify -> deduplicate -> conflict check -> preview -> commit. Markdown is the default human/agent exchange format, not the internal database.
-
-## Privacy and safety
-
-Collection stays user-controlled. Password fields remain blocked. Sensitive filtering remains in place. The app does not claim system-wide invisible monitoring. Screenshot capture on current iOS is user-triggered through supported system flows. Memory records keep provenance and can be deleted by scope/contact.
+- Markdown: default human/agent interchange
+- JSON/JSONL: structured machine interchange
+- .clawmemory: full backup/migration package
 
 ## Compatibility
 
-- iOS deployment floor remains iOS 15.
-- Existing RIME input-method behavior and signing identifiers remain unchanged.
-- App Group remains the sharing seam between host and keyboard.
-- Existing ClawTalk, AutoInsight, SmartFreq, voice, and AI provider functionality should be reused rather than rewritten when possible.
+- minimum iOS version remains iOS 15
+- reuse current App Group and existing services where practical
+- no secrets or signing material are committed
+- dynamic skills are interpreted data/workflows, not downloaded executable Swift code
+
