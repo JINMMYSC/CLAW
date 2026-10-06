@@ -631,3 +631,95 @@ AI 调频真正有增量价值的是这四类：
 反过来，不该交给 AI 的：单字频次（交给 userdb）、实时调频（AI 延迟几百毫秒到几秒，做不到按键级）。
 
 所以它的正确名字更接近"词库维护助手"：产物应该写成 `custom_phrase` 或用户词典条目，并触发一次重部署，而不是写进没人读的 txt。
+
+## 十九、RIME 原生词频学习被部署覆盖（已定位）
+
+用户反馈：有些字打了很多次也不会提到前面，怀疑 RIME 原生 userdb 有问题。查证后确认是配置与同步逻辑的问题，不是引擎本身。
+
+### 根因一：部署会把 App Group 的 Rime 目录整体替换掉
+
+`RimeContext` 在部署结束后（第 479-481、526-528、582-584 行，三处相同）执行：
+
+```
+try FileManager.syncSandboxSharedSupportDirectoryToAppGroup(override: true)
+try FileManager.syncSandboxUserDataDirectoryToAppGroup(override: true)
+```
+
+而 `FileManager.copyDirectory(override: true, ...)` 的第一件事是**删除目标目录**再整份拷贝：
+
+```
+if fm.fileExists(atPath: dst.path) {
+  if override { try fm.removeItem(atPath: dst.path) }
+  else { return }
+}
+```
+
+键盘扩展的 RIME 用的是 App Group 目录（`RimeContext.start(hasFullAccess: true)` → `userDataDir: appGroupUserDataDirectoryURL`），所以**每次主程序部署，键盘学到的 userdb 都会被沙盒副本整体覆盖掉**。
+
+### 根因二：`overrideDictFiles: true` 让部署前不再搬回键盘词库
+
+`Resources/SharedSupport/hamster.yaml` 第 197-211 行：
+
+```
+# 如果使用自造词，需要改为 false, 否则部署时会覆盖键盘自造词文件
+overrideDictFiles: true
+regexOnOverrideDictFiles:
+  - "^.*[.]userdb.*$"
+  - "^.*[.]txt$"
+```
+
+而 `RimeContext` 第 322-331 行的保护逻辑是**只在 `overrideDictFiles == false` 时才执行**：
+
+```
+if let overrideDictFiles = configuration.rime?.overrideDictFiles, overrideDictFiles == false {
+  try FileManager.copyAppGroupUserDict(regex)   // 先把键盘学到的词拷进沙盒
+}
+```
+
+现在值为 `true`，这一步被跳过，于是沙盒那份本身也不含键盘的学习，随后再整份覆盖回 App Group，学习就被彻底清零。这正好解释了"打了很多次也不靠前"。
+
+### 修法
+
+1. `overrideDictFiles` 改为 `false`。这样部署前会先把 App Group 的 userdb／txt 拷进沙盒，部署完再整体同步回 App Group，学习得以保留。yaml 注释本身也是这么写的。
+2. `regexOnOverrideDictFiles` 已经包含 `^.*[.]userdb.*$` 与 `^.*[.]txt$`，无需改。
+3. 更彻底的做法是把 `syncSandboxUserDataDirectoryToAppGroup(override: true)` 换成增量合并（`incrementalCopy`，跳过内容相同的文件），避免 future 再出现"整目录替换"造成的丢失。
+
+### 需要真机确认
+
+改成 `false` 后，需要真机验证：连续多次选择同一个词，然后**重新部署一次**，看该词是否仍然排在前面。这一步能同时验证"学习生效"和"部署不再清空学习"两件事。
+
+## 二十、实现 AI 调频的四个用处
+
+依据第十八节的定位（词库维护助手，而非实时调频），把四个用处落成可执行任务。前置：第十九节的 `overrideDictFiles` 必须已改为 `false`，否则产物照样会被部署清掉。
+
+### 1. 产物落点改造（前置中的前置）
+
+现状写的是 `smart_freq_rules.txt` / `smart_freq_phrases.txt`，无人消费。改为：
+
+- 生成 `custom_phrase.txt`（RIME 标准格式 `编码\t词条\t权重`），并确保 schema 引用 `custom_phrase` 表；
+- 或生成 `*.custom.yaml` 补丁，写进对应 schema 的 `translator`；
+- 写完后触发一次 `deployment(configuration:forceFullCheck:false)`，让 RIME 重新编译生效。
+
+### 2. 新词发现（价值最高）
+
+从 ClawTalk 输入记录与聊天时间线里找出"反复出现但词库里没有"的词——人名、公司名、项目代号、网络用语。RIME 的学习只能提升候选表里已存在的词，这一类是它学不到的。
+
+### 3. 跨方案／跨编码迁移
+
+同一表达在不同 schema（全拼、九键、双拼）下编码不同，userdb 各学各的。需要做编码转换后生成对应词条，让偏好跨方案生效。
+
+### 4. 按人物与场景调权
+
+用 `HeartTargetService` 的当前对象与 `appContext` 生成带场景的规则。注意 RIME 没有"按联系人"的原生概念，落地只能是"每个场景一套 custom_phrase，切换对象时替换并重部署"，代价较高。建议第一版降级为：**生成建议 + 用户确认后应用**，不做自动切换。
+
+### 5. 降权与清理
+
+把长期未使用的词从 `custom_phrase` 移除或降权。userdb 只加不减，这是 AI 的增量价值之一。
+
+### 6. 结果可见 + 可回滚
+
+现在写完规则用户看不到任何变化。需要：列出本次新增／调整的词条、支持撤销、保留版本；避免 AI 误改词库而无从恢复。
+
+### 7. 执行时机与预算
+
+保留月度 token 预算；建议只在充电且空闲时跑；结果先落成待确认草稿，用户点应用才写入并重部署。
