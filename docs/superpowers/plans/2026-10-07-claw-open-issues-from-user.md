@@ -226,3 +226,33 @@ AI 侧（`ClawContextBuilder.build`）：
 1. 全局模式下是否允许携带联系人记忆 → 倾向允许，但只带命中的那一个。
 2. 保险箱内被保护的联系人记忆是否仍然一律不带 → 倾向不带。
 3. 回答里是否标注来源（例如"以下内容来自 小王的档案"）→ 倾向标注，便于用户判断信息出处。
+
+## 十一、iCloud 同步页两个按钮闪退
+
+现象：设置 → iCloud同步，点「拷贝应用文件至iCloud」和「从 iCloud 恢复」都闪退。
+
+### 根因（已定位）
+
+`Packages/HamsterKit/Sources/Extensions/URL+.swift`：
+
+- `iCloudDocumentURL` 本身是可选，值为 `FileManager.default.url(forUbiquityContainerIdentifier: nil)` 加上 `Documents`；拿不到容器时返回 nil。
+- 但下游 `iCloudRimeURL` 用的是**强制解包**：`iCloudDocumentURL!.appendingPathComponent("RIME")`（第 69-71 行）；`iCloudBackupsURL` 同样（第 89-91 行）。
+- `iCloudSharedSupportURL` 与 `iCloudUserDataURL` 都建在 `iCloudRimeURL` 上，所以两条路径最终都会踩到这行强制解包。
+
+调用链：`AppleCloudViewModel.copyFileToiCloud()` → `FileManager.copySandboxSharedSupportDirectoryToAppleCloud` → `URL.iCloudSharedSupportURL` → `iCloudRimeURL` → `iCloudDocumentURL!` → 崩溃。`restoreFromiCloud()` 走的是同一条链。
+
+`AppleCloudViewModel` 两个方法都**没有先判断 iCloud 是否可用**。`restoreFromiCloud` 里那句 `_ = URL.iCloudDocumentURL` 只是求值后丢弃，等于没判断。
+
+触发条件：设备未登录 iCloud，或系统里关闭了 iCloud Drive / 该 App 的 iCloud 开关时，`url(forUbiquityContainerIdentifier:)` 返回 nil。
+
+### 两个附带问题
+
+1. `iCloudDocumentURL` 是静态缓存（`static var iCloudDocumentURL: URL? = { ... }()`）。如果首次访问时 iCloud 尚未就绪，nil 会被永久缓存，之后即使登录了 iCloud 也不会恢复，除非重启 App。
+2. 拷贝／恢复按钮不检查设置页那个 iCloud 总开关（`settingsViewModel.enableAppleCloud`）。
+
+### 建议修法
+
+1. 去掉强制解包：`iCloudRimeURL` 与 `iCloudBackupsURL` 改为可选或抛错，交由调用方处理。
+2. 两个按钮动作前先判断 `URL.iCloudDocumentURL != nil`；为 nil 时给出可读提示——「iCloud 不可用，请先在系统设置登录 iCloud 并打开 iCloud Drive」，而不是崩。
+3. `iCloudDocumentURL` 不要永久缓存 nil：改为每次求值，或仅在拿到值时才缓存。
+4. 顺带把 `enableAppleCloud` 总开关的判断补上。
