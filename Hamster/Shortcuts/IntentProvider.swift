@@ -35,10 +35,6 @@ struct ClawImportScreenshotsIntent: AppIntent {
   @Parameter(title: "聊天截图")
   var screenshots: [IntentFile]
 
-  static var parameterSummary: some ParameterSummary {
-    Summary("导入 \(.$screenshots) 到 CLAW")
-  }
-
   func perform() async throws -> some ReturnsValue & ProvidesDialog {
     var insertedTotal = 0
     var names = Set<String>()
