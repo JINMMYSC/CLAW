@@ -245,6 +245,28 @@ class KeyboardRootView: NibLessView {
       backgroundColor = appearance.backgroundStyle.backgroundColor
     }
     contentMode = .redraw
+    updateBottomFade()
+  }
+
+  // MARK: - 底部渐变
+
+  /// 键盘最底部那条由系统绘制、改不了颜色。这里让主题底色在最后一段渐变到接近系统的底色，
+  /// 避免主题色与下巴之间出现一条生硬的分界线。
+  private let bottomFadeLayer = CAGradientLayer()
+
+  private func updateBottomFade() {
+    let top = backgroundColor ?? .clear
+    // 近似系统键盘底色；真实取值受宿主 App 的 keyboardAppearance 影响，这里取常用值。
+    let bottom = keyboardContext.hasDarkColorScheme
+      ? UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
+      : UIColor(red: 0.82, green: 0.83, blue: 0.85, alpha: 1)
+    bottomFadeLayer.colors = [top.cgColor, bottom.cgColor]
+    bottomFadeLayer.startPoint = CGPoint(x: 0.5, y: 0)
+    bottomFadeLayer.endPoint = CGPoint(x: 0.5, y: 1)
+    bottomFadeLayer.zPosition = -1
+    if bottomFadeLayer.superlayer !== layer {
+      layer.addSublayer(bottomFadeLayer)
+    }
   }
 
   // MARK: - Layout
@@ -429,6 +451,15 @@ class KeyboardRootView: NibLessView {
   override func layoutSubviews() {
     super.layoutSubviews()
     // Logger.statistics.debug("KeyboardRootView: layoutSubviews()")
+
+    // 渐变层要贴在键盘最底部，且必须在下面的候选栏状态判断提前 return 之前更新。
+    let fadeHeight = max(safeAreaInsets.bottom, 10)
+    bottomFadeLayer.frame = CGRect(
+      x: 0,
+      y: bounds.height - fadeHeight,
+      width: bounds.width,
+      height: fadeHeight
+    )
 
     // 检测候选栏状态是否发生变化
     guard candidateViewState != keyboardContext.candidatesViewState else { return }

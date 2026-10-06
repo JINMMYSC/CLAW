@@ -39,7 +39,8 @@ class KeyboardToolbarView: NibLessView {
     let button = UIButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
     button.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
-    button.setTitleColor(ClawPanelPalette.deepBlue, for: .normal)
+    // 胶囊按钮统一常态配色：与「帮你回」「超会说」保持一致，选中态才换成强调色底。
+    button.setTitleColor(ClawPanelPalette.keyLabel, for: .normal)
     button.backgroundColor = ClawPanelPalette.capsuleNormal
     button.layer.cornerRadius = 15
     button.clipsToBounds = true
@@ -75,8 +76,8 @@ class KeyboardToolbarView: NibLessView {
     button.translatesAutoresizingMaskIntoConstraints = false
     button.setTitle("帮你回", for: .normal)
     button.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
-    button.setTitleColor(ClawPanelPalette.currentColors.accentForeground, for: .normal)
-    button.backgroundColor = ClawPanelPalette.capsuleSelected
+    button.setTitleColor(ClawPanelPalette.keyLabel, for: .normal)
+    button.backgroundColor = ClawPanelPalette.capsuleNormal
     button.layer.cornerRadius = 15
     button.clipsToBounds = true
     button.addTarget(self, action: #selector(helpReplyTouchDownAction), for: .touchDown)
@@ -201,8 +202,10 @@ class KeyboardToolbarView: NibLessView {
     return button
   }()
 
+  /// 候选行右侧只保留收起键盘按钮。
+  /// 按规格：打字时应用图标那一组不显示，候选行只留候选词与最右侧的 `⌄`。
   lazy var candidateQuickToolsBar: UIStackView = {
-    let stack = UIStackView(arrangedSubviews: [candidateMoreButton])
+    let stack = UIStackView(arrangedSubviews: [candidateDismissButton])
     stack.translatesAutoresizingMaskIntoConstraints = false
     stack.axis = .horizontal
     stack.alignment = .fill
@@ -465,6 +468,10 @@ class KeyboardToolbarView: NibLessView {
     let aiSelected = tab == 0
     aiButton.glassTintColor = aiSelected ? ClawPanelPalette.brandBlue : ClawPanelPalette.aiCircle
     aiButton.setTitleColor(aiSelected ? .white : ClawPanelPalette.deepBlue, for: .normal)
+
+    // 「全局」也需要跟随刷新，否则会停在初始化时的颜色，与另外两个胶囊不一致。
+    contactButton.backgroundColor = ClawPanelPalette.capsuleNormal
+    contactButton.setTitleColor(ClawPanelPalette.keyLabel, for: .normal)
 
     let helpSelected = tab == 1
     helpReplyButton.backgroundColor = helpSelected ? ClawPanelPalette.capsuleSelected : ClawPanelPalette.capsuleNormal
