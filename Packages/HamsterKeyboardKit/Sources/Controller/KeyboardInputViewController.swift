@@ -1034,8 +1034,7 @@ private extension KeyboardInputViewController {
           }
         }
 
-          // 键盘主输入链路必须保持轻量。不要在用户连续打字时从 Extension 自动发起
-          // 网络 AI 请求；实时建议只在用户主动打开 CLAW 面板后启用。
+          // 键盘主输入链路保持纯本地、低开销。实时 AI 建议只在用户主动打开 CLAW 面板后运行。
 
         // 非嵌入模式在 CandidateWordsView.swift 中处理，直接输入 Label 中
         guard self.keyboardContext.enableEmbeddedInputMode else { return }
@@ -1288,8 +1287,8 @@ extension KeyboardInputViewController {
     )
     ClawTalkDataService.shared.saveSession(entry)
 
-    // Keep the Keyboard Extension lightweight. Timeline SQLite writes, task extraction,
-    // contact learning and Evolution reconciliation are drained by the host app.
+    // Extension 不直接写 Memory SQLite / 提取任务 / 做 Evolution。这里只写 App Group
+    // 轻量队列，主 App 激活后再统一处理，避免连续输入时被 jetsam/系统切走。
     let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
     if !trimmed.isEmpty {
       ClawKeyboardDeferredEventService.shared.enqueue(ClawDeferredKeyboardSession(
@@ -1392,5 +1391,17 @@ extension KeyboardInputViewController {
 
 private enum AssociatedKeys {
   static var textBuffer = "clawTalkTextBuffer"
+  static var sessionStartTime = "clawTalkSessionStartTime"
+  static var initialContext = "clawTalkInitialContext"
+  static var sessionBlocked = "clawTalkSessionBlocked"
+}
 
-[Showing lines 1-1407 of 1422 (50.0KB limit). Use offset=1408 to continue.]
+extension UIKeyboardType {
+  var isNumberType: Bool {
+    switch self {
+    // 数字键盘
+    case .numberPad, .numbersAndPunctuation, .phonePad, .decimalPad, .asciiCapableNumberPad: return true
+    default: return false
+    }
+  }
+}
