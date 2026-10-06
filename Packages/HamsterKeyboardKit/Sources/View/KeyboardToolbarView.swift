@@ -161,7 +161,8 @@ class KeyboardToolbarView: NibLessView {
     return button
   }()
 
-  /// 候选词出现时仍常驻右侧的三个高频工具，避免必须先退出候选再操作。
+  /// 候选词出现时仍常驻右侧的“…”入口，避免必须先退出候选再操作。
+  /// 眼睛/表情/收起这三个动作和上方功能行重复，不再在候选区重复一遍。
   lazy var candidateEyeButton: UIButton = {
     let button = UIButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
@@ -201,7 +202,7 @@ class KeyboardToolbarView: NibLessView {
   }()
 
   lazy var candidateQuickToolsBar: UIStackView = {
-    let stack = UIStackView(arrangedSubviews: [candidateEyeButton, candidateEmojiButton, candidateMoreButton, candidateDismissButton])
+    let stack = UIStackView(arrangedSubviews: [candidateMoreButton])
     stack.translatesAutoresizingMaskIntoConstraints = false
     stack.axis = .horizontal
     stack.alignment = .fill
@@ -313,6 +314,9 @@ class KeyboardToolbarView: NibLessView {
   private var panelHeightConstraint: NSLayoutConstraint!
   private var commonBarTopConstraint: NSLayoutConstraint!
   private var suggestionBarHeightConstraint: NSLayoutConstraint!
+  /// 候选栏收起时贴在功能行那一条；展开时改为吃掉功能行上方的全部高度。
+  private var candidateTopToFunctionBar: NSLayoutConstraint!
+  private var candidateTopToPanel: NSLayoutConstraint!
 
   override func activateViewConstraints() {
     // 面板覆盖层：固定在工具栏顶部，高度随展开/收起变化
@@ -322,6 +326,12 @@ class KeyboardToolbarView: NibLessView {
     commonBarTopConstraint = commonFunctionBar.topAnchor.constraint(equalTo: panelOverlayView.bottomAnchor)
 
     suggestionBarHeightConstraint = suggestionBarView.heightAnchor.constraint(equalToConstant: 0)
+
+    // 候选栏展开时，KeyboardRootView 会把整条工具栏加高（键区高度 + 工具栏高度）。
+    // 之前候选栏被钉死在功能行那一条 50pt 内，多出来的高度变成空白，所以只能看到一行。
+    candidateTopToFunctionBar = candidateBarView.topAnchor.constraint(equalTo: commonFunctionBar.topAnchor)
+    candidateTopToPanel = candidateBarView.topAnchor.constraint(equalTo: panelOverlayView.bottomAnchor)
+    candidateTopToPanel.isActive = false
 
     NSLayoutConstraint.activate([
       panelOverlayView.topAnchor.constraint(equalTo: topAnchor),
@@ -338,9 +348,9 @@ class KeyboardToolbarView: NibLessView {
       candidateQuickToolsBar.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -3),
       candidateQuickToolsBar.topAnchor.constraint(equalTo: commonFunctionBar.topAnchor),
       candidateQuickToolsBar.bottomAnchor.constraint(equalTo: commonFunctionBar.bottomAnchor),
-      candidateQuickToolsBar.widthAnchor.constraint(equalToConstant: 112),
+      candidateQuickToolsBar.widthAnchor.constraint(equalToConstant: 40),
 
-      candidateBarView.topAnchor.constraint(equalTo: commonFunctionBar.topAnchor),
+      candidateTopToFunctionBar,
       candidateBarView.bottomAnchor.constraint(equalTo: commonFunctionBar.bottomAnchor),
       candidateBarView.leadingAnchor.constraint(equalTo: leadingAnchor),
       candidateBarView.trailingAnchor.constraint(equalTo: candidateQuickToolsBar.leadingAnchor, constant: -2),
@@ -500,6 +510,19 @@ class KeyboardToolbarView: NibLessView {
   // MARK: - 状态联动
 
   func combine() {
+    // 候选栏展开/收起：切换候选栏的上边界。
+    // 收起时贴在功能行那一条；展开时从面板层下沿一直延伸，用满多出来的高度。
+    keyboardContext.$candidatesViewState
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] state in
+        guard let self else { return }
+        let expanded = !state.isCollapse()
+        self.candidateTopToFunctionBar?.isActive = !expanded
+        self.candidateTopToPanel?.isActive = expanded
+        self.layoutIfNeeded()
+      }
+      .store(in: &subscriptions)
+
     rimeContext.userInputKeyPublished
       .receive(on: DispatchQueue.main)
       .sink { [weak self] in

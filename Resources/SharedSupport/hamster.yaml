@@ -14,9 +14,11 @@ toolbar:
   # 是否开启工具栏
   enableToolbar: true
   # 显示键盘 icon 按钮
-  displayAppIconButton: false
+  # 默认开启：关闭后键盘功能行的 CLAW 入口（人物/帮你回/超会说/AI/眼睛/表情/…）会整组隐藏。
+  displayAppIconButton: true
   # 显示键盘 dissmiss 按钮
-  displayKeyboardDismissButton: false
+  # 默认开启：关闭后候选栏与功能行最右侧的收起键盘按钮会隐藏。
+  displayKeyboardDismissButton: true
   # 工具栏总高度
   heightOfToolbar: 50
   # 拼写区高度(剩余高度由候选文字占用)
