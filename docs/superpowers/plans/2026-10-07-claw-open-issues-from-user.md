@@ -465,3 +465,44 @@ if keyboardContext.useIOSNativeLayout {
 1. 渐变层的两个色值必须跟随主题与深浅色变化一起刷新，否则会和第十四节的接缝问题一样留下不同步。
 2. 渐变只负责"消除硬边"。如果下巴真实颜色与我们的近似值差得较多，接缝会从"硬线"变成"轻微色差"，不会再突兀，但也不会完全消失。
 3. 高度不要太大，8-14pt 足够；过高会让键盘底部看起来发虚。
+
+## 十五、键盘功能行按钮配色不统一
+
+用户反馈：键盘页面里「全局」和「帮你回」「超会说」这些按钮配色不一致，希望主题整体统一、观感一致。
+
+### 现状（已核实，逐个按钮的初始化取色）
+
+| 按钮 | 底色 | 文字／图标色 | 圆角 |
+|---|---|---|---|
+| 全局（人物） | `ClawPanelPalette.capsuleNormal`（=键帽色） | `ClawPanelPalette.deepBlue`（=强调色） | 15 |
+| 帮你回 | `ClawPanelPalette.capsuleSelected`（=强调色） | `ClawPanelPalette.currentColors.accentForeground` | 15 |
+| 超会说 | `ClawPanelPalette.capsuleNormal` | `ClawPanelPalette.keyLabel`（=键帽字 75% 透明） | 15 |
+| AI | `ClawGlassButton` 毛玻璃 | 底色 `ClawPanelPalette.brandBlue`（强调色） | 17 |
+| 眼睛／表情／⋯／⌄ | 透明 | `ClawPanelPalette.deepBlue` | — |
+
+问题：同一行里出现三种视觉语言——强调色实底胶囊、浅底配强调色字胶囊、浅底配半透明字胶囊，再加一个毛玻璃圆钮。
+
+另外一个具体错位：`helpReplyButton` 的强调底是在 `lazy var` 初始化时写死的（`backgroundColor = capsuleSelected`），并不是只在选中时应用；而 `updateEntryButtonStates()` 只按当前 tab 调整部分按钮。结果是面板没打开时，「帮你回」看上去也像选中态，「超会说」却是常态。
+
+### 统一方案
+
+按控件类型定三套样式，全部从 `ClawPanelPalette` 取色，并且集中在同一处应用（例如 `applyToolbarButtonStyle(_:state:)`），不再让每个按钮在初始化时各写一套：
+
+1. **胶囊按钮**（全局 / 帮你回 / 超会说）
+   - 常态：底 `keycapBase`，字 `keycapText`，圆角 15，1px 边框用 `keycapPressed`
+   - 选中：底 `accent`，字 `accentForeground`
+   - 三者尺寸、圆角、字号完全一致，只有选中态不同
+2. **圆形按钮**（AI）
+   - 常态：底 `keycapBase`，图标／字 `accent`
+   - 激活：底 `accent`，字 `accentForeground`
+   - 去掉毛玻璃与其它按钮的材质差异，或保留毛玻璃但底色统一取 `keycapBase`
+3. **图标按钮**（眼睛 / 表情 / ⋯ / ⌄）
+   - 常态：`keycapText` 75%
+   - 禁用：`keycapText` 28%
+   - 统一用同一个 `symbolConfiguration`，避免大小不一
+
+另外把「帮你回／超会说／AI」的选中态统一由 `keyboardContext.clawPanelTab` 驱动，只允许一个按钮处于选中态，避免初始化时写死造成的错位。
+
+### 依赖
+
+与第十四节同一个前提：`ClawPanelPalette` 是静态全局，只在两处同步，必须保证在读取这些颜色之前已经 `sync(with:)`，否则统一了写法也会因为取到过期主题而继续不一致。
