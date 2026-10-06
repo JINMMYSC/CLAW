@@ -332,3 +332,27 @@ navigationLinkLabel: { [unowned self] in self.enableColorSchema ? "启用" : "�
 另外 yaml 自带的两套 `solarized_dark`（昼熔月汐）与 `solarized_light`（日光熔金）是**单变体**设计——一套只管深色、一套只管浅色，和 7 套主题的双变体机制不是同一套逻辑，容易混淆。
 
 建议：对确实没有浅色变体的主题在设置页明确标注（例如「黑（仅深色）」），或者补一套真正的浅色变体；同时把 yaml 自带的单变体 schema 与内置主题在 UI 上区分开。
+
+### 3.1 用户已定：补真正的浅色变体（不改用标注方案）
+
+只改「黑」与「黑金」两套的**浅色变体**，深色变体保持原样。色值如下，可直接填入 `ClawTalkThemePresets.preset(for:)` 里对应主题的 `light:` 参数：
+
+黑（`.black`）浅色变体：
+
+- keyboardBackground `#F2F2F7`
+- keycapBase `#FFFFFF`
+- keycapPressed `#E5E5EA`
+- keycapText `#1C1C1E`
+- accent `#48484A`
+- accentForeground `#FFFFFF`
+
+黑金（`.blackGold`）浅色变体：
+
+- keyboardBackground `#FAF6EC`（暖象牙底）
+- keycapBase `#FFFFFF`
+- keycapPressed `#F0E8D8`
+- keycapText `#2A2419`
+- accent `#C9A227`（金）
+- accentForeground `#2A2419`（深字压在金底上，与深色变体的取法一致）
+
+实现注意：`KeyboardColorViewModel.applyTheme` 注入 schema 时是按 `schemaName` 先删后加（`removeAll { $0.schemaName == ... }` 再 `append`），所以**已经选过这两个主题的用户**，其配置里还留着旧的 schema 记录，需要重新选一次才会被覆盖。可以接受，也可以改成加载配置时用内置预设覆盖同名 schema。
