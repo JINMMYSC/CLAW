@@ -1211,5 +1211,253 @@ private func fallbackToSystemDictation() {
     ClawGeneratedOutputTracker.shared.markInserted(
       skillID: skillID,
       contactID: HeartTargetService.shared.selectedProfile?.id,
+      sourceText: original,
+      generatedText: text,
+      style: selectedToneStyle.rawValue
+    )
+    try? ClawMemoryStore.shared.recordFeedback(ClawEvolutionFeedback(
+      skillID: skillID,
+      contactID: HeartTargetService.shared.selectedProfile?.id,
+      action: .accepted,
+      originalText: original,
+      finalText: text
+    ))
+    _ = ClawEvolutionEngine.shared.evolveIfNeeded(skillID: skillID)
+    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    keyboardContext.clawPanelTab = -1
+  }
 
-[Showing lines 1-1213 of 1464 (50.0KB limit). Use offset=1214 to continue.]
+  private func parseReplyCandidates(_ raw: String) -> [String] {
+    let stripped = raw
+      .replacingOccurrences(of: "```json", with: "")
+      .replacingOccurrences(of: "```", with: "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    if let data = stripped.data(using: .utf8),
+       let values = try? JSONSerialization.jsonObject(with: data) as? [String] {
+      let cleaned = values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+      if !cleaned.isEmpty { return Array(cleaned.prefix(3)) }
+    }
+    let lines = stripped
+      .components(separatedBy: .newlines)
+      .map { line in
+        line.replacingOccurrences(of: #"^\s*[-*\d.、)]+\s*"#, with: "", options: .regularExpression)
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+      .filter { !$0.isEmpty }
+    return Array((lines.isEmpty ? [stripped] : lines).prefix(3))
+  }
+
+  private func showReplyCandidates(_ candidates: [String]) {
+    replyCandidatesStack.arrangedSubviews.forEach { view in
+      replyCandidatesStack.removeArrangedSubview(view)
+      view.removeFromSuperview()
+    }
+    let labels = ["自然", "有分寸", "简短"]
+    for (index, text) in candidates.enumerated() {
+      let button = UIButton(type: .system)
+      button.translatesAutoresizingMaskIntoConstraints = false
+      button.tag = index
+      button.titleLabel?.font = .systemFont(ofSize: 12)
+      button.titleLabel?.numberOfLines = 3
+      button.titleLabel?.textAlignment = .left
+      button.contentHorizontalAlignment = .leading
+      button.contentEdgeInsets = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
+      button.backgroundColor = ClawPanelPalette.inputBackground
+      button.layer.cornerRadius = 10
+      button.clipsToBounds = true
+      let label = labels.indices.contains(index) ? labels[index] : "候选"
+      button.setTitle("\(label)\n\(text)", for: .normal)
+      button.setTitleColor(ClawPanelPalette.candidateText, for: .normal)
+      button.addTarget(self, action: #selector(replyCandidateTapped(_:)), for: .touchUpInside)
+      NSLayoutConstraint.activate([
+        button.widthAnchor.constraint(equalToConstant: 172),
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 48),
+      ])
+      replyCandidatesStack.addArrangedSubview(button)
+    }
+    resultTextView.isHidden = true
+    copyButton.isHidden = true
+    suggestionStrip.isHidden = true
+    replyCandidatesHeightConstraint.constant = candidates.isEmpty ? 0 : 54
+    replyCandidatesScrollView.isHidden = candidates.isEmpty
+  }
+
+  @objc private func replyCandidateTapped(_ sender: UIButton) {
+    guard currentReplyCandidates.indices.contains(sender.tag) else { return }
+    acceptGeneratedText(currentReplyCandidates[sender.tag])
+  }
+
+  // MARK: - 聊天对象
+
+  private func refreshHeartTargetMenu() {
+    let profiles = HeartTargetService.shared.profiles
+    let profile = HeartTargetService.shared.selectedProfile
+    let selected = profile?.displayName ?? "全局"
+    let pack = ClawContextBuilder.shared.build(contactID: profile?.id, includeTasks: false)
+    let memoryCount = pack.globalMemories.count + pack.contactMemories.count
+    let contextText = ClawMemoryPolicyService.shared.temporaryMode
+      ? "临时模式"
+      : "🧠\(memoryCount) · 💬\(pack.recentConversation.count)"
+    heartTargetButton.setTitle("👤 \(selected) · \(contextText)", for: .normal)
+
+    var actions: [UIAction] = [
+      UIAction(title: "全局（不混联系人）", state: HeartTargetService.shared.selectedProfile == nil ? .on : .off) { _ in
+        HeartTargetService.shared.clearSelection()
+        self.refreshHeartTargetMenu()
+      },
+    ]
+    actions.append(contentsOf: profiles.enumerated().map { index, profile in
+      UIAction(title: profile.displayName, state: index == HeartTargetService.shared.selectedIndex ? .on : .off) { _ in
+        HeartTargetService.shared.select(at: index)
+        self.refreshHeartTargetMenu()
+      }
+    })
+    heartTargetButton.menu = UIMenu(children: actions)
+  }
+}
+
+// MARK: - UITextViewDelegate（键盘按键直输 + 建议触发）
+
+extension ClawPanelOverlayView: UITextViewDelegate {
+  public func textViewDidBeginEditing(_ textView: UITextView) {
+    keyboardContext.clawPanelInputActive = true
+    ClawPanelInputBridge.shared.panelInsert = { [weak self] text in
+      self?.appendTextToInput(text)
+    }
+    ClawPanelInputBridge.shared.panelDelete = { [weak self] in
+      self?.deleteLastCharFromInput()
+    }
+  }
+
+  public func textViewDidEndEditing(_ textView: UITextView) {
+    keyboardContext.clawPanelInputActive = false
+    ClawPanelInputBridge.shared.panelInsert = nil
+    ClawPanelInputBridge.shared.panelDelete = nil
+  }
+
+  public func textViewDidChange(_ textView: UITextView) {
+    ClawSuggestionEngine.shared.feed(textView.text)
+  }
+}
+
+// MARK: - PHPickerViewControllerDelegate（上传聊天截图）
+
+extension ClawPanelOverlayView: PHPickerViewControllerDelegate {
+  public func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+    picker.dismiss(animated: true)
+    guard !results.isEmpty else { return }
+    showResultMessage("正在识别 1/\(results.count)…")
+    processScreenshotResults(results, index: 0, transcripts: [], insertedTotal: 0)
+  }
+
+  private func processScreenshotResults(
+    _ results: [PHPickerResult],
+    index: Int,
+    transcripts: [String],
+    insertedTotal: Int
+  ) {
+    guard index < results.count else {
+      let combined = transcripts
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .joined(separator: "\n")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      refreshHeartTargetMenu()
+      guard !combined.isEmpty else {
+        showResultMessage("这些截图没有识别到可用聊天文字")
+        return
+      }
+      inputTextView.text = combined
+      ClawSuggestionEngine.shared.feed(combined)
+      showResultMessage("已归档 \(insertedTotal) 条聊天记录，正在生成回复…")
+      runAnalysis(text: combined)
+      return
+    }
+
+    let provider = results[index].itemProvider
+    guard provider.canLoadObject(ofClass: UIImage.self) else {
+      processScreenshotResults(results, index: index + 1, transcripts: transcripts, insertedTotal: insertedTotal)
+      return
+    }
+    provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
+      guard let self else { return }
+      guard let image = object as? UIImage else {
+        DispatchQueue.main.async {
+          self.processScreenshotResults(
+            results,
+            index: index + 1,
+            transcripts: transcripts,
+            insertedTotal: insertedTotal
+          )
+        }
+        return
+      }
+      let sourceRef = image.jpegData(compressionQuality: 0.88)
+        .flatMap { ClawScreenshotEvidenceStore.shared.saveJPEG($0) }
+        ?? "screenshot:\(UUID().uuidString)"
+      VisionOCRService.shared.recognizeLines(in: image) { result in
+        DispatchQueue.main.async {
+          switch result {
+          case .success(let lines):
+            let selected = HeartTargetService.shared.selectedProfile
+            let firstPass = ClawScreenshotChatParser.shared.parse(
+              lines: lines,
+              contactID: selected?.id,
+              contactName: selected?.displayName,
+              sourceRef: sourceRef
+            )
+            let resolution = ClawContactIdentityResolver.shared.resolve(
+              displayTitle: firstPass.detectedTitle,
+              allowCreate: true
+            )
+            let profile = resolution.profile ?? selected
+            if let profile { HeartTargetService.shared.select(id: profile.id) }
+            let parsed = ClawScreenshotChatParser.shared.parse(
+              lines: lines,
+              contactID: profile?.id,
+              contactName: profile?.displayName,
+              sourceRef: sourceRef
+            )
+            var inserted = 0
+            for message in parsed.messages {
+              if (try? ClawMemoryStore.shared.appendConversation(message)) == true {
+                inserted += 1
+                ClawSecretaryExtractor.shared.persistExtractedTasks(from: message)
+              }
+            }
+            if inserted > 0, let profileID = profile?.id {
+              ClawContactProfileLearner.shared.refreshIfNeeded(profileID: profileID)
+            }
+            let transcript = parsed.messages.map { message -> String in
+              let speaker: String
+              switch message.speaker {
+              case .me: speaker = "我"
+              case .other: speaker = message.senderName ?? profile?.displayName ?? "对方"
+              case .assistant: speaker = "CLAW"
+              case .system: speaker = "系统"
+              case .unknown: speaker = message.senderName ?? "未知"
+              }
+              return "\(speaker)：\(message.content)"
+            }.joined(separator: "\n")
+            var next = transcripts
+            let text = transcript.isEmpty ? parsed.rawText : transcript
+            if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { next.append(text) }
+            self.showResultMessage("正在识别 \(min(index + 2, results.count))/\(results.count)…")
+            self.processScreenshotResults(
+              results,
+              index: index + 1,
+              transcripts: next,
+              insertedTotal: insertedTotal + inserted
+            )
+          case .failure:
+            self.processScreenshotResults(
+              results,
+              index: index + 1,
+              transcripts: transcripts,
+              insertedTotal: insertedTotal
+            )
+          }
+        }
+      }
+    }
+  }
+}
