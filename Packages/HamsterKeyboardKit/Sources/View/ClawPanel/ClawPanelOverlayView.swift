@@ -101,6 +101,8 @@ public final class ClawPanelOverlayView: UIView {
   private var currentReplyCandidates: [String] = []
   private var lastAnalysisInput = ""
   private var currentExperimentVariantID: String?
+  /// 每次分析的请求标识，用于丢弃被替换或已关闭面板的过期结果。
+  private var currentAnalysisRequestID = UUID()
 
   // 实时建议条（右侧空余区域）
   private let suggestionStrip = ClawSuggestionStripView()
@@ -1129,15 +1131,27 @@ private func handOffToHostVoiceInput() {
 
   /// AI 分析（帮你回 / 超会说），统一注入 Memory Core 检索出的相关上下文。
   private func runAnalysis(text: String, isRegeneration: Bool = false) {
+    // 准备阶段要查 Memory / Skill / Keychain，全部放到后台执行，
+    // 主线程只负责立刻给出加载反馈、发起网络请求和渲染结果。
+    let requestID = UUID()
+    currentAnalysisRequestID = requestID
+
+    let panelTab = keyboardContext.clawPanelTab
+    let isHelpTab = panelTab == PanelTab.helpReply.rawValue
+    let skillID = isHelpTab ? "reply" : "rewrite"
+    let trigger: ClawSkillTrigger = isHelpTab ? .keyboardHelpReply : .keyboardRewrite
+    let contactID = HeartTargetService.shared.selectedProfile?.id
+    let contactName = HeartTargetService.shared.selectedProfile?.displayName
+    let memoryContext = HeartTargetService.shared.selectedProfile?.memoryContext ?? ""
+    let styleInstruction = selectedToneStyle.instruction
     let previousExperimentVariantID = currentExperimentVariantID
-    if isRegeneration {
-      let skillID = keyboardContext.clawPanelTab == PanelTab.helpReply.rawValue ? "reply" : "rewrite"
-      ClawSkillRuntime.shared.recordExperimentFeedback(
-        skillID: skillID,
-        variantID: previousExperimentVariantID,
-        action: .regenerated
-      )
-    }
+    let fallbackPrompt = isHelpTab
+      ? "你是 CLAW 的帮你回 Skill。根据当前聊天内容、聊天对象关系和用户自己的表达习惯生成可直接发送的回复。"
+      : "你是 CLAW 的超会说 Skill。保留用户原意，把这句话改得更自然、更有分寸、更像用户本人会说的话。"
+    let formatInstruction = isHelpTab
+      ? "\n本次输出格式要求：恰好 3 条候选，分别偏自然、有分寸、简短；严格只返回 JSON 字符串数组，不要 Markdown、编号或解释。"
+      : "\n不要解释，不要加标题，只输出可直接替换原文的最终版本。"
+
     lastAnalysisInput = text
     isLoading = true
     currentReplyCandidates = []
@@ -1147,66 +1161,68 @@ private func handOffToHostVoiceInput() {
     copyButton.isHidden = true
     actionButton.isEnabled = false
 
-    let panelTab = keyboardContext.clawPanelTab
-    let profile = HeartTargetService.shared.selectedProfile
-    let skillID = panelTab == PanelTab.helpReply.rawValue ? "reply" : "rewrite"
-    let trigger: ClawSkillTrigger = panelTab == PanelTab.helpReply.rawValue ? .keyboardHelpReply : .keyboardRewrite
-    let invocation = try? ClawSkillRuntime.shared.prepare(
-      skillID: skillID,
-      trigger: trigger,
-      input: text,
-      contactID: profile?.id
-    )
-    currentExperimentVariantID = invocation?.experimentVariantID
-    var systemPrompt = invocation?.systemPrompt ?? (panelTab == PanelTab.helpReply.rawValue
-      ? "你是 CLAW 的帮你回 Skill。根据当前聊天内容、聊天对象关系和用户自己的表达习惯生成可直接发送的回复。"
-      : "你是 CLAW 的超会说 Skill。保留用户原意，把这句话改得更自然、更有分寸、更像用户本人会说的话。")
-    systemPrompt += "\n当前风格要求：\(selectedToneStyle.instruction)"
-    if panelTab == PanelTab.helpReply.rawValue {
-      systemPrompt += "\n本次输出格式要求：恰好 3 条候选，分别偏自然、有分寸、简短；严格只返回 JSON 字符串数组，不要 Markdown、编号或解释。"
-    } else {
-      systemPrompt += "\n不要解释，不要加标题，只输出可直接替换原文的最终版本。"
-    }
-    if let profile, !profile.memoryContext.isEmpty {
-      systemPrompt += "\n当前聊天对象：\(profile.displayName)\n\(profile.memoryContext)"
-    }
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      if isRegeneration {
+        ClawSkillRuntime.shared.recordExperimentFeedback(
+          skillID: skillID,
+          variantID: previousExperimentVariantID,
+          action: .regenerated
+        )
+      }
+      let invocation = try? ClawSkillRuntime.shared.prepare(
+        skillID: skillID,
+        trigger: trigger,
+        input: text,
+        contactID: contactID
+      )
+      var systemPrompt = invocation?.systemPrompt ?? fallbackPrompt
+      systemPrompt += "\n当前风格要求：\(styleInstruction)"
+      systemPrompt += formatInstruction
+      if let contactName, !memoryContext.isEmpty {
+        systemPrompt += "\n当前聊天对象：\(contactName)\n\(memoryContext)"
+      }
+      let requestConfiguration = AIService.shared.currentRequestConfiguration
 
-    let requestConfiguration = AIService.shared.currentRequestConfiguration
-    AIService.shared.chat(
-      messages: [
-        AIMessage(role: "system", content: systemPrompt),
-        AIMessage(role: "user", content: text),
-      ],
-      configuration: requestConfiguration
-    ) { [weak self] result in
-      guard let self else { return }
-      self.isLoading = false
-      self.actionButton.isEnabled = true
-      switch result {
-      case .success(let reply):
-        let cleaned = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-        if panelTab == PanelTab.helpReply.rawValue {
-          let candidates = self.parseReplyCandidates(cleaned)
-          self.currentReplyCandidates = candidates
-          self.showReplyCandidates(candidates)
-        } else {
-          self.resultTextView.text = cleaned
-          self.resultTextView.isHidden = false
-          self.copyButton.isHidden = false
-          self.replyCandidatesScrollView.isHidden = true
+      DispatchQueue.main.async {
+        guard let self, self.currentAnalysisRequestID == requestID else { return }
+        self.currentExperimentVariantID = invocation?.experimentVariantID
+        AIService.shared.chat(
+          messages: [
+            AIMessage(role: "system", content: systemPrompt),
+            AIMessage(role: "user", content: text),
+          ],
+          configuration: requestConfiguration
+        ) { [weak self] result in
+          guard let self, self.currentAnalysisRequestID == requestID else { return }
+          self.isLoading = false
+          self.actionButton.isEnabled = true
+          switch result {
+          case .success(let reply):
+            let cleaned = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+            if isHelpTab {
+              let candidates = self.parseReplyCandidates(cleaned)
+              self.currentReplyCandidates = candidates
+              self.showReplyCandidates(candidates)
+            } else {
+              self.resultTextView.text = cleaned
+              self.resultTextView.isHidden = false
+              self.copyButton.isHidden = false
+              self.replyCandidatesScrollView.isHidden = true
+            }
+            self.actionButton.setTitle("换一批", for: .normal)
+            if isRegeneration {
+              try? ClawMemoryStore.shared.recordFeedback(ClawEvolutionFeedback(
+                skillID: skillID,
+                contactID: contactID,
+                action: .regenerated,
+                originalText: text,
+                finalText: cleaned
+              ))
+            }
+          case .failure(let error):
+            self.resultTextView.text = "分析失败：\(error.localizedDescription)"
+          }
         }
-        self.actionButton.setTitle("换一批", for: .normal)
-        if isRegeneration {
-          try? ClawMemoryStore.shared.recordFeedback(ClawEvolutionFeedback(
-            skillID: skillID,
-            contactID: profile?.id,
-            action: .regenerated,
-            originalText: text,
-            finalText: cleaned
-          ))
-        }
-      case .failure(let error):
-        self.resultTextView.text = "分析失败：\(error.localizedDescription)"
       }
     }
   }
