@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import HamsterKit
 import Speech
 
 public enum ClawVoiceLanguageMode: String, CaseIterable {
