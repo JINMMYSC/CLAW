@@ -536,3 +536,37 @@ if keyboardContext.useIOSNativeLayout {
 两者叠加，就是之前记录过的"选了还是上一版"那类错位。所以必须加一次迁移：加载配置时把 `clawtalk_white` 与 `clawtalk_black` 都改写成 `clawtalk_minimal`，并用新预设覆盖同名 schema，然后回写配置。
 
 同时建议顺手做第十三节 3.1 提到的通用做法：加载配置时用内置预设覆盖同名 schema，避免以后再改主题色值出现同类问题。
+
+## 十七、每日洞察点闪电按钮没反应
+
+用户反馈：每日洞察页面右上角的闪电按钮（立即触发）点了没有反应。
+
+### 触发链
+
+`AutoInsightRootView` 的工具栏按钮 → `AutoInsightViewModel.triggerNow()`（置 `isRunning = true`，跑完 `reload()` 后置回 false）→ `AutoInsightService.runNow()` → `run()`。
+
+注意 `runNow()` **不检查** `isEnabled`，也**不受** `intervalMinutes` 限制，只检查 API Key。所以开关没开、或距上次运行不足 24 小时，都不是原因。
+
+### 两处会静默返回的地方（这就是"没反应"的来源）
+
+1. `runNow()` 开头：`guard !AIService.shared.apiKey(for: provider).isEmpty else` → **没有 API Key 就直接 return**，只在 `LogService` 写一行 error，界面上没有任何提示。
+2. `run()` 开头：`guard !clawTalkText.isEmpty || !clipboardText.isEmpty else` → **两路数据都为空就直接 return**，同样只写日志。
+
+数据来源与判定条件：
+
+- 输入记录取自 `ClawTalkDataService.entries`，要求 `startTime >= since`（`since` 默认回溯 `intervalMinutes`，即 24 小时）且 `isMeaningful`。
+- 剪贴板部分取决于 `ClipboardMonitorService.isEnabled`，没开监听就没有这部分数据。
+- 所以"最近 24 小时基本没用键盘打字"或"开着隐私模式不采集"都会命中第二个 guard。
+
+### 一个现场判断方法
+
+如果两路 AI 请求发出去了但失败，`run()` 仍会保存一条结果，内容写成「（分析失败，请检查 API Key 配置）」，并出现在列表里。
+
+所以：**看列表有没有新增条目**。有新增（哪怕内容是失败提示）说明卡在 AI 调用；连一条都没多，说明卡在上面两个 guard 之一。
+
+### 建议修法
+
+1. `runNow()` 改成返回结果枚举，例如 `.success` / `.noAPIKey(provider)` / `.noData` / `.failed(message)`；`triggerNow()` 拿到后在界面上给出提示，而不是只写日志。
+2. 文案分开：没 Key 提示"请先在每日洞察设置里选择提供商并填入 API Key"；没数据提示"最近 24 小时没有可分析的输入记录"。
+3. 手动触发（闪电）语义上是"我现在就要看结果"，建议放宽数据窗口——例如手动触发回溯 7 天，或至少在有数据但都超出 24 小时时给出明确说明，而不是静默返回。
+4. `isRunning` 期间已经有了 ProgressView，但 guard 路径返回太快几乎看不到；配合上面的提示即可。
