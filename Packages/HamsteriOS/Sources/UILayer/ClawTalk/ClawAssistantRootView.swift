@@ -666,14 +666,16 @@ private struct ClawContactEditorView: View {
         TextField("备注名 / 昵称，多个用逗号分隔", text: $aliases)
         Toggle("这是群聊", isOn: $isGroup)
       }
-      Section("你的备注") {
+      Section {
         TextEditor(text: $bio)
           .frame(minHeight: 110)
+      } header: {
+        Text("你的备注")
       } footer: {
         Text("AI 自动形成的互动画像会与这里的手工备注分开保存，不会覆盖你的文字。")
       }
       if let image = original.avatarImage {
-        Section("当前头像") {
+        Section {
           HStack {
             Spacer()
             Image(uiImage: image)
@@ -683,6 +685,8 @@ private struct ClawContactEditorView: View {
               .clipShape(Circle())
             Spacer()
           }
+        } header: {
+          Text("当前头像")
         } footer: {
           Text("头像更换仍可在设置 → 聊天对象档案中完成；这里不会丢失现有头像。")
         }
