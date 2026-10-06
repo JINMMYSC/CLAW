@@ -415,3 +415,20 @@ if keyboardContext.useIOSNativeLayout {
 
 1. 现在「iOS 原生布局」是开还是关——两条路径的修法不同。
 2. 断层位置是候选栏／功能行与键盘之间，还是最后一排按键下面那条细缝。
+
+### 用户已澄清：关掉 iOS 原生布局时，是"按键缝隙的底色"
+
+所以问题是：按键之间的缝隙显示的颜色，和底部那条不一致。
+
+缝隙的颜色来自哪里（已核实）：
+
+- `StanderSystemKeyboard.setupAppearance()` 里是 `backgroundColor = .clear`，键盘本体透明。
+- 因此缝隙显示的是它背后的 `KeyboardRootView` 背景，而它取自 `appearance.backgroundStyle.backgroundColor`，也就是主题的 `backColor`。
+- 底部那条则由控制器另设：`KeyboardInputViewController.syncKeyboardBackgroundColor()` 会把 `view.backgroundColor` 与 `inputView?.backgroundColor` 设成同一个底色。
+
+两处各设一次，就是断层能出现的原因。最可能的两种情形：
+
+1. **主题切换后没有重新调用 `syncKeyboardBackgroundColor()`**。控制器 `view` / `inputView` 还是旧色，而键盘根视图已经用了新主题色——缝隙是新色、下巴是旧色。
+2. **`ClawPanelPalette` 这个静态全局晚一拍**。它的 `activeTheme` 只在 `KeyboardToolbarView.setupAppearance()` 与 `ClawPanelOverlayView.refresh(for:)` 两处被同步（另外 `hamsterColor()` 会顺手更新它），而 `KeyboardToolbarView` 是直接读 `ClawPanelPalette.toolbarBackground` 的。若工具栏先构建、配置后到，工具栏与候选栏就会停在系统色，而键盘本体已是主题色。
+
+补充修法（在第十四节通用方案之外）：主题或深浅色变化时，要同时做三件事——刷新 `ClawPanelPalette.sync(with:)`、重新调用 `syncKeyboardBackgroundColor()`、并让根视图重跑一次 `setupAppearance()`。只做其中一件仍会留下接缝。
