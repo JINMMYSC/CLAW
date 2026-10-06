@@ -108,12 +108,9 @@ public final class ClawVoiceInputService: NSObject {
   }
 
   /// 开始录音；停止后通过 completion 返回最终识别文本
+  /// 键盘扩展同样走这条路：前提是主程序已经授权麦克风与语音识别，
+  /// 并且键盘已开启「允许完全访问」。扩展里不能弹权限框，所以授权必须在主程序完成。
   public func start(completion: @escaping (Result<String, Error>) -> Void) {
-    guard !isKeyboardExtensionRuntime else {
-      completion(.failure(ClawVoiceError.keyboardExtensionUnsupported))
-      return
-    }
-
     let generation = resetForNewSession()
     guard let recognizer = makeRecognizer(), recognizer.isAvailable else {
       completion(.failure(ClawVoiceError.recognizerUnavailable))
@@ -174,11 +171,6 @@ public final class ClawVoiceInputService: NSObject {
     onSegment: @escaping (String) -> Void,
     onError: @escaping (Error) -> Void
   ) {
-    guard !isKeyboardExtensionRuntime else {
-      onError(ClawVoiceError.keyboardExtensionUnsupported)
-      return
-    }
-
     let generation = resetForNewSession()
     streamingPartial = onPartial
     streamingSegment = onSegment

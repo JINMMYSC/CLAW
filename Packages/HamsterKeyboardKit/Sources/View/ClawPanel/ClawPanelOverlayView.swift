@@ -879,23 +879,8 @@ public final class ClawPanelOverlayView: UIView {
   Bundle.main.bundleURL.pathExtension.lowercased() == "appex"
 }
 
-/// 键盘扩展不能直接占用麦克风。这里把用户送到主 App 的语音输入模式。
-/// 不能调用 selectNextKeyboard()，那会让当前键盘消失，用户看到的就是闪退。
-private func handOffToHostVoiceInput() {
-  isMicHeld = false
-  isListening = false
-  updateMicUI(recording: false)
-  guard let url = URL(string: HamsterConstants.appURLForGuruVoiceInput) else { return }
-  if !isAITab { showResultMessage("正在打开 CLAW 语音输入…") }
-  actionHandler.handle(.release, on: .url(url, id: "openClawVoiceInput"))
-}
-
 @objc private func micTapped() {
   guard !isCallActive else { return }
-  if isKeyboardExtensionRuntime {
-    handOffToHostVoiceInput()
-    return
-  }
   if isListening {
     isMicHeld = false
     ClawVoiceInputService.shared.stop()
@@ -911,10 +896,6 @@ private func handOffToHostVoiceInput() {
     switch sender.state {
     case .began:
       guard !isListening, !isCallActive else { return }
-      if isKeyboardExtensionRuntime {
-        handOffToHostVoiceInput()
-        return
-      }
       isMicHeld = true
       startVoiceInput()
     case .ended, .cancelled, .failed:
@@ -929,13 +910,10 @@ private func handOffToHostVoiceInput() {
     }
   }
 
-  /// 语音输入：按住说话 → STT（zh-Hans）转文字填入输入框
-  /// 权限只在主程序申请；键盘扩展只读状态，避免系统权限框在扩展进程闪退
+  /// 语音输入：按住说话 → STT 转文字填入输入框。
+  /// 键盘扩展里同样直接录音，但麦克风与语音识别权限必须已经在主程序授权过
+  /// （扩展不能弹权限框，所以这里只读状态、不主动申请）。
   private func startVoiceInput() {
-    if isKeyboardExtensionRuntime {
-      handOffToHostVoiceInput()
-      return
-    }
     switch ClawVoiceInputService.shared.authorizationStatus {
     case .denied:
       isMicHeld = false
@@ -992,14 +970,6 @@ private func handOffToHostVoiceInput() {
 
   private func startCall() {
     guard !isCallActive else { return }
-    if isKeyboardExtensionRuntime {
-      guard let url = URL(string: HamsterConstants.appURLForGuruVoice) else { return }
-      // 这里不能先收起面板：跳转失败时用户只会看到面板闪一下，
-      // 误以为闪退。保留面板并给出提示，失败时由键盘控制器统一反馈。
-      if !isAITab { showResultMessage("正在打开 CLAW 语音通话…") }
-      actionHandler.handle(.release, on: .url(url, id: "openClawVoiceCall"))
-      return
-    }
     switch ClawVoiceInputService.shared.authorizationStatus {
     case .denied:
       ClawChatService.shared.postAssistant("麦克风/语音识别权限未开启，请到 ClawTalk 主程序或系统设置中开启")
