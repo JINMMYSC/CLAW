@@ -43,10 +43,22 @@ public final class ClawSecureStore {
 
   public var sharedAccessGroup: String? {
     guard
-      let value = Bundle.main.object(forInfoDictionaryKey: "ClawKeychainAccessGroup") as? String,
-      !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      let profileURL = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+      let profileData = try? Data(contentsOf: profileURL),
+      let start = profileData.range(of: Data("<?xml".utf8)),
+      let end = profileData.range(of: Data("</plist>".utf8), in: start.lowerBound..<profileData.endIndex)
     else { return nil }
-    return value
+
+    let plistData = profileData.subdata(in: start.lowerBound..<end.upperBound)
+    guard
+      let root = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any],
+      let entitlements = root["Entitlements"] as? [String: Any],
+      let applicationIdentifier = entitlements["application-identifier"] as? String,
+      let prefix = applicationIdentifier.split(separator: ".", maxSplits: 1).first,
+      !prefix.isEmpty
+    else { return nil }
+
+    return "\(prefix).\(HamsterConstants.appGroupName)"
   }
 
   private func baseQuery(account: String) -> [String: Any] {
