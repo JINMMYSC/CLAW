@@ -53,8 +53,9 @@ public struct MemoryPromotionEngine {
 
   public func evaluate(_ record: MemoryV2Record, observationCount: Int, distinctSourceCount: Int) -> MemoryV2Record {
     var result = record
+    let explicit = record.provenance.originType == .userExplicit || record.provenance.originType == .userCorrection
     if record.state == .candidate,
-       (record.provenance.originType.canAutoConfirm || (observationCount >= 3 && distinctSourceCount >= 2)) {
+       (explicit || (observationCount >= 3 && distinctSourceCount >= 2)) {
       result.state = .active
       result.updatedAt = Date()
     }
@@ -77,10 +78,10 @@ public struct MemoryConflictResolver {
   public init() {}
 
   public func resolve(existing: MemoryV2Record, incoming: MemoryV2Record) -> MemoryConflictResolution {
-    if existing.provenance.originType == .userCorrection || existing.provenance.trustLevel > incoming.provenance.trustLevel {
+    if existing.provenance.originType == .userCorrection || existing.provenance.trustLevel >= incoming.provenance.trustLevel + 40 {
       return .keepExisting
     }
-    if incoming.provenance.originType == .userCorrection || incoming.provenance.trustLevel > existing.provenance.trustLevel + 20 {
+    if incoming.provenance.originType == .userCorrection || incoming.provenance.trustLevel >= existing.provenance.trustLevel + 40 {
       return .acceptIncoming
     }
     return .needsReview(MemoryConflict(existingMemoryID: existing.id, incomingMemoryID: incoming.id))
@@ -111,3 +112,4 @@ public final class MemoryForgetEngine {
     try store.saveMemoryAudit(MemoryAuditRecord(memoryID: before.id, runID: audit.runID, kind: .rollback, before: audit.after, after: before))
   }
 }
+

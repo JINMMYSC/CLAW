@@ -110,7 +110,7 @@ final class ClawResetServiceTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = ClawMemoryStore(databaseURL: root.appendingPathComponent("memory.sqlite"))
     try store.upsertMemory(ClawMemoryItem(kind: .fact, content: "private", sourceType: "test"))
-    try store.appendConversation(ClawConversationMessage(speaker: .me, content: "hello", sourceType: "test"))
+    try store.appendConversation(ClawConversationMessage(contactID: nil, speaker: .me, content: "hello", sourceType: "test"))
     try store.upsertTask(ClawSecretaryTask(title: "todo", sourceType: "test"))
     try store.saveSkill(ClawSkillDefinition(
       id: "custom-reset-test",
@@ -142,3 +142,4 @@ private final class ResetState {
   var inputSchemas = ["custom.schema.yaml"]
   var events: [String] = []
 }
+

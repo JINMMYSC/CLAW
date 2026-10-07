@@ -82,6 +82,7 @@ private struct ClawAssistantChatView: View {
     defaults: UserDefaults(suiteName: HamsterConstants.appGroupName) ?? .standard
   ).prompts
   @State private var voiceGesture = ClawVoiceGestureState()
+  @State private var discardVoiceResult = false
 
   private var displayedMessages: [ClawChatMessage] {
     ClawConversationPresentation.search(chat.messages, query: searchText)
@@ -415,11 +416,12 @@ private struct ClawAssistantChatView: View {
   private func beginHoldVoice() {
     if callActive { stopHandsFreeCall() }
     voiceGesture.begin()
+    discardVoiceResult = false
     withVoiceAuthorization {
       recording = true
       ClawVoiceInputService.shared.start { result in
         recording = false
-        guard !voiceGesture.willCancel else { voiceHint = ""; return }
+        guard !discardVoiceResult else { discardVoiceResult = false; voiceHint = ""; return }
         switch result {
         case .success(let text): voiceHint = ""; send(text)
         case .failure(let error): voiceHint = "语音识别失败：\(error.localizedDescription)"
@@ -430,6 +432,7 @@ private struct ClawAssistantChatView: View {
 
   private func finishHoldVoice() {
     let outcome = voiceGesture.finish()
+    discardVoiceResult = outcome == .cancel
     ClawVoiceInputService.shared.stop()
     recording = false
     if outcome == .cancel { voiceHint = "已取消" } else { voiceHint = "正在完成识别…" }
@@ -2042,3 +2045,4 @@ private struct ClawMemoryDocumentPicker: UIViewControllerRepresentable {
     }
   }
 }
+
