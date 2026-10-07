@@ -145,3 +145,19 @@
 - **重新生成**：保留最后一条 user 消息，删掉其后的 assistant 消息再重发即可；要注意 `saveHistory()` 的落盘时机。
 - **搜索**：`ClawChatService.messages` 是内存 + 持久化数组，当前上下文的搜索直接过滤 `content` 就行；若要跨人物搜索，需要遍历各 `historyKey(for:)` 对应的持久化数据。
 - **可追溯**：`ClawContextBuilder.build` 已经返回 `ClawContextPack`（含 globalMemories／contactMemories／recentConversation／openTasks），但目前没人记录"本次用了哪些"。需要把这份摘要随回答一起落盘——给消息加一个可选的 trace 字段，或单独存一份 trace 记录。
+
+## 十一、今日页优化（用户已选）
+
+页面实现：`Packages/HamsteriOS/Sources/UILayer/ClawTalk/ClawAssistantRootView.swift` 里的 `ClawSecretaryTodayView`（导航标题「今日秘书」）。
+
+1. **可自定义延后**：现在只有「完成」和「明天再提醒」。补上 1 小时 / 今晚 / 明天 / 下周一等选项。
+2. **手动新增任务**：目前任务只能等 AI 从聊天里提取，用户自己想加一件事没有入口，需要补一个「+」。
+3. **按状态分组**：改成「已逾期 / 今天到期 / 等待他人 / 无期限」四组，替代现在的一长条列表。
+4. **提醒策略入口**：静默时段与优先级策略在这一页给出设置入口。
+
+## 十二、人物页补充（用户已选，另有先前列出的批次）
+
+除第一份文档第八节已列出的（合并/拆分、拼音搜索、分组筛选、详情就地编辑、行内按钮收起、删除确认、头像统一）之外，本轮再补两条：
+
+1. **详情页显示「这个人身上还没完成的事」**：现在详情只有画像、长期记忆和聊天时间线，缺任务。数据可从 `ClawMemoryStore.shared.tasks(status: .open)` 里按 `contactID` 过滤后取用，与今日页共用同一份数据源。
+2. **列表按最近互动排序**：`HeartTargetProfile.lastSeenAt` 字段已经存在，但目前列表没有用它排序，看不出谁最近联系过、谁很久没联系。
