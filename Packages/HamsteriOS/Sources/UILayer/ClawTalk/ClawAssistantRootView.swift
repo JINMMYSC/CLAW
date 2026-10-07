@@ -976,6 +976,15 @@ private struct ClawAllMemoriesView: View {
           return
         }
         vaultRefreshVersion &+= 1
+        if let editingMemory,
+           !ClawMemoryVaultAccess.canOpen(
+             editingMemory,
+             protectedIDs: ClawPrivacyVaultService.shared.protectedMemoryIDs,
+             isUnlocked: ClawPrivacyVaultService.shared.isUnlocked
+           ) {
+          self.editingMemory = nil
+          status = "隐私保险箱已自动锁定。"
+        }
       }
     }
     .sheet(item: $editingMemory) { item in
@@ -1006,7 +1015,11 @@ private struct ClawAllMemoriesView: View {
   }
 
   private func open(_ item: ClawMemoryItem) {
-    if !ClawPrivacyVaultService.shared.isProtected(item) || ClawPrivacyVaultService.shared.isUnlocked {
+    if ClawMemoryVaultAccess.canOpen(
+      item,
+      protectedIDs: ClawPrivacyVaultService.shared.protectedMemoryIDs,
+      isUnlocked: ClawPrivacyVaultService.shared.isUnlocked
+    ) {
       editingMemory = item
     } else {
       status = "这条记忆在隐私保险箱中，请先回到记忆中心解锁。"
@@ -1030,6 +1043,8 @@ private struct ClawAllMemoriesView: View {
 private struct ClawMemoryCenterView: View {
   @State private var memories: [ClawMemoryItem] = []
   @State private var memoryCount = 0
+  @State private var protectedMemoryCount = 0
+  @State private var availableSourceTypes: [String] = []
   @State private var skills: [ClawSkillDefinition] = []
   @State private var editingMemory: ClawMemoryItem?
   @State private var showingImporter = false
@@ -1073,7 +1088,7 @@ private struct ClawMemoryCenterView: View {
           HStack {
             Label("隐私保险箱", systemImage: vaultUnlocked ? "lock.open.fill" : "lock.fill")
             Spacer()
-            Text("\(memories.filter { ClawPrivacyVaultService.shared.isProtected($0) }.count)")
+            Text("\(protectedMemoryCount)")
               .foregroundColor(.secondary)
           }
           if memories.isEmpty { Text("新的长期记忆会保留来源、范围和置信度。").font(.caption).foregroundColor(.secondary) }
@@ -1122,7 +1137,11 @@ private struct ClawMemoryCenterView: View {
         Section {
           ForEach(memories.prefix(30)) { item in
             Button {
-              if !ClawPrivacyVaultService.shared.isProtected(item) || vaultUnlocked {
+              if ClawMemoryVaultAccess.canOpen(
+                item,
+                protectedIDs: ClawPrivacyVaultService.shared.protectedMemoryIDs,
+                isUnlocked: ClawPrivacyVaultService.shared.isUnlocked
+              ) {
                 editingMemory = item
               } else {
                 status = "这条记忆在隐私保险箱中，请先解锁。"
@@ -1323,6 +1342,15 @@ private struct ClawMemoryCenterView: View {
               return
             }
             vaultRefreshVersion &+= 1
+            if let editingMemory,
+               !ClawMemoryVaultAccess.canOpen(
+                 editingMemory,
+                 protectedIDs: ClawPrivacyVaultService.shared.protectedMemoryIDs,
+                 isUnlocked: ClawPrivacyVaultService.shared.isUnlocked
+               ) {
+              self.editingMemory = nil
+              status = "隐私保险箱已自动锁定。"
+            }
           }
         }
         .sheet(item: $editingMemory) { item in
@@ -1356,6 +1384,10 @@ private struct ClawMemoryCenterView: View {
   private func reload() {
     memories = (try? ClawMemoryStore.shared.memories(limit: 30)) ?? []
     memoryCount = (try? ClawMemoryStore.shared.memoryCount()) ?? memories.count
+    protectedMemoryCount = (try? ClawMemoryStore.shared.activeMemoryCount(
+      ids: ClawPrivacyVaultService.shared.protectedMemoryIDs
+    )) ?? 0
+    availableSourceTypes = (try? ClawMemoryStore.shared.activeMemorySourceTypes()) ?? []
     skills = (try? ClawMemoryStore.shared.skills()) ?? []
     discoveredSkillDrafts = ClawSkillDiscoveryService.shared.discover()
     temporaryMode = ClawMemoryPolicyService.shared.temporaryMode
@@ -1363,7 +1395,7 @@ private struct ClawMemoryCenterView: View {
   }
 
   private var sourceTypes: [String] {
-    Array(Set(memories.map(\.sourceType))).sorted()
+    availableSourceTypes
   }
 
   private func commit(_ preview: ClawMemoryImportPreview) {

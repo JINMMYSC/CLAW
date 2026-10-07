@@ -62,6 +62,13 @@ final class ClawMemoryFilterTests: XCTestCase {
     )
   }
 
+  func testProtectedMemoryCanOnlyStayOpenWhileVaultIsUnlocked() {
+    let secret = memory(content: "private")
+    XCTAssertFalse(ClawMemoryVaultAccess.canOpen(secret, protectedIDs: [secret.id], isUnlocked: false))
+    XCTAssertTrue(ClawMemoryVaultAccess.canOpen(secret, protectedIDs: [secret.id], isUnlocked: true))
+    XCTAssertTrue(ClawMemoryVaultAccess.canOpen(memory(content: "public"), protectedIDs: [secret.id], isUnlocked: false))
+  }
+
   private func memory(
     kind: ClawMemoryKind = .fact,
     scope: String = "global",

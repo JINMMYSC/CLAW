@@ -29,3 +29,13 @@ enum ClawMemoryFilter {
     }
   }
 }
+
+enum ClawMemoryVaultAccess {
+  static func canOpen(
+    _ item: ClawMemoryItem,
+    protectedIDs: Set<UUID>,
+    isUnlocked: Bool
+  ) -> Bool {
+    !protectedIDs.contains(item.id) || isUnlocked
+  }
+}

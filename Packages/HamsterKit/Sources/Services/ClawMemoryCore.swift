@@ -578,6 +578,36 @@ public final class ClawMemoryStore {
     return Int(sqlite3_column_int64(statement, 0))
   }
 
+  public func activeMemoryCount(ids: Set<UUID>) throws -> Int {
+    guard !ids.isEmpty else { return 0 }
+    lock.lock(); defer { lock.unlock() }
+    let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
+    let statement = try prepare(
+      "SELECT COUNT(*) FROM memory_items WHERE status = 'active' AND id IN (\(placeholders));"
+    )
+    defer { sqlite3_finalize(statement) }
+    for (offset, id) in ids.enumerated() {
+      bindText(id.uuidString, at: Int32(offset + 1), in: statement)
+    }
+    guard sqlite3_step(statement) == SQLITE_ROW else { return 0 }
+    return Int(sqlite3_column_int64(statement, 0))
+  }
+
+  public func activeMemorySourceTypes() throws -> [String] {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare(
+      "SELECT DISTINCT source_type FROM memory_items WHERE status = 'active' ORDER BY source_type COLLATE NOCASE;"
+    )
+    defer { sqlite3_finalize(statement) }
+    var result: [String] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      if let sourceType = text(statement, 0), !sourceType.isEmpty {
+        result.append(sourceType)
+      }
+    }
+    return result
+  }
+
   private func loadMemories(scope: String?, subjectID: UUID?, limit: Int?) throws -> [ClawMemoryItem] {
     lock.lock(); defer { lock.unlock() }
     var clauses = ["status = 'active'"]

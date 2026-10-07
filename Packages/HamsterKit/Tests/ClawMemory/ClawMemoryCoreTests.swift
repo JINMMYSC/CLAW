@@ -37,6 +37,8 @@ final class ClawMemoryCoreTests: XCTestCase {
 
     XCTAssertEqual(try store.memories(scope: "global").map(\.content), ["回复偏好简短直接"])
     XCTAssertEqual(try store.memories(scope: "contact", subjectID: contact).map(\.content), ["这是一个工作客户"])
+    XCTAssertEqual(try store.activeMemoryCount(ids: [global.id, scoped.id]), 2)
+    XCTAssertEqual(try store.activeMemorySourceTypes(), ["test"])
   }
 
   func testConversationScreenshotRowsAreDeduplicatedWithinMinute() throws {
