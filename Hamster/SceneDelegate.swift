@@ -7,6 +7,7 @@
 
 import HamsteriOS
 import HamsterKit
+import CoreSpotlight
 import UIKit
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
@@ -112,6 +113,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
     }
   }
 
+  func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+    guard userActivity.activityType == CSSearchableItemActionType,
+          userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String != nil else { return }
+    HamsterAppDependencyContainer.shared.mainViewModel.navigation(.clawTalk)
+  }
+
   /// 程序已启动下，通过 quick action 打开
   func windowScene(_ windowScene: UIWindowScene, performActionFor shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
     guard let window = window else { return }
@@ -155,7 +162,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
 
   func sceneDidEnterBackground(_ scene: UIScene) {
     // Called as the scene transitions from the foreground to the background.
-    // Use this method to save data, release shared resources, and store enough scene-specific state information
-    // to restore the scene back to its current state.
+    ClawBackgroundWork.scheduleAll()
   }
 }

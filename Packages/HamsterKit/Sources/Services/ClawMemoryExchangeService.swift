@@ -10,6 +10,7 @@ public struct ClawMemoryImportPreview: Equatable {
   public var duplicateCount: Int
   public var conflictCount: Int
   public var sourceName: String
+  public var v2Snapshot: ClawMemoryArchiveSnapshot?
 
   public init(
     candidates: [ClawMemoryItem],
@@ -19,7 +20,8 @@ public struct ClawMemoryImportPreview: Equatable {
     conversations: [ClawConversationMessage] = [],
     duplicateCount: Int = 0,
     conflictCount: Int = 0,
-    sourceName: String
+    sourceName: String,
+    v2Snapshot: ClawMemoryArchiveSnapshot? = nil
   ) {
     self.candidates = candidates
     self.tasks = tasks
@@ -29,6 +31,7 @@ public struct ClawMemoryImportPreview: Equatable {
     self.duplicateCount = duplicateCount
     self.conflictCount = conflictCount
     self.sourceName = sourceName
+    self.v2Snapshot = v2Snapshot
   }
 
   public var newCount: Int { candidates.count }
@@ -148,6 +151,19 @@ public final class ClawMemoryExchangeService {
 
   /// Full-fidelity CLAW backup. The custom extension is a normal ZIP container with transparent JSON files.
   public func exportClawMemoryPackage() throws -> URL {
+    let v2 = try store.allMemoryV2()
+    if !v2.isEmpty {
+      let materialized = try store.allConversation(limit: 250_000).compactMap { message in
+        message.sourceRef.flatMap { ClawScreenshotEvidenceStore.shared.materializeForExport($0) }
+      }
+      let attachmentURLs = Array(Dictionary(grouping: materialized, by: \.lastPathComponent).compactMap { $0.value.first })
+      defer { attachmentURLs.forEach { try? FileManager.default.removeItem(at: $0) } }
+      return try ClawMemoryArchiveV2().export(snapshot: .init(
+        memories: v2,
+        rawEvents: try store.allRawEvents(),
+        audits: try store.allMemoryAuditRecords()
+      ), attachments: attachmentURLs)
+    }
     let fm = FileManager.default
     let root = fm.temporaryDirectory.appendingPathComponent("claw-memory-package-\(UUID().uuidString)", isDirectory: true)
     try fm.createDirectory(at: root, withIntermediateDirectories: true)
@@ -204,6 +220,16 @@ public final class ClawMemoryExchangeService {
   }
 
   public func commit(_ preview: ClawMemoryImportPreview) throws -> Int {
+    if let snapshot = preview.v2Snapshot {
+      let rawByID = Dictionary(uniqueKeysWithValues: snapshot.rawEvents.map { ($0.id, $0) })
+      for record in snapshot.memories {
+        let raw = record.lineage.rawEventIDs.compactMap { rawByID[$0] }
+        try store.saveMemoryV2(record, rawEvents: raw)
+      }
+      for audit in snapshot.audits { try store.saveMemoryAudit(audit) }
+      for (name, data) in snapshot.attachments { try ClawScreenshotEvidenceStore.shared.importAttachment(name: name, data: data) }
+      return snapshot.memories.count
+    }
     var inserted = 0
     for var item in preview.candidates {
       item.sourceType = item.sourceType.isEmpty ? "agent-import" : item.sourceType
@@ -236,6 +262,12 @@ public final class ClawMemoryExchangeService {
     }
     try fm.createDirectory(at: folder, withIntermediateDirectories: true)
     try fm.unzipItem(at: archiveURL, to: folder)
+    let manifestURL = folder.appendingPathComponent("manifest.json")
+    if let rawManifest = try? JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any],
+       rawManifest["version"] as? Int == 2 {
+      let snapshot = try ClawMemoryArchiveV2().verifyAndDecode(archiveURL)
+      return ClawMemoryImportPreview(candidates: [], sourceName: fileName, v2Snapshot: snapshot)
+    }
     let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
     let memoriesURL = folder.appendingPathComponent("memories.json")
     let tasksURL = folder.appendingPathComponent("tasks.json")

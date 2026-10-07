@@ -19,7 +19,35 @@ struct IntentProvider: AppShortcutsProvider {
         "Import chat screenshots with ${applicationName}",
         "用 ${applicationName} 导入聊天截图",
       ]),
+      AppShortcut(intent: ClawOpenTodayIntent(), phrases: ["Open CLAW Today in ${applicationName}", "用 ${applicationName} 打开今日"]),
+      AppShortcut(intent: ClawRememberTextIntent(), phrases: ["Remember text with ${applicationName}", "让 ${applicationName} 记住文字"]),
     ]
+  }
+}
+
+@available(iOS 16.0, *)
+struct ClawOpenTodayIntent: AppIntent {
+  static var title: LocalizedStringResource = "打开 CLAW 今日"
+  static var openAppWhenRun = true
+  func perform() async throws -> some IntentResult { .result() }
+}
+
+@available(iOS 16.0, *)
+struct ClawRememberTextIntent: AppIntent {
+  static var title: LocalizedStringResource = "CLAW 记住文字"
+  static var description = IntentDescription("把明确提供的文字保存为可追溯的长期记忆。")
+  static var authenticationPolicy: IntentAuthenticationPolicy { .requiresAuthentication }
+  @Parameter(title: "文字") var text: String
+
+  func perform() async throws -> some ProvidesDialog {
+    let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !value.isEmpty else { return .result(dialog: "没有可保存的文字") }
+    try DefaultMemorySDK.shared.remember(MemoryV2Record(
+      type: .semantic, state: .confirmed, scope: .global, content: value, confidence: 1,
+      provenance: .init(originType: .userExplicit, sourceApp: "shortcuts", ingestionMethod: "app-intent"),
+      cloudPermission: .aiAllowed, confirmedAt: Date()
+    ), evidence: [])
+    return .result(dialog: "CLAW 已记住")
   }
 }
 

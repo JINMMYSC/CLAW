@@ -41,6 +41,21 @@ final class MemoryGuardTests: XCTestCase {
     XCTAssertThrowsError(try wrongStore.read(from: url))
   }
 
+  func testAtRestMigrationEncryptsAndDeletesLegacyAttachment() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("migration-\(UUID())")
+    let legacy = root.appendingPathComponent("legacy", isDirectory: true)
+    let encrypted = root.appendingPathComponent("encrypted", isDirectory: true)
+    try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = legacy.appendingPathComponent("photo.jpg")
+    try Data("private-image".utf8).write(to: source)
+    let store = EncryptedAttachmentStore(root: encrypted, keyProvider: { SymmetricKey(size: .bits256) })
+    let report = try MemoryAtRestMigrator(attachmentStore: store).migrate(databaseURL: nil, legacyAttachmentRoot: legacy)
+    XCTAssertEqual(report.encryptedAttachments, 1)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(at: encrypted, includingPropertiesForKeys: nil).first?.pathExtension, "clawenc")
+  }
+
   private func record(
     content: String,
     personID: UUID? = nil,

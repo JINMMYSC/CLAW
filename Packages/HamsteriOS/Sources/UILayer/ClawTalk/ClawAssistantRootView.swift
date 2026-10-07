@@ -37,6 +37,16 @@ struct ClawAssistantRootView: View {
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
       _ = ClawKeyboardDeferredEventService.shared.drainIntoHostServices()
+      let openTasks = (try? ClawMemoryStore.shared.tasks(status: .open, limit: 100)) ?? []
+      ClawWidgetSnapshotStore.save(.init(
+        summary: openTasks.first?.title ?? "打开 CLAW 查看今日",
+        openTaskCount: openTasks.count
+      ))
+      let spotlightRecords = (try? ClawMemoryStore.shared.memoryV2(limit: 25)) ?? []
+      ClawSpotlightIndexer.index(spotlightRecords.compactMap { record in
+        guard let url = URL(string: "hamster://clawTalk?memory=\(record.id.uuidString)") else { return nil }
+        return ClawSpotlightItem(id: record.id.uuidString, title: record.content, description: record.type.rawValue, deepLink: url)
+      })
       // Heavy maintenance belongs in the host app, never in Keyboard Extension.
       Task(priority: .utility) {
         await AutoInsightService.shared.runIfNeeded()
@@ -394,14 +404,17 @@ private struct ClawAssistantChatView: View {
     if recording {
       ClawVoiceInputService.shared.stop()
       recording = false
+      endLiveActivity("语音识别完成")
       voiceHint = "正在完成识别…"
       return
     }
     withVoiceAuthorization {
       recording = true
+      startLiveActivity(kind: "recording", detail: "正在语音输入")
       voiceHint = "正在听…点停止结束"
       ClawVoiceInputService.shared.start { result in
         recording = false
+        endLiveActivity("语音识别完成")
         switch result {
         case .success(let text):
           voiceHint = ""
@@ -419,8 +432,10 @@ private struct ClawAssistantChatView: View {
     discardVoiceResult = false
     withVoiceAuthorization {
       recording = true
+      startLiveActivity(kind: "recording", detail: "按住说话")
       ClawVoiceInputService.shared.start { result in
         recording = false
+        endLiveActivity("语音识别完成")
         guard !discardVoiceResult else { discardVoiceResult = false; voiceHint = ""; return }
         switch result {
         case .success(let text): voiceHint = ""; send(text)
@@ -435,6 +450,7 @@ private struct ClawAssistantChatView: View {
     discardVoiceResult = outcome == .cancel
     ClawVoiceInputService.shared.stop()
     recording = false
+    endLiveActivity(outcome == .cancel ? "录音已取消" : "语音识别完成")
     if outcome == .cancel { voiceHint = "已取消" } else { voiceHint = "正在完成识别…" }
   }
 
@@ -482,6 +498,7 @@ private struct ClawAssistantChatView: View {
     guard !callActive else { return }
     withVoiceAuthorization {
       callActive = true
+      startLiveActivity(kind: "call", detail: "CLAW 通话中")
       recording = false
       chat.stopSpeaking()
       voiceHint = "通话模式 · 正在听…"
@@ -496,6 +513,15 @@ private struct ClawAssistantChatView: View {
     ClawVoiceInputService.shared.stop()
     chat.stopSpeaking()
     voiceHint = ""
+    endLiveActivity("通话已结束")
+  }
+
+  private func startLiveActivity(kind: String, detail: String) {
+    if #available(iOS 16.1, *) { Task { await ClawLiveActivityManager.shared.start(kind: kind, detail: detail) } }
+  }
+
+  private func endLiveActivity(_ detail: String) {
+    if #available(iOS 16.1, *) { Task { await ClawLiveActivityManager.shared.end(detail: detail) } }
   }
 
   private func beginHandsFreeListening() {
@@ -1422,6 +1448,7 @@ private struct ClawMemoryCenterView: View {
   @State private var pendingConflicts: [MemoryConflict] = []
   @State private var editingMemory: ClawMemoryItem?
   @State private var showingImporter = false
+  @State private var showingPermissionGuide = false
   @State private var showingSkillImporter = false
   @State private var importPreview: ClawMemoryImportPreview?
   @State private var skillPreview: [ClawSkillDefinition] = []
@@ -1503,6 +1530,9 @@ private struct ClawMemoryCenterView: View {
         }
 
         Section {
+          Button { showingPermissionGuide = true } label: {
+            Label("系统权限向导", systemImage: "checkmark.shield")
+          }
           Toggle("临时模式（本次 AI 不读取长期记忆）", isOn: Binding(
             get: { temporaryMode },
             set: { value in
@@ -1771,6 +1801,7 @@ private struct ClawMemoryCenterView: View {
             analyzeImports(urls)
           }
         }
+        .sheet(isPresented: $showingPermissionGuide) { ClawPermissionGuideView() }
         .sheet(isPresented: $showingSkillImporter) {
           ClawMemoryDocumentPicker(allowsMultipleSelection: false) { urls in
             showingSkillImporter = false

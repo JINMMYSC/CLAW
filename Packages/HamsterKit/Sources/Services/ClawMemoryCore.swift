@@ -322,6 +322,7 @@ public final class ClawMemoryStore {
     )
     openDatabase()
     migrate()
+    protectDatabaseFiles()
     seedBuiltInSkillsIfNeeded()
   }
 
@@ -338,6 +339,18 @@ public final class ClawMemoryStore {
     try? execute("PRAGMA journal_mode=WAL;")
     try? execute("PRAGMA synchronous=NORMAL;")
     try? execute("PRAGMA foreign_keys=ON;")
+  }
+
+  private func protectDatabaseFiles() {
+    for suffix in ["", "-wal", "-shm"] {
+      let path = databaseURL.path + suffix
+      if FileManager.default.fileExists(atPath: path) {
+        try? FileManager.default.setAttributes(
+          [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+          ofItemAtPath: path
+        )
+      }
+    }
   }
 
   private func migrate() {
@@ -1172,6 +1185,10 @@ public final class ClawMemoryStore {
     return Int(sqlite3_column_int(statement, 0))
   }
 
+  public func allMemoryV2() throws -> [MemoryV2Record] {
+    try memoryV2(limit: max(1, memoryV2Count()))
+  }
+
   public func memoryV2VersionCount(id: UUID) throws -> Int {
     lock.lock(); defer { lock.unlock() }
     let statement = try prepare("SELECT COUNT(*) FROM memory_versions WHERE memory_id = ?;")
@@ -1243,6 +1260,18 @@ public final class ClawMemoryStore {
 
   public func memoryAuditRecords(runID: UUID) throws -> [MemoryAuditRecord] {
     try memoryAuditRecords(column: "run_id", value: runID)
+  }
+
+  public func allMemoryAuditRecords() throws -> [MemoryAuditRecord] {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("SELECT payload FROM memory_audit ORDER BY created_at;")
+    defer { sqlite3_finalize(statement) }
+    var result: [MemoryAuditRecord] = []
+    while sqlite3_step(statement) == SQLITE_ROW, let blob = sqlite3_column_blob(statement, 0) {
+      let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0)))
+      if let item = try? JSONDecoder().decode(MemoryAuditRecord.self, from: data) { result.append(item) }
+    }
+    return result
   }
 
   private func memoryAuditRecords(column: String, value: UUID) throws -> [MemoryAuditRecord] {
@@ -1341,6 +1370,24 @@ public final class ClawMemoryStore {
         content: content,
         sourceApp: text(statement, 3),
         sourceRef: text(statement, 4),
+        occurredAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 5)),
+        ingestedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
+        idempotencyKey: text(statement, 7)
+      ))
+    }
+    return result
+  }
+
+  public func allRawEvents() throws -> [RawMemoryEvent] {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("SELECT id,kind,content,source_app,source_ref,occurred_at,ingested_at,idempotency_key FROM raw_events ORDER BY occurred_at;")
+    defer { sqlite3_finalize(statement) }
+    var result: [RawMemoryEvent] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      guard let idText = text(statement, 0), let id = UUID(uuidString: idText),
+            let kind = text(statement, 1), let content = text(statement, 2) else { continue }
+      result.append(RawMemoryEvent(
+        id: id, kind: kind, content: content, sourceApp: text(statement, 3), sourceRef: text(statement, 4),
         occurredAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 5)),
         ingestedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
         idempotencyKey: text(statement, 7)

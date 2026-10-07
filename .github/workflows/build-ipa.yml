@@ -110,6 +110,29 @@ jobs:
           name: guru-unsigned-ipa
           path: unsigned-art
 
+      - name: Omit widget only when its signing profile is unavailable
+        if: steps.check.outputs.skip != 'true'
+        env:
+          WIDGET_PROFILE_B64: ${{ secrets.PROFILE_WIDGET_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "$WIDGET_PROFILE_B64" ]; then exit 0; fi
+          python3 - <<'PY'
+          import os, tempfile, zipfile
+          src = "unsigned-art/GuruIM-unsigned.ipa"
+          fd, dst = tempfile.mkstemp(suffix=".ipa")
+          os.close(fd)
+          removed = 0
+          with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+              for item in zin.infolist():
+                  if "/PlugIns/ClawWidgets.appex" in item.filename:
+                      removed += 1
+                      continue
+                  zout.writestr(item, zin.read(item.filename))
+          os.replace(dst, src)
+          print(f"PROFILE_WIDGET_B64 is absent; omitted ClawWidgets from signed IPA ({removed} entries).")
+          PY
+
       - name: Inspect extension bundle identifiers
         id: extensions
         env:
@@ -141,7 +164,7 @@ jobs:
             exit 1
           fi
           if [ "$has_widget" = "true" ] && [ -z "$WIDGET_PROFILE_B64" ]; then
-            echo "::error::Missing required signing secret: PROFILE_WIDGET_B64"
+            echo "::error::Widget remained in the IPA without PROFILE_WIDGET_B64"
             exit 1
           fi
           echo "has_widget=$has_widget" >> "$GITHUB_OUTPUT"

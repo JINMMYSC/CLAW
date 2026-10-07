@@ -9,6 +9,7 @@ public class SmartFreqService {
   private let configKey = "smart_freq_config"
   private let resultsKey = "smart_freq_results"
   private let validationReportKey = "smart_freq_validation_report"
+  private let observationsKey = "smart_freq_phrase_observations_v1"
   private let logger = Logger(subsystem: "com.hamster", category: "SmartFreq")
 
   private let maxResults = 50
@@ -114,6 +115,7 @@ NEW\t全拼编码\t词语
     try? "".write(to: phrasesURL, atomically: true, encoding: .utf8)
     results = []
     validationReport = SmartFreqValidationReport()
+    defaults?.removeObject(forKey: observationsKey)
     var cfg = config
     cfg.monthlyTokensUsed = 0
     config = cfg
@@ -211,7 +213,8 @@ NEW\t全拼编码\t词语
       acceptanceBudget: min(maxResults, max(0, config.phraseBudget ?? 500))
     )
     validationReport = report
-    mergeAcceptedPhrases(report.accepted)
+    mergeAcceptedPhrases(report.accepted, observedAt: Date())
+    pruneStalePhrases()
 
     let acceptedKeys = Set(report.accepted.map { "\($0.code)\u{1f}\($0.word)" })
     let acceptedFreqRules = freqRules.filter { acceptedKeys.contains("\($0.code)\u{1f}\($0.word)") }
@@ -379,15 +382,49 @@ NEW\t全拼编码\t词语
     try? content.write(to: url, atomically: true, encoding: .utf8)
   }
 
-  public func mergeAcceptedPhrases(_ phrases: [SmartFreqAcceptedPhrase]) {
+  public func mergeAcceptedPhrases(_ phrases: [SmartFreqAcceptedPhrase], observedAt: Date = Date()) {
     guard !phrases.isEmpty else { return }
-    var existing = loadAcceptedPhrases(from: Self.phrasesFileURL)
-    var keys = Set(existing.map { "\($0.code)\u{1f}\($0.word)" })
-    for phrase in phrases where keys.insert("\(phrase.code)\u{1f}\(phrase.word)").inserted {
-      existing.append(phrase)
+    var observations = phraseObservations
+    for phrase in phrases {
+      let key = "\(phrase.code)\u{1f}\(phrase.word)"
+      if let index = observations.firstIndex(where: { "\($0.phrase.code)\u{1f}\($0.phrase.word)" == key }) {
+        observations[index].phrase = phrase
+        observations[index].lastObservedAt = observedAt
+        observations[index].observationCount += 1
+      } else {
+        observations.append(.init(phrase: phrase, lastObservedAt: observedAt, observationCount: 2))
+      }
     }
-    let retained = Array(existing.suffix(max(1, config.phraseBudget ?? 500)))
-    let content = retained.map(\.rimeLine).joined(separator: "\n") + "\n"
+    phraseObservations = observations
+    writeAcceptedPhrases(observations.map(\.phrase))
+  }
+
+  public func pruneStalePhrases(now: Date = Date()) {
+    let retained = SmartFreqMaintenancePolicy().retained(
+      phraseObservations,
+      now: now,
+      budget: max(1, config.phraseBudget ?? 500)
+    )
+    phraseObservations = retained
+    writeAcceptedPhrases(retained.map(\.phrase))
+  }
+
+  private var phraseObservations: [SmartFreqPhraseObservation] {
+    get {
+      if let data = defaults?.data(forKey: observationsKey),
+         let value = try? JSONDecoder().decode([SmartFreqPhraseObservation].self, from: data) {
+        return value
+      }
+      return loadAcceptedPhrases(from: Self.phrasesFileURL).map {
+        .init(phrase: $0, lastObservedAt: Date(), observationCount: 2)
+      }
+    }
+    set { defaults?.set(try? JSONEncoder().encode(newValue), forKey: observationsKey) }
+  }
+
+  private func writeAcceptedPhrases(_ phrases: [SmartFreqAcceptedPhrase]) {
+    let retained = Array(phrases.prefix(max(1, config.phraseBudget ?? 500)))
+    let content = retained.map(\.rimeLine).joined(separator: "\n") + (retained.isEmpty ? "" : "\n")
     do {
       try FileManager.default.createDirectory(
         at: Self.phrasesFileURL.deletingLastPathComponent(),
