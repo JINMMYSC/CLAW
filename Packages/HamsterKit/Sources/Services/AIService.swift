@@ -255,42 +255,46 @@ public class AIService {
   // MARK: - Chat
 
   /// 发送消息到当前选定的 AI 提供商
+  @discardableResult
   public func chat(
     messages: [AIMessage],
     completion: @escaping (Result<String, Error>) -> Void
-  ) {
+  ) -> URLSessionDataTask? {
     chatWithUsage(messages: messages) { result in
       completion(result.map { $0.0 })
     }
   }
 
   /// 发送消息并返回 token 用量
+  @discardableResult
   public func chatWithUsage(
     messages: [AIMessage],
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
-  ) {
+  ) -> URLSessionDataTask? {
     chatWithUsage(messages: messages, configuration: currentRequestConfiguration, completion: completion)
   }
 
   /// Request-scoped routing. This avoids mutating the process-wide selected provider/model when
   /// keyboard, AutoInsight and the assistant are active at the same time.
+  @discardableResult
   public func chat(
     messages: [AIMessage],
     provider: AIProvider,
     model: String? = nil,
     completion: @escaping (Result<String, Error>) -> Void
-  ) {
+  ) -> URLSessionDataTask? {
     chatWithUsage(messages: messages, configuration: AIRequestConfiguration(provider: provider, model: model)) { result in
       completion(result.map { $0.0 })
     }
   }
 
+  @discardableResult
   public func chatWithUsage(
     messages: [AIMessage],
     provider: AIProvider,
     model: String,
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
-  ) {
+  ) -> URLSessionDataTask? {
     chatWithUsage(
       messages: messages,
       configuration: AIRequestConfiguration(provider: provider, model: model),
@@ -298,30 +302,32 @@ public class AIService {
     )
   }
 
+  @discardableResult
   public func chat(
     messages: [AIMessage],
     configuration: AIRequestConfiguration,
     completion: @escaping (Result<String, Error>) -> Void
-  ) {
+  ) -> URLSessionDataTask? {
     chatWithUsage(messages: messages, configuration: configuration) { result in
       completion(result.map { $0.0 })
     }
   }
 
+  @discardableResult
   public func chatWithUsage(
     messages: [AIMessage],
     configuration: AIRequestConfiguration,
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
-  ) {
+  ) -> URLSessionDataTask? {
     let provider = configuration.provider
     let key = apiKey(for: provider)
     guard !key.isEmpty else {
       completion(.failure(AIError.noAPIKey(provider)))
-      return
+      return nil
     }
     switch provider {
     case .claude:
-      chatClaudeWithUsage(
+      return chatClaudeWithUsage(
         messages: messages,
         apiKey: key,
         model: configuration.model,
@@ -329,7 +335,7 @@ public class AIService {
         completion: completion
       )
     default:
-      chatOpenAICompatWithUsage(
+      return chatOpenAICompatWithUsage(
         messages: messages,
         provider: provider,
         apiKey: key,
@@ -349,7 +355,7 @@ public class AIService {
     model: String,
     maxTokens: Int,
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
-  ) {
+  ) -> URLSessionDataTask {
     let urlString = "\(provider.baseURL)/chat/completions"
     let url = URL(string: urlString)!
     var req = URLRequest(url: url)
@@ -369,7 +375,7 @@ public class AIService {
     let log = LogService.shared
     log.log("→ \(provider.rawValue) \(model) \(urlString) msgs=\(messages.count)", tag: "AI")
 
-    URLSession.shared.dataTask(with: req) { data, response, error in
+    let task = URLSession.shared.dataTask(with: req) { data, response, error in
       let status = (response as? HTTPURLResponse)?.statusCode ?? 0
       if let error = error {
         log.log("✗ network error: \(error.localizedDescription)", level: .error, tag: "AI")
@@ -405,7 +411,9 @@ public class AIService {
         log.log("✓ OK HTTP \(status) (no usage info)", tag: "AI")
       }
       DispatchQueue.main.async { completion(.success((content, usage))) }
-    }.resume()
+    }
+    task.resume()
+    return task
   }
 
   // MARK: - Claude (Anthropic Messages API)
@@ -416,7 +424,7 @@ public class AIService {
     model: String,
     maxTokens: Int,
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
-  ) {
+  ) -> URLSessionDataTask {
     let urlString = "https://api.anthropic.com/v1/messages"
     let url = URL(string: urlString)!
     var req = URLRequest(url: url)
@@ -438,7 +446,7 @@ public class AIService {
     let log = LogService.shared
     log.log("→ Claude \(model) \(urlString) msgs=\(messages.count)", tag: "AI")
 
-    URLSession.shared.dataTask(with: req) { data, response, error in
+    let task = URLSession.shared.dataTask(with: req) { data, response, error in
       let status = (response as? HTTPURLResponse)?.statusCode ?? 0
       if let error = error {
         log.log("✗ network error: \(error.localizedDescription)", level: .error, tag: "AI")
@@ -473,7 +481,9 @@ public class AIService {
         log.log("✓ OK HTTP \(status) (no usage info)", tag: "AI")
       }
       DispatchQueue.main.async { completion(.success((text, usage))) }
-    }.resume()
+    }
+    task.resume()
+    return task
   }
 
   // MARK: - Errors

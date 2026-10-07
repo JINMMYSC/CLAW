@@ -48,6 +48,11 @@ public final class ClawPrivacyVaultService {
     lock.lock(); unlockedUntil = nil; lock.unlock()
   }
 
+  public func clearProtectedMemories() {
+    defaults?.removeObject(forKey: protectedIDsKey)
+    lockNow()
+  }
+
   /// Uses biometrics when available and falls back to the device passcode.
   /// Successful unlock lasts only for the requested short session.
   public func unlock(

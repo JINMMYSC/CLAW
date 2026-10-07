@@ -9,13 +9,15 @@ public struct ClawChatMessage: Codable, Identifiable, Equatable {
   public let date: Date
   /// 仅本地展示（错误/提醒），不随历史回传给 AI
   public let excludeFromContext: Bool
+  public let trace: ClawChatTrace?
 
-  public init(id: UUID = UUID(), role: String, content: String, date: Date = Date(), excludeFromContext: Bool = false) {
+  public init(id: UUID = UUID(), role: String, content: String, date: Date = Date(), excludeFromContext: Bool = false, trace: ClawChatTrace? = nil) {
     self.id = id
     self.role = role
     self.content = content
     self.date = date
     self.excludeFromContext = excludeFromContext
+    self.trace = trace
   }
 
   /// 兼容旧历史数据（缺少该字段时默认 false）
@@ -26,6 +28,21 @@ public struct ClawChatMessage: Codable, Identifiable, Equatable {
     content = try c.decode(String.self, forKey: .content)
     date = try c.decode(Date.self, forKey: .date)
     excludeFromContext = try c.decodeIfPresent(Bool.self, forKey: .excludeFromContext) ?? false
+    trace = try c.decodeIfPresent(ClawChatTrace.self, forKey: .trace)
+  }
+}
+
+public struct ClawChatTrace: Codable, Equatable {
+  public let requestID: UUID
+  public let provider: String
+  public let model: String
+  public let regenerated: Bool
+
+  public init(requestID: UUID, provider: String, model: String, regenerated: Bool = false) {
+    self.requestID = requestID
+    self.provider = provider
+    self.model = model
+    self.regenerated = regenerated
   }
 }
 
@@ -57,6 +74,8 @@ public final class ClawChatService: NSObject, ObservableObject {
   private let legacyHistoryKey = "claw_chat_history_v1"
   private let autoSpeakKey = "claw_chat_auto_speak"
   private var activeContextID: UUID?
+  private var activeRequest: URLSessionDataTask?
+  private var activeRequestID: UUID?
   /// 单次请求携带的历史条数（防 context 无限膨胀）
   private static let maxHistoryMessages = 20
 
@@ -109,6 +128,7 @@ public final class ClawChatService: NSObject, ObservableObject {
   /// This prevents one person's dialogue from remaining on screen after another person is selected.
   public func switchContext(contactID: UUID?) {
     guard activeContextID != contactID else { return }
+    stopGenerating()
     stopSpeaking()
     saveHistory()
     activeContextID = contactID
@@ -117,9 +137,23 @@ public final class ClawChatService: NSObject, ObservableObject {
 
   /// 新对话：清空历史
   public func clearHistory() {
+    stopGenerating()
     stopSpeaking()
     messages = []
     saveHistory()
+  }
+
+  /// Removes global, per-contact, and legacy conversations while leaving API keys
+  /// and unrelated App Group preferences intact.
+  public func clearAllConversations() {
+    stopSpeaking()
+    let keys = defaults?.dictionaryRepresentation().keys.filter {
+      $0 == legacyHistoryKey || $0.hasPrefix("claw_chat_history_v2_")
+    } ?? []
+    keys.forEach { defaults?.removeObject(forKey: $0) }
+    messages = []
+    defaults?.removeObject(forKey: autoSpeakKey)
+    autoSpeak = true
   }
 
   /// 追加一条本地提示消息（错误/提醒，不走 AI）
@@ -155,6 +189,30 @@ public final class ClawChatService: NSObject, ObservableObject {
     isSending = true
     stopSpeaking()
 
+    startRequest(selectedContactID: selectedContactID, forceSpeak: forceSpeak, regenerated: false)
+  }
+
+  public func stopGenerating() {
+    activeRequestID = nil
+    activeRequest?.cancel()
+    activeRequest = nil
+    isSending = false
+  }
+
+  public func regenerateLastResponse(forceSpeak: Bool = false) {
+    guard !isSending,
+          let assistantIndex = messages.lastIndex(where: { $0.role == "assistant" && !$0.excludeFromContext }),
+          messages[..<assistantIndex].last(where: { $0.role == "user" && !$0.excludeFromContext }) != nil
+    else { return }
+    messages.remove(at: assistantIndex)
+    saveHistory()
+    isSending = true
+    stopSpeaking()
+    startRequest(selectedContactID: activeContextID, forceSpeak: forceSpeak, regenerated: true)
+  }
+
+  private func startRequest(selectedContactID: UUID?, forceSpeak: Bool, regenerated: Bool) {
+
     // 请求级锁定 provider/model，避免与 AutoInsight/键盘其它 AI 请求相互改全局状态。
     let requestConfiguration = aiService.currentRequestConfiguration
     guard !aiService.apiKey(for: requestConfiguration.provider).isEmpty else {
@@ -164,12 +222,26 @@ public final class ClawChatService: NSObject, ObservableObject {
     }
 
     let apiMessages = buildAPIMessages()
-    aiService.chat(messages: apiMessages, configuration: requestConfiguration) { [weak self] result in
+    let requestID = UUID()
+    activeRequestID = requestID
+    activeRequest = aiService.chat(messages: apiMessages, configuration: requestConfiguration) { [weak self] result in
       guard let self else { return }
+      guard self.activeRequestID == requestID else { return }
+      self.activeRequestID = nil
+      self.activeRequest = nil
       self.isSending = false
       switch result {
       case .success(let reply):
-        self.messages.append(ClawChatMessage(role: "assistant", content: reply))
+        self.messages.append(ClawChatMessage(
+          role: "assistant",
+          content: reply,
+          trace: ClawChatTrace(
+            requestID: requestID,
+            provider: requestConfiguration.provider.rawValue,
+            model: requestConfiguration.model,
+            regenerated: regenerated
+          )
+        ))
         self.saveHistory()
         try? ClawMemoryStore.shared.appendConversation(ClawConversationMessage(
           contactID: selectedContactID,

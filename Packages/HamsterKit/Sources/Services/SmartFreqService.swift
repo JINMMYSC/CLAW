@@ -8,6 +8,7 @@ public class SmartFreqService {
   private let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
   private let configKey = "smart_freq_config"
   private let resultsKey = "smart_freq_results"
+  private let validationReportKey = "smart_freq_validation_report"
   private let logger = Logger(subsystem: "com.hamster", category: "SmartFreq")
 
   private let maxResults = 50
@@ -69,6 +70,19 @@ NEW\t全拼编码\t词语
     }
   }
 
+  /// Most recent validation outcome. Pending and rejected model output never reaches RIME.
+  public var validationReport: SmartFreqValidationReport {
+    get {
+      guard let data = defaults?.data(forKey: validationReportKey),
+            let report = try? JSONDecoder().decode(SmartFreqValidationReport.self, from: data)
+      else { return SmartFreqValidationReport() }
+      return report
+    }
+    set {
+      defaults?.set(try? JSONEncoder().encode(newValue), forKey: validationReportKey)
+    }
+  }
+
   // MARK: - Aggregate Stats
 
   /// 累计调频次数（boost + demote）
@@ -99,6 +113,7 @@ NEW\t全拼编码\t词语
     try? "".write(to: rulesURL, atomically: true, encoding: .utf8)
     try? "".write(to: phrasesURL, atomically: true, encoding: .utf8)
     results = []
+    validationReport = SmartFreqValidationReport()
     var cfg = config
     cfg.monthlyTokensUsed = 0
     config = cfg
@@ -114,7 +129,7 @@ NEW\t全拼编码\t词语
 
   /// 新词规则文件路径
   public static var phrasesFileURL: URL {
-    FileManager.appGroupUserDataDirectoryURL.appendingPathComponent("smart_freq_phrases.txt")
+    FileManager.appGroupUserDataDirectoryURL.appendingPathComponent("claw_smart_freq.txt")
   }
 
   // MARK: - Trigger Check
@@ -155,7 +170,10 @@ NEW\t全拼编码\t词语
       return
     }
 
-    let prompt = Self.defaultPrompt
+    let privacyInstruction = cfg.includePersonalSuggestions == true
+      ? "可以建议输入记录中明确重复出现的人名或上下文短语，但仍须满足观察次数规则。"
+      : "不要建议人名、联系方式、地址或只在特定上下文中有意义的私密短语。"
+    let prompt = (Self.defaultPrompt + "\n\n## 隐私范围\n" + privacyInstruction)
       .replacingOccurrences(of: "{data}", with: clawTalkText)
 
     let requestConfiguration = AIService.shared.currentRequestConfiguration
@@ -170,28 +188,52 @@ NEW\t全拼编码\t词语
     }
 
     let (freqRules, newPhrases) = parseRules(response)
+    let drafts = freqRules.map {
+      SmartFreqDraft(
+        kind: .frequency,
+        action: $0.action,
+        code: $0.code,
+        word: $0.word,
+        observedCount: Self.occurrenceCount(of: $0.word, in: clawTalkText)
+      )
+    } + newPhrases.map {
+      SmartFreqDraft(
+        kind: .newPhrase,
+        code: $0.code,
+        word: $0.word,
+        observedCount: Self.occurrenceCount(of: $0.word, in: clawTalkText)
+      )
+    }
+    let existing = loadAcceptedPhrases(from: Self.phrasesFileURL)
+    let report = SmartFreqValidator().validate(
+      drafts,
+      existing: existing,
+      acceptanceBudget: min(maxResults, max(0, config.phraseBudget ?? 500))
+    )
+    validationReport = report
+    mergeAcceptedPhrases(report.accepted)
 
-    // 合并写入文件
-    mergeFreqRules(freqRules)
-    mergeNewPhrases(newPhrases)
+    let acceptedKeys = Set(report.accepted.map { "\($0.code)\u{1f}\($0.word)" })
+    let acceptedFreqRules = freqRules.filter { acceptedKeys.contains("\($0.code)\u{1f}\($0.word)") }
+    let acceptedNewPhrases = newPhrases.filter { acceptedKeys.contains("\($0.code)\u{1f}\($0.word)") }
 
     // Mirror durable lexical learning into the shared Memory Core so rewrite/reply Skills
     // can benefit from the same phrases instead of SmartFreq owning a private silo.
-    for rule in freqRules.filter({ $0.action == "boost" }).prefix(30) {
+    for rule in acceptedFreqRules.filter({ $0.action == "boost" }).prefix(30) {
       try? ClawMemoryStore.shared.upsertMemory(ClawMemoryItem(
         kind: .reusablePhrase,
-        content: "用户常用词：(rule.word)",
-        normalizedKey: "smartfreq:boost:(rule.word.lowercased())",
+        content: "用户常用词：\(rule.word)",
+        normalizedKey: "smartfreq:boost:\(rule.word.lowercased())",
         sourceType: "smart-freq",
         sourceRef: rule.code,
         confidence: 0.82
       ))
     }
-    for phrase in newPhrases.prefix(30) {
+    for phrase in acceptedNewPhrases.prefix(30) {
       try? ClawMemoryStore.shared.upsertMemory(ClawMemoryItem(
         kind: .reusablePhrase,
-        content: "用户常用短语：(phrase.word)",
-        normalizedKey: "smartfreq:phrase:(phrase.word.lowercased())",
+        content: "用户常用短语：\(phrase.word)",
+        normalizedKey: "smartfreq:phrase:\(phrase.word.lowercased())",
         sourceType: "smart-freq",
         sourceRef: phrase.code,
         confidence: 0.78
@@ -204,9 +246,9 @@ NEW\t全拼编码\t词语
     // 保存分析结果
     let analysisResult = SmartFreqResult(
       entriesCount: entryCount,
-      boostCount: freqRules.filter { $0.action == "boost" }.count,
-      demoteCount: freqRules.filter { $0.action == "demote" }.count,
-      newPhraseCount: newPhrases.count,
+      boostCount: acceptedFreqRules.filter { $0.action == "boost" }.count,
+      demoteCount: acceptedFreqRules.filter { $0.action == "demote" }.count,
+      newPhraseCount: acceptedNewPhrases.count,
       tokensUsed: tokensUsed
     )
     var allResults = results
@@ -337,6 +379,38 @@ NEW\t全拼编码\t词语
     try? content.write(to: url, atomically: true, encoding: .utf8)
   }
 
+  public func mergeAcceptedPhrases(_ phrases: [SmartFreqAcceptedPhrase]) {
+    guard !phrases.isEmpty else { return }
+    var existing = loadAcceptedPhrases(from: Self.phrasesFileURL)
+    var keys = Set(existing.map { "\($0.code)\u{1f}\($0.word)" })
+    for phrase in phrases where keys.insert("\(phrase.code)\u{1f}\(phrase.word)").inserted {
+      existing.append(phrase)
+    }
+    let retained = Array(existing.suffix(max(1, config.phraseBudget ?? 500)))
+    let content = retained.map(\.rimeLine).joined(separator: "\n") + "\n"
+    do {
+      try FileManager.default.createDirectory(
+        at: Self.phrasesFileURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+      )
+      try content.write(to: Self.phrasesFileURL, atomically: true, encoding: .utf8)
+    } catch {
+      logger.error("SmartFreq: accepted phrase write failed")
+    }
+  }
+
+  public func loadAcceptedPhrases(from url: URL) -> [SmartFreqAcceptedPhrase] {
+    loadExistingLines(from: url).compactMap { line in
+      let columns = line.components(separatedBy: "\t")
+      guard columns.count >= 2 else { return nil }
+      if columns.count >= 3, let weight = Int(columns[2]) {
+        return SmartFreqAcceptedPhrase(code: columns[1], word: columns[0], weight: weight)
+      }
+      // Migrate the former code<TAB>word file on the next successful write.
+      return SmartFreqAcceptedPhrase(code: columns[0], word: columns[1], weight: 100)
+    }
+  }
+
   func loadExistingLines(from url: URL) -> [String] {
     guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
     return content.components(separatedBy: "\n")
@@ -362,5 +436,10 @@ NEW\t全拼编码\t词语
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM"
     return formatter.string(from: date)
+  }
+
+  static func occurrenceCount(of word: String, in text: String) -> Int {
+    guard !word.isEmpty else { return 0 }
+    return max(0, text.components(separatedBy: word).count - 1)
   }
 }

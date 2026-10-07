@@ -158,6 +158,12 @@ public class HeartTargetService {
     persist()
   }
 
+  public func deleteAllProfiles() {
+    profiles = []
+    selectedIndex = -1
+    persist()
+  }
+
   public func profile(id: UUID) -> HeartTargetProfile? {
     profiles.first(where: { $0.id == id })
   }

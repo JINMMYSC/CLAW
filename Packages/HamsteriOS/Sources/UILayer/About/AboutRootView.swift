@@ -125,6 +125,10 @@ class AboutRootView: NibLessView {
     UIPasteboard.general.string = AppInfo.appVersion
     ProgressHUD.success("复制成功", interaction: false, delay: 1.5)
   }
+
+  func reloadData() {
+    tableView.reloadData()
+  }
 }
 
 extension AboutRootView: UITableViewDelegate {
@@ -149,6 +153,10 @@ extension AboutRootView: UITableViewDataSource {
 
   func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
     return aboutViewModel.settingItems[section].items.count
+  }
+
+  func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+    aboutViewModel.settingItems[section].title
   }
 
   func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {

@@ -3,9 +3,6 @@ import SwiftUI
 
 struct ClawTalkRootView: View {
   @ObservedObject var viewModel: ClawTalkViewModel
-  var openAssistant: () -> Void = {}
-  var openPeople: () -> Void = {}
-  var openMemory: () -> Void = {}
   @State private var showDeleteAlert = false
   @State private var dateToDelete: Date?
   @State private var showDeleteSelectedAlert = false
@@ -36,19 +33,29 @@ struct ClawTalkRootView: View {
               .font(.title2)
               .foregroundColor(ClawTalkPrivacyService.shared.isCollectionEnabled ? .accentColor : .orange)
           }
-          HStack(spacing: 8) {
-            Button(action: openAssistant) { Label("助手", systemImage: "sparkles") }
-              .buttonStyle(.borderedProminent)
-            Button(action: openPeople) { Label("人物", systemImage: "person.2") }
-              .buttonStyle(.bordered)
-            Button(action: openMemory) { Label("记忆", systemImage: "brain.head.profile") }
-              .buttonStyle(.bordered)
+          HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("今日采集")
+                .font(.caption)
+                .foregroundColor(.secondary)
+              Text("\(viewModel.todaySummary.todayInputCount) 条")
+                .font(.title2.weight(.semibold))
+            }
+            Spacer()
+            Text(viewModel.latestCollectionTimeText)
+              .font(.caption)
+              .foregroundColor(.secondary)
           }
-          .font(.caption)
+          Button { viewModel.recordClipboardNow() } label: {
+            Label("记录当前剪贴板", systemImage: "arrow.down.doc.fill")
+              .frame(maxWidth: .infinity)
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(!viewModel.clipboardEnabled)
         }
         .padding(.vertical, 4)
       } footer: {
-        Text("这里负责数据来源、隐私、原始记录和备份；聊天、人物和长期记忆通过上方快捷入口进入对应工作区。")
+        Text(viewModel.clipboardEnabled ? "今日采集汇总包含键盘输入和剪贴板记录。" : "开启下方剪贴板监听后，可手动记录当前剪贴板。")
       }
 
       // 先展示当前状态：这个页面只负责数据、隐私和维护，不再与“助手”页抢职责。
@@ -165,6 +172,7 @@ struct ClawTalkRootView: View {
       Text("删除所有剪贴板记录？此操作不可恢复。")
     }
     .onAppear { viewModel.reload() }
+    .clawKeyboardDismissal()
   }
 
   // MARK: - Stats
@@ -350,9 +358,6 @@ struct ClawTalkRootView: View {
         Label("剪贴板监听", systemImage: "clipboard")
       }
       if viewModel.clipboardEnabled {
-        Button { viewModel.recordClipboardNow() } label: {
-          Label("立即记录剪贴板", systemImage: "arrow.down.doc")
-        }
         HStack {
           Label("已记录", systemImage: "doc.on.clipboard")
           Spacer()
@@ -582,6 +587,7 @@ private struct AIChatView: View {
       }
       .padding()
     }
+    .clawKeyboardDismissal()
   }
 }
 
@@ -687,6 +693,7 @@ private struct AISettingsView: View {
         Text("Prompt 管理")
       }
     }
+    .clawKeyboardDismissal()
     .onAppear {
       openAIKey = viewModel.apiKey(for: .openai)
       openRouterKey = viewModel.apiKey(for: .openrouter)
@@ -772,6 +779,7 @@ struct PromptEditorView: View {
             .font(.caption).foregroundColor(.secondary)
         }
       }
+      .clawKeyboardDismissal()
       .navigationTitle(prompt.name.isEmpty ? "新建 Prompt" : "编辑 Prompt")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

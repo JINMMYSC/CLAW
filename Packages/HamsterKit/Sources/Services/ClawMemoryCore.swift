@@ -487,6 +487,10 @@ public final class ClawMemoryStore {
 
   private func execute(_ sql: String) throws {
     lock.lock(); defer { lock.unlock() }
+    try executeUnlocked(sql)
+  }
+
+  private func executeUnlocked(_ sql: String) throws {
     let db = try requireDB()
     var error: UnsafeMutablePointer<Int8>?
     guard sqlite3_exec(db, sql, nil, nil, &error) == SQLITE_OK else {
@@ -525,6 +529,11 @@ public final class ClawMemoryStore {
   @discardableResult
   public func upsertMemory(_ item: ClawMemoryItem) throws -> ClawMemoryItem {
     lock.lock(); defer { lock.unlock() }
+    try upsertMemoryUnlocked(item)
+    return item
+  }
+
+  private func upsertMemoryUnlocked(_ item: ClawMemoryItem) throws {
     let sql = """
       INSERT INTO memory_items
       (id,kind,scope,subject_id,content,normalized_key,source_type,source_ref,confidence,created_at,updated_at,last_observed_at,status)
@@ -552,7 +561,6 @@ public final class ClawMemoryStore {
     if rc != SQLITE_DONE && rc != SQLITE_CONSTRAINT {
       throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
     }
-    return item
   }
 
   public func memories(scope: String? = nil, subjectID: UUID? = nil, limit: Int = 200) throws -> [ClawMemoryItem] {
@@ -562,6 +570,11 @@ public final class ClawMemoryStore {
   /// Returns every active memory matching the optional scope without applying a UI-oriented limit.
   public func allMemories(scope: String? = nil, subjectID: UUID? = nil) throws -> [ClawMemoryItem] {
     try loadMemories(scope: scope, subjectID: subjectID, limit: nil)
+  }
+
+  /// Includes archived and superseded rows for one-time V2 migration and audit tools.
+  public func allMemoryItems() throws -> [ClawMemoryItem] {
+    try loadMemories(scope: nil, subjectID: nil, limit: nil, activeOnly: false)
   }
 
   public func memoryCount(scope: String? = nil, subjectID: UUID? = nil) throws -> Int {
@@ -608,13 +621,19 @@ public final class ClawMemoryStore {
     return result
   }
 
-  private func loadMemories(scope: String?, subjectID: UUID?, limit: Int?) throws -> [ClawMemoryItem] {
+  private func loadMemories(
+    scope: String?,
+    subjectID: UUID?,
+    limit: Int?,
+    activeOnly: Bool = true
+  ) throws -> [ClawMemoryItem] {
     lock.lock(); defer { lock.unlock() }
-    var clauses = ["status = 'active'"]
+    var clauses: [String] = activeOnly ? ["status = 'active'"] : []
     if scope != nil { clauses.append("scope = ?") }
     if subjectID != nil { clauses.append("subject_id = ?") }
     let limitClause = limit == nil ? "" : " LIMIT ?"
-    let sql = "SELECT id,kind,scope,subject_id,content,normalized_key,source_type,source_ref,confidence,created_at,updated_at,last_observed_at,status FROM memory_items WHERE \(clauses.joined(separator: " AND ")) ORDER BY last_observed_at DESC\(limitClause);"
+    let whereClause = clauses.isEmpty ? "" : " WHERE \(clauses.joined(separator: " AND "))"
+    let sql = "SELECT id,kind,scope,subject_id,content,normalized_key,source_type,source_ref,confidence,created_at,updated_at,last_observed_at,status FROM memory_items\(whereClause) ORDER BY last_observed_at DESC\(limitClause);"
     let statement = try prepare(sql); defer { sqlite3_finalize(statement) }
     var index: Int32 = 1
     if let scope { bindText(scope, at: index, in: statement); index += 1 }
@@ -816,12 +835,14 @@ public final class ClawMemoryStore {
     return task
   }
 
-  public func tasks(status: ClawTaskStatus = .open, limit: Int = 100) throws -> [ClawSecretaryTask] {
+  public func tasks(status: ClawTaskStatus? = .open, limit: Int = 100) throws -> [ClawSecretaryTask] {
     lock.lock(); defer { lock.unlock() }
-    let sql = "SELECT id,kind,status,title,details,contact_id,due_at,created_at,source_type,source_ref FROM secretary_tasks WHERE status = ? ORDER BY CASE WHEN due_at IS NULL THEN 1 ELSE 0 END, due_at ASC, created_at DESC LIMIT ?;"
+    let whereClause = status == nil ? "" : " WHERE status = ?"
+    let sql = "SELECT id,kind,status,title,details,contact_id,due_at,created_at,source_type,source_ref FROM secretary_tasks\(whereClause) ORDER BY CASE WHEN due_at IS NULL THEN 1 ELSE 0 END, due_at ASC, created_at DESC LIMIT ?;"
     let statement = try prepare(sql); defer { sqlite3_finalize(statement) }
-    bindText(status.rawValue, at: 1, in: statement)
-    sqlite3_bind_int(statement, 2, Int32(max(1, limit)))
+    var index: Int32 = 1
+    if let status { bindText(status.rawValue, at: index, in: statement); index += 1 }
+    sqlite3_bind_int(statement, index, Int32(max(1, limit)))
     var result: [ClawSecretaryTask] = []
     while sqlite3_step(statement) == SQLITE_ROW {
       guard let idText = text(statement, 0), let id = UUID(uuidString: idText),
@@ -837,6 +858,10 @@ public final class ClawMemoryStore {
       ))
     }
     return result
+  }
+
+  public func allTasks() throws -> [ClawSecretaryTask] {
+    try tasks(status: nil, limit: 20_000)
   }
 
   @discardableResult
@@ -863,6 +888,72 @@ public final class ClawMemoryStore {
       throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
     }
     return sqlite3_changes(try requireDB()) > 0
+  }
+
+  /// Reassigns every contact-bound record atomically. Passing `nil` preserves
+  /// the records as global data when a profile is deleted.
+  public func reassignContactReferences(from sourceID: UUID, to destinationID: UUID?) throws {
+    guard sourceID != destinationID else { return }
+    lock.lock(); defer { lock.unlock() }
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      try rebindContactColumn(
+        table: "memory_items",
+        column: "subject_id",
+        sourceID: sourceID,
+        destinationID: destinationID,
+        additionalSet: destinationID == nil ? ", scope = 'global'" : ""
+      )
+      try rebindContactColumn(table: "conversation_messages", column: "contact_id", sourceID: sourceID, destinationID: destinationID)
+      try rebindContactColumn(table: "secretary_tasks", column: "contact_id", sourceID: sourceID, destinationID: destinationID)
+      try rebindContactColumn(table: "evolution_feedback", column: "contact_id", sourceID: sourceID, destinationID: destinationID)
+      try reassignMemoryV2Contacts(from: sourceID, to: destinationID)
+      try executeUnlocked("COMMIT;")
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
+  }
+
+  private func rebindContactColumn(
+    table: String,
+    column: String,
+    sourceID: UUID,
+    destinationID: UUID?,
+    additionalSet: String = ""
+  ) throws {
+    // Table and column names are fixed internal call-site constants above.
+    let statement = try prepare("UPDATE \(table) SET \(column) = ?\(additionalSet) WHERE \(column) = ?;")
+    defer { sqlite3_finalize(statement) }
+    bindText(destinationID?.uuidString, at: 1, in: statement)
+    bindText(sourceID.uuidString, at: 2, in: statement)
+    guard sqlite3_step(statement) == SQLITE_DONE else {
+      throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+    }
+  }
+
+  private func reassignMemoryV2Contacts(from sourceID: UUID, to destinationID: UUID?) throws {
+    let select = try prepare("SELECT payload FROM memory_v2 WHERE person_id = ?;")
+    bindText(sourceID.uuidString, at: 1, in: select)
+    var records: [MemoryV2Record] = []
+    while sqlite3_step(select) == SQLITE_ROW, let blob = sqlite3_column_blob(select, 0) {
+      let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(select, 0)))
+      if var record = try? JSONDecoder().decode(MemoryV2Record.self, from: data) {
+        record.personID = destinationID
+        if destinationID == nil, record.scope == .person || record.scope == .relationship {
+          record.scope = .global
+        }
+        record.version += 1
+        record.updatedAt = Date()
+        records.append(record)
+      }
+    }
+    sqlite3_finalize(select)
+    for record in records {
+      let payload = try JSONEncoder().encode(record)
+      try upsertMemoryV2Row(record, payload: payload)
+      try insertMemoryVersion(record, payload: payload)
+    }
   }
 
   public func saveSkill(_ skill: ClawSkillDefinition) throws {
@@ -943,22 +1034,56 @@ public final class ClawMemoryStore {
     return result
   }
 
+  /// Deletes every user-owned Memory Core record in one transaction, then restores
+  /// the built-in Skill definitions so the store has fresh-install behavior.
+  public func clearAllUserData() throws {
+    do {
+      try execute("""
+        BEGIN IMMEDIATE;
+        DELETE FROM memory_evidence;
+        DELETE FROM memory_versions;
+        DELETE FROM memory_lineage;
+        DELETE FROM memory_v2;
+        DELETE FROM raw_events;
+        DELETE FROM evolution_feedback;
+        DELETE FROM skills;
+        DELETE FROM secretary_tasks;
+        DELETE FROM conversation_messages;
+        DELETE FROM memory_items;
+        COMMIT;
+        """)
+    } catch {
+      try? execute("ROLLBACK;")
+      throw error
+    }
+    seedBuiltInSkillsIfNeeded()
+  }
+
   // MARK: - Memory V2
 
   /// 写入一条结构化记忆，并同步保存版本快照、证据与血缘。
   @discardableResult
   public func saveMemoryV2(
     _ record: MemoryV2Record,
-    rawEvents: [RawMemoryEvent] = []
+    rawEvents: [RawMemoryEvent] = [],
+    legacyProjection: ClawMemoryItem? = nil
   ) throws -> MemoryV2Record {
     lock.lock(); defer { lock.unlock() }
-    try insertRawEvents(rawEvents)
-    let payload = try JSONEncoder().encode(record)
-    try upsertMemoryV2Row(record, payload: payload)
-    try insertMemoryVersion(record, payload: payload)
-    try replaceMemoryEvidence(record)
-    try insertMemoryLineage(record)
-    return record
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      try insertRawEvents(rawEvents)
+      let payload = try JSONEncoder().encode(record)
+      try upsertMemoryV2Row(record, payload: payload)
+      try insertMemoryVersion(record, payload: payload)
+      try replaceMemoryEvidence(record)
+      try insertMemoryLineage(record)
+      if let legacyProjection { try upsertMemoryUnlocked(legacyProjection) }
+      try executeUnlocked("COMMIT;")
+      return record
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
   }
 
   /// 按 id 读取一条 V2 记忆。
@@ -1009,6 +1134,15 @@ public final class ClawMemoryStore {
     lock.lock(); defer { lock.unlock() }
     let statement = try prepare("SELECT COUNT(*) FROM memory_v2;")
     defer { sqlite3_finalize(statement) }
+    guard sqlite3_step(statement) == SQLITE_ROW else { return 0 }
+    return Int(sqlite3_column_int(statement, 0))
+  }
+
+  public func memoryV2VersionCount(id: UUID) throws -> Int {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("SELECT COUNT(*) FROM memory_versions WHERE memory_id = ?;")
+    defer { sqlite3_finalize(statement) }
+    bindText(id.uuidString, at: 1, in: statement)
     guard sqlite3_step(statement) == SQLITE_ROW else { return 0 }
     return Int(sqlite3_column_int(statement, 0))
   }
@@ -1104,6 +1238,12 @@ public final class ClawMemoryStore {
   }
 
   private func insertMemoryVersion(_ record: MemoryV2Record, payload: Data) throws {
+    let existing = try prepare("SELECT 1 FROM memory_versions WHERE memory_id = ? AND version = ? LIMIT 1;")
+    bindText(record.id.uuidString, at: 1, in: existing)
+    sqlite3_bind_int(existing, 2, Int32(record.version))
+    let alreadyStored = sqlite3_step(existing) == SQLITE_ROW
+    sqlite3_finalize(existing)
+    if alreadyStored { return }
     let sql = "INSERT INTO memory_versions (id,memory_id,version,payload,created_at) VALUES (?,?,?,?,?);"
     let statement = try prepare(sql)
     defer { sqlite3_finalize(statement) }
@@ -1129,7 +1269,7 @@ public final class ClawMemoryStore {
     }
     sqlite3_finalize(deleteStatement)
 
-    let sql = "INSERT OR REPLACE INTO memory_evidence (id,memory_id,raw_event_id,locator,excerpt) VALUES (?,?,?,?,?);"
+    let sql = "INSERT INTO memory_evidence (id,memory_id,raw_event_id,locator,excerpt) VALUES (?,?,?,?,?);"
     for evidence in record.evidence {
       let statement = try prepare(sql)
       defer { sqlite3_finalize(statement) }

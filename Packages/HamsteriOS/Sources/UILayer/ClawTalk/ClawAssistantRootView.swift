@@ -1,5 +1,6 @@
 import HamsterKeyboardKit
 import HamsterKit
+import PhotosUI
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -27,15 +28,11 @@ struct ClawAssistantRootView: View {
         .tabItem { Label("记忆", systemImage: "brain.head.profile") }
         .tag(ClawAssistantTab.memory)
 
-      ClawTalkRootView(
-        viewModel: viewModel,
-        openAssistant: { selectedTab = .assistant },
-        openPeople: { selectedTab = .people },
-        openMemory: { selectedTab = .memory }
-      )
+      ClawTalkRootView(viewModel: viewModel)
         .tabItem { Label("数据", systemImage: "tray.full.fill") }
         .tag(ClawAssistantTab.data)
     }
+    .clawKeyboardDismissal()
     .navigationTitle("CLAW")
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
@@ -432,6 +429,15 @@ private struct ClawSecretaryTodayView: View {
   @State private var memories: [ClawMemoryItem] = []
   @State private var suggestions: [ClawSecretarySuggestion] = []
   @State private var briefing = ""
+  @State private var showingNewTask = false
+  @AppStorage(
+    "claw.secretary.reminder-strategy",
+    store: UserDefaults(suiteName: HamsterConstants.appGroupName)
+  ) private var reminderStrategyRaw = ClawReminderStrategy.proactive.rawValue
+
+  private var groupedTasks: [ClawTodayTaskGroup: [ClawSecretaryTask]] {
+    ClawTodayTaskGrouping.group(tasks)
+  }
 
   var body: some View {
     NavigationView {
@@ -457,6 +463,13 @@ private struct ClawSecretaryTodayView: View {
           Text("今日 Briefing")
         } footer: {
           Text("由本机任务/承诺/等待状态生成；即使未配置云端模型也可用。")
+        }
+        Section("提醒策略") {
+          Picker("提醒方式", selection: $reminderStrategyRaw) {
+            ForEach(ClawReminderStrategy.allCases) { strategy in
+              Text(strategy.title).tag(strategy.rawValue)
+            }
+          }
         }
         if !suggestions.isEmpty {
           Section {
@@ -491,34 +504,54 @@ private struct ClawSecretaryTodayView: View {
             Text("只有临近截止、已逾期或长时间等待的事项会主动提醒；低优先级内容留在今日列表，不频繁打扰。")
           }
         }
-        Section {
-          ForEach(tasks.prefix(20)) { task in
-            VStack(alignment: .leading, spacing: 4) {
-              HStack {
-                Text(task.title).font(.body)
-                Spacer()
-                Text(task.kind.rawValue).font(.caption2).foregroundColor(.secondary)
+        ForEach(ClawTodayTaskGroup.allCases) { group in
+          if let grouped = groupedTasks[group], !grouped.isEmpty {
+            Section(group.title) {
+              ForEach(grouped) { task in
+                NavigationLink {
+                  ClawTaskDetailView(task: task, onChange: reload)
+                } label: {
+                  VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                      Text(task.title).font(.body)
+                      Spacer()
+                      Text(task.kind.rawValue).font(.caption2).foregroundColor(.secondary)
+                    }
+                    if let due = task.dueAt {
+                      Text(due, style: .relative).font(.caption).foregroundColor(group == .overdue ? .red : .orange)
+                    }
+                    if let details = task.details, !details.isEmpty {
+                      Text(details).font(.caption).foregroundColor(.secondary).lineLimit(2)
+                    }
+                  }
+                }
+                .swipeActions(edge: .trailing) {
+                  Button("完成") {
+                    _ = ClawProactiveSecretaryService.shared.complete(taskID: task.id)
+                    reload()
+                  }
+                  .tint(.green)
+                }
               }
-              if let due = task.dueAt {
-                Text(due, style: .relative).font(.caption).foregroundColor(.orange)
-              }
-              if let details = task.details, !details.isEmpty {
-                Text(details).font(.caption).foregroundColor(.secondary).lineLimit(2)
-              }
-            }
-            .swipeActions(edge: .trailing) {
-              Button("完成") {
-                _ = ClawProactiveSecretaryService.shared.complete(taskID: task.id)
-                reload()
-              }
-              .tint(.green)
             }
           }
-        } header: {
-          Text("下一步")
         }
       }
       .navigationTitle("今日秘书")
+      .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button { showingNewTask = true } label: { Image(systemName: "plus") }
+            .accessibilityLabel("新建待办")
+        }
+      }
+      .sheet(isPresented: $showingNewTask) {
+        NavigationView {
+          ClawTaskEditorView {
+            showingNewTask = false
+            reload()
+          }
+        }
+      }
       .onAppear(perform: reload)
       .refreshable { reload() }
     }
@@ -533,26 +566,134 @@ private struct ClawSecretaryTodayView: View {
   }
 }
 
+private struct ClawTaskEditorView: View {
+  let onSaved: () -> Void
+  @Environment(\.dismiss) private var dismiss
+  @State private var title = ""
+  @State private var details = ""
+  @State private var kind = ClawTaskKind.task
+  @State private var hasDueDate = false
+  @State private var dueAt = Date().addingTimeInterval(3600)
+
+  private let kinds: [ClawTaskKind] = [.task, .commitment, .waitingFor, .deadline, .nextAction]
+
+  var body: some View {
+    Form {
+      Section("待办") {
+        TextField("要做什么？", text: $title)
+        TextEditor(text: $details).frame(minHeight: 90)
+        Picker("类型", selection: $kind) {
+          ForEach(kinds, id: \.rawValue) { Text($0.rawValue).tag($0) }
+        }
+      }
+      Section("时间") {
+        Toggle("设置截止时间", isOn: $hasDueDate)
+        if hasDueDate { DatePicker("截止", selection: $dueAt) }
+      }
+    }
+    .clawKeyboardDismissal()
+    .navigationTitle("新建待办")
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+      ToolbarItem(placement: .confirmationAction) {
+        Button("保存") {
+          let task = ClawSecretaryTask(
+            kind: kind,
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+            details: details.trimmingCharacters(in: .whitespacesAndNewlines),
+            dueAt: hasDueDate ? dueAt : nil,
+            sourceType: "manual"
+          )
+          _ = try? ClawMemoryStore.shared.upsertTask(task)
+          onSaved()
+          dismiss()
+        }
+        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      }
+    }
+  }
+}
+
+private struct ClawTaskDetailView: View {
+  let task: ClawSecretaryTask
+  let onChange: () -> Void
+  @Environment(\.dismiss) private var dismiss
+  @State private var showingCustomSnooze = false
+  @State private var customDate = Date().addingTimeInterval(3600)
+
+  var body: some View {
+    List {
+      Section("事项") {
+        Text(task.title)
+        if let details = task.details, !details.isEmpty { Text(details).foregroundColor(.secondary) }
+        HStack { Text("类型"); Spacer(); Text(task.kind.rawValue).foregroundColor(.secondary) }
+        if let dueAt = task.dueAt { HStack { Text("截止"); Spacer(); Text(dueAt, style: .date); Text(dueAt, style: .time) } }
+      }
+      Section("操作") {
+        Button("标记完成") {
+          _ = ClawProactiveSecretaryService.shared.complete(taskID: task.id)
+          onChange()
+          dismiss()
+        }
+        Menu("稍后提醒") {
+          Button("1 小时后") { snooze(hours: 1) }
+          Button("明天") { snooze(hours: 24) }
+          Button("自定义…") { showingCustomSnooze = true }
+        }
+      }
+    }
+    .navigationTitle("待办详情")
+    .sheet(isPresented: $showingCustomSnooze) {
+      NavigationView {
+        Form { DatePicker("提醒时间", selection: $customDate, in: Date()...) }
+          .navigationTitle("自定义提醒")
+          .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("取消") { showingCustomSnooze = false } }
+            ToolbarItem(placement: .confirmationAction) {
+              Button("确定") {
+                _ = try? ClawMemoryStore.shared.snoozeTask(id: task.id, until: customDate)
+                showingCustomSnooze = false
+                onChange()
+              }
+            }
+          }
+      }
+    }
+  }
+
+  private func snooze(hours: Int) {
+    _ = ClawProactiveSecretaryService.shared.snooze(taskID: task.id, hours: hours)
+    onChange()
+  }
+}
+
 private struct ClawPeopleView: View {
   let onUseProfile: () -> Void
   @State private var profiles = HeartTargetService.shared.profiles
   @State private var selectedID = HeartTargetService.shared.selectedProfile?.id
   @State private var searchText = ""
   @State private var editingProfile: HeartTargetProfile?
+  @State private var filter = ClawPeopleFilter.all
+  @State private var pendingDelete: HeartTargetProfile?
+  @State private var mergingProfile: HeartTargetProfile?
 
   private var filteredProfiles: [HeartTargetProfile] {
-    let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    guard !query.isEmpty else { return profiles }
-    return profiles.filter { profile in
-      profile.displayName.lowercased().contains(query)
-        || profile.relationship.lowercased().contains(query)
-        || profile.aliases.contains(where: { $0.lowercased().contains(query) })
-    }
+    ClawPeoplePresentation.filtered(profiles, query: searchText, filter: filter)
   }
 
   var body: some View {
     NavigationView {
       List {
+        Section {
+          Picker("筛选", selection: $filter) {
+            ForEach(ClawPeopleFilter.allCases) { option in
+              Text(option.title).tag(option)
+            }
+          }
+          .pickerStyle(.segmented)
+        }
+
         Section {
           Button {
             HeartTargetService.shared.clearSelection()
@@ -596,28 +737,13 @@ private struct ClawPeopleView: View {
                     }
                     Text(profile.relationship.isEmpty ? (profile.bio.isEmpty ? "尚未形成画像" : profile.bio) : profile.relationship)
                       .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                    if let lastSeenAt = profile.lastSeenAt {
+                      Text("最近互动：\(lastSeenAt, style: .relative)")
+                        .font(.caption2).foregroundColor(.secondary)
+                    }
                   }
                 }
               }
-              Button {
-                HeartTargetService.shared.select(id: profile.id)
-                selectedID = profile.id
-                onUseProfile()
-              } label: {
-                Image(systemName: selectedID == profile.id ? "checkmark.circle.fill" : "circle")
-                  .font(.title3)
-                  .foregroundColor(selectedID == profile.id ? .accentColor : .secondary)
-              }
-              .buttonStyle(.plain)
-              .accessibilityLabel(selectedID == profile.id ? "当前人物" : "设为当前人物")
-            }
-            .swipeActions(edge: .leading, allowsFullSwipe: true) {
-              Button("设为当前") {
-                HeartTargetService.shared.select(id: profile.id)
-                selectedID = profile.id
-                onUseProfile()
-              }
-              .tint(.accentColor)
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
               Button("编辑") {
@@ -625,7 +751,18 @@ private struct ClawPeopleView: View {
               }
               .tint(.blue)
               Button("删除", role: .destructive) {
-                HeartTargetService.shared.delete(id: profile.id)
+                pendingDelete = profile
+              }
+            }
+            .contextMenu {
+              Button("设为当前人物") {
+                HeartTargetService.shared.select(id: profile.id)
+                selectedID = profile.id
+                onUseProfile()
+              }
+              Button("合并到…") { mergingProfile = profile }
+              Button("拆分副本") {
+                editingProfile = ClawPeopleWorkflowService.shared.splitCopy(of: profile)
               }
             }
           }
@@ -650,6 +787,34 @@ private struct ClawPeopleView: View {
           ClawContactEditorView(profile: profile)
         }
       }
+      .alert(item: $pendingDelete) { profile in
+        Alert(
+          title: Text("删除 \(profile.displayName)？"),
+          message: Text("人物档案会删除；关联记忆、待办和聊天记录会保留并转为全局记录。"),
+          primaryButton: .destructive(Text("删除")) {
+            ClawPeopleWorkflowService.shared.deleteProfilePreservingRecords(profile.id)
+          },
+          secondaryButton: .cancel()
+        )
+      }
+      .confirmationDialog(
+        "将 \(mergingProfile?.displayName ?? "此人物") 合并到",
+        isPresented: Binding(
+          get: { mergingProfile != nil },
+          set: { if !$0 { mergingProfile = nil } }
+        ),
+        titleVisibility: .visible
+      ) {
+        if let source = mergingProfile {
+          ForEach(profiles.filter { $0.id != source.id }) { destination in
+            Button(destination.displayName) {
+              ClawPeopleWorkflowService.shared.merge(sourceID: source.id, into: destination.id)
+              mergingProfile = nil
+            }
+          }
+        }
+        Button("取消", role: .cancel) { mergingProfile = nil }
+      }
       .onReceive(NotificationCenter.default.publisher(for: .heartTargetProfilesDidChange)) { _ in
         profiles = HeartTargetService.shared.profiles
         selectedID = HeartTargetService.shared.selectedProfile?.id
@@ -667,6 +832,8 @@ private struct ClawContactEditorView: View {
   @State private var aliases: String
   @State private var bio: String
   @State private var isGroup: Bool
+  @State private var avatarData: Data?
+  @State private var showingAvatarPicker = false
 
   init(profile: HeartTargetProfile) {
     original = profile
@@ -675,10 +842,30 @@ private struct ClawContactEditorView: View {
     _aliases = State(initialValue: profile.aliases.joined(separator: "、"))
     _bio = State(initialValue: profile.bio)
     _isGroup = State(initialValue: profile.isGroup)
+    _avatarData = State(initialValue: profile.avatarData)
   }
 
   var body: some View {
     Form {
+      Section("头像") {
+        Button { showingAvatarPicker = true } label: {
+          HStack {
+            Spacer()
+            Group {
+              if let avatarData, let image = UIImage(data: avatarData) {
+                Image(uiImage: image).resizable()
+              } else {
+                Image(systemName: "person.crop.circle.fill").resizable().foregroundColor(.secondary)
+              }
+            }
+            .scaledToFill()
+            .frame(width: 72, height: 72)
+            .clipShape(Circle())
+            Spacer()
+          }
+        }
+        .buttonStyle(.plain)
+      }
       Section("基本信息") {
         TextField("姓名 / 群名", text: $name)
         TextField("关系，例如朋友、客户、家人", text: $relationship)
@@ -693,22 +880,12 @@ private struct ClawContactEditorView: View {
       } footer: {
         Text("AI 自动形成的互动画像会与这里的手工备注分开保存，不会覆盖你的文字。")
       }
-      if let image = original.avatarImage {
-        Section {
-          HStack {
-            Spacer()
-            Image(uiImage: image)
-              .resizable()
-              .scaledToFill()
-              .frame(width: 72, height: 72)
-              .clipShape(Circle())
-            Spacer()
-          }
-        } header: {
-          Text("当前头像")
-        } footer: {
-          Text("头像更换仍可在设置 → 聊天对象档案中完成；这里不会丢失现有头像。")
-        }
+    }
+    .clawKeyboardDismissal()
+    .sheet(isPresented: $showingAvatarPicker) {
+      ClawAvatarPicker { image in
+        avatarData = image.jpegData(compressionQuality: 0.8)
+        showingAvatarPicker = false
       }
     }
     .navigationTitle(original.name.isEmpty ? "新建人物" : "编辑人物")
@@ -736,6 +913,7 @@ private struct ClawContactEditorView: View {
       .filter { !$0.isEmpty }
     profile.bio = bio.trimmingCharacters(in: .whitespacesAndNewlines)
     profile.isGroup = isGroup
+    profile.avatarData = avatarData
     profile.autoCreated = false
     _ = HeartTargetService.shared.upsert(profile)
     dismiss()
@@ -746,6 +924,7 @@ private struct ClawContactDetailView: View {
   let profile: HeartTargetProfile
   @State private var timeline: [ClawConversationMessage] = []
   @State private var memories: [ClawMemoryItem] = []
+  @State private var tasks: [ClawSecretaryTask] = []
   @State private var isSelected = false
 
   var body: some View {
@@ -800,6 +979,20 @@ private struct ClawContactDetailView: View {
           Text("长期记忆")
         }
       }
+      if !tasks.isEmpty {
+        Section("未完成事项") {
+          ForEach(tasks) { task in
+            NavigationLink {
+              ClawTaskDetailView(task: task) { reloadProfileData() }
+            } label: {
+              VStack(alignment: .leading, spacing: 2) {
+                Text(task.title)
+                if let dueAt = task.dueAt { Text(dueAt, style: .relative).font(.caption).foregroundColor(.orange) }
+              }
+            }
+          }
+        }
+      }
       Section {
         if timeline.isEmpty { Text("还没有结构化聊天记录").foregroundColor(.secondary) }
         ForEach(timeline.suffix(80)) { message in
@@ -817,11 +1010,50 @@ private struct ClawContactDetailView: View {
     .navigationTitle(profile.displayName)
     .onAppear {
       isSelected = HeartTargetService.shared.selectedProfile?.id == profile.id
-      timeline = (try? ClawMemoryStore.shared.conversation(contactID: profile.id, limit: 200)) ?? []
-      memories = (try? ClawMemoryStore.shared.memories(scope: "contact", subjectID: profile.id, limit: 100)) ?? []
+      reloadProfileData()
     }
     .onReceive(NotificationCenter.default.publisher(for: .heartTargetProfilesDidChange)) { _ in
       isSelected = HeartTargetService.shared.selectedProfile?.id == profile.id
+    }
+  }
+
+  private func reloadProfileData() {
+    timeline = (try? ClawMemoryStore.shared.conversation(contactID: profile.id, limit: 200)) ?? []
+    memories = (try? ClawMemoryStore.shared.memories(scope: "contact", subjectID: profile.id, limit: 100)) ?? []
+    tasks = ((try? ClawMemoryStore.shared.tasks(status: .open, limit: 500)) ?? [])
+      .filter { $0.contactID == profile.id }
+  }
+}
+
+private struct ClawAvatarPicker: UIViewControllerRepresentable {
+  let onPick: (UIImage) -> Void
+
+  func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
+
+  func makeUIViewController(context: Context) -> PHPickerViewController {
+    var configuration = PHPickerConfiguration()
+    configuration.filter = .images
+    configuration.selectionLimit = 1
+    let picker = PHPickerViewController(configuration: configuration)
+    picker.delegate = context.coordinator
+    return picker
+  }
+
+  func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
+
+  final class Coordinator: NSObject, PHPickerViewControllerDelegate {
+    let onPick: (UIImage) -> Void
+    init(onPick: @escaping (UIImage) -> Void) { self.onPick = onPick }
+
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+      picker.dismiss(animated: true)
+      guard let provider = results.first?.itemProvider,
+            provider.canLoadObject(ofClass: UIImage.self)
+      else { return }
+      provider.loadObject(ofClass: UIImage.self) { [onPick] object, _ in
+        guard let image = object as? UIImage else { return }
+        DispatchQueue.main.async { onPick(image) }
+      }
     }
   }
 }

@@ -35,6 +35,9 @@ public class SettingTableViewCell: NibLessTableViewCell {
     var config = UIListContentConfiguration.valueCell()
     config.text = state.settingItemModel?.text
     config.textProperties.font = UIFont.systemFont(ofSize: UIFont.labelFontSize)
+    if let color = state.settingItemModel?.textTintColor {
+      config.textProperties.color = color
+    }
     if state.settingItemModel?.type == .navigation {
       config.secondaryText = state.settingItemModel?.navigationLinkLabel()
     } else {

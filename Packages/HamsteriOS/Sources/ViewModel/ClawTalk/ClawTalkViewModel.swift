@@ -3,6 +3,30 @@ import Foundation
 import HamsterKit
 import UIKit
 
+struct ClawTalkSummary: Equatable {
+  let todayInputCount: Int
+  let latestCollectionTime: Date?
+
+  static func make(
+    inputEntries: [ClawTalkEntry],
+    clipboardEntries: [ClipboardEntry],
+    now: Date = Date(),
+    calendar: Calendar = .current
+  ) -> ClawTalkSummary {
+    let todaysInputDates = inputEntries
+      .map(\.startTime)
+      .filter { calendar.isDate($0, inSameDayAs: now) }
+    let todaysClipboardDates = clipboardEntries
+      .map(\.timestamp)
+      .filter { calendar.isDate($0, inSameDayAs: now) }
+    let collectionDates = todaysInputDates + todaysClipboardDates
+    return ClawTalkSummary(
+      todayInputCount: collectionDates.count,
+      latestCollectionTime: collectionDates.max()
+    )
+  }
+}
+
 class ClawTalkViewModel: ObservableObject {
   // MARK: - Published State (ClawTalk)
 
@@ -15,6 +39,7 @@ class ClawTalkViewModel: ObservableObject {
   @Published var statusMessage: String = ""
   @Published var totalEntryCount: Int = 0
   @Published var storageSize: String = ""
+  @Published var todaySummary = ClawTalkSummary(todayInputCount: 0, latestCollectionTime: nil)
 
   // MARK: - Clipboard State
 
@@ -49,6 +74,7 @@ class ClawTalkViewModel: ObservableObject {
     selectedDates = Set(availableDates)
     if let first = availableDates.first { loadPreview(for: first) }
     reloadClipboard()
+    reloadTodaySummary()
   }
 
   func reloadClipboard() {
@@ -61,6 +87,14 @@ class ClawTalkViewModel: ObservableObject {
     }
   }
 
+  private func reloadTodaySummary(now: Date = Date()) {
+    todaySummary = ClawTalkSummary.make(
+      inputEntries: service.entries(for: now),
+      clipboardEntries: clipboardService.entries(for: now),
+      now: now
+    )
+  }
+
   func toggleClipboardMonitor(_ enabled: Bool) {
     clipboardService.isEnabled = enabled
     clipboardEnabled = enabled
@@ -70,6 +104,13 @@ class ClawTalkViewModel: ObservableObject {
   func recordClipboardNow() {
     clipboardService.checkAndRecord()
     reloadClipboard()
+    reloadTodaySummary()
+    // Clipboard writes run on the service's utility queue. Refresh again after
+    // the write normally lands so the primary action updates its summary.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+      self?.reloadClipboard()
+      self?.reloadTodaySummary()
+    }
   }
 
   func loadPreview(for date: Date) {
@@ -129,6 +170,7 @@ class ClawTalkViewModel: ObservableObject {
     service.deleteEntry(id: id, for: date)
     previewEntries.removeAll { $0.id == id }
     totalEntryCount = service.totalEntryCount()
+    reloadTodaySummary()
   }
 
   func deleteClipboardEntry(id: UUID) {
@@ -136,12 +178,14 @@ class ClawTalkViewModel: ObservableObject {
     clipboardService.deleteEntry(id: id, for: date)
     clipboardPreviewEntries.removeAll { $0.id == id }
     clipboardEntryCount = clipboardService.totalEntryCount()
+    reloadTodaySummary()
   }
 
   func clearAllClipboardEntries() {
     clipboardService.deleteAllEntries()
     clipboardPreviewEntries.removeAll()
     clipboardEntryCount = 0
+    reloadTodaySummary()
   }
 
   // MARK: - AI
@@ -238,5 +282,14 @@ class ClawTalkViewModel: ObservableObject {
     if bytes < 1024 { return "\(bytes) B" }
     if bytes < 1024 * 1024 { return String(format: "%.1f KB", Double(bytes) / 1024) }
     return String(format: "%.1f MB", Double(bytes) / (1024 * 1024))
+  }
+
+  var latestCollectionTimeText: String {
+    guard let date = todaySummary.latestCollectionTime else { return "今日尚无采集" }
+    let formatter = DateFormatter()
+    formatter.locale = .current
+    formatter.timeStyle = .short
+    formatter.dateStyle = .none
+    return "最近采集 \(formatter.string(from: date))"
   }
 }

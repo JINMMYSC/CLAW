@@ -418,3 +418,86 @@ final class SmartFreqShouldRunTests: XCTestCase {
     XCTAssertFalse(service.shouldRun)  // 被 isEnabled=false 拦截
   }
 }
+
+// MARK: - SmartFreq validation and RIME encoding
+
+final class SmartFreqValidatorTests: XCTestCase {
+  private let validator = SmartFreqValidator()
+
+  func testAcceptedPhraseUsesRimeCustomPhraseColumnOrder() {
+    let report = validator.validate(
+      [SmartFreqDraft(kind: .newPhrase, code: "nihao", word: "你好", observedCount: 3)],
+      existing: []
+    )
+
+    XCTAssertEqual(report.accepted.count, 1)
+    XCTAssertEqual(report.accepted[0].rimeLine, "你好\tnihao\t100")
+    XCTAssertTrue(report.pending.isEmpty)
+    XCTAssertTrue(report.rejected.isEmpty)
+  }
+
+  func testDeterministicPinyinAndKnownPolyphone() {
+    XCTAssertEqual(validator.deterministicPinyin(for: "你好"), "nihao")
+    XCTAssertEqual(validator.deterministicPinyin(for: "重庆"), "chongqing")
+    XCTAssertEqual(validator.deterministicPinyin(for: "银行"), "yinhang")
+  }
+
+  func testSingleObservationNeedsConfirmation() {
+    let report = validator.validate(
+      [SmartFreqDraft(kind: .newPhrase, code: "niupi", word: "牛批", observedCount: 1)],
+      existing: []
+    )
+
+    XCTAssertEqual(report.pending.map(\.reason), [.insufficientEvidence])
+  }
+
+  func testIllegalTermAndZeroObservationAreRejected() {
+    let report = validator.validate([
+      SmartFreqDraft(kind: .newPhrase, code: "bad code", word: "坏\n词", observedCount: 3),
+      SmartFreqDraft(kind: .newPhrase, code: "nihao", word: "你好", observedCount: 0),
+    ], existing: [])
+
+    XCTAssertEqual(Set(report.rejected.map(\.reason)), [.illegalTerm, .notObserved])
+  }
+
+  func testDuplicateIsRejectedAndCodeConflictIsPending() {
+    let existing = [SmartFreqAcceptedPhrase(code: "nihao", word: "你好", weight: 100)]
+    let report = validator.validate([
+      SmartFreqDraft(kind: .newPhrase, code: "nihao", word: "你好", observedCount: 4),
+      SmartFreqDraft(kind: .newPhrase, code: "nihao", word: "拟好", observedCount: 4),
+    ], existing: existing)
+
+    XCTAssertEqual(report.rejected.map(\.reason), [.duplicate])
+    XCTAssertEqual(report.pending.map(\.reason), [.conflict])
+  }
+
+  func testPinyinMismatchNeedsConfirmation() {
+    let report = validator.validate(
+      [SmartFreqDraft(kind: .newPhrase, code: "zhongqing", word: "重庆", observedCount: 4)],
+      existing: []
+    )
+
+    XCTAssertEqual(report.pending.map(\.reason), [.pinyinMismatch])
+  }
+
+  func testBudgetIsDeterministicAndKeepsHighestEvidence() {
+    let drafts = [
+      SmartFreqDraft(kind: .newPhrase, code: "shijie", word: "世界", observedCount: 3),
+      SmartFreqDraft(kind: .newPhrase, code: "nihao", word: "你好", observedCount: 8),
+    ]
+    let report = validator.validate(drafts, existing: [], acceptanceBudget: 1)
+
+    XCTAssertEqual(report.accepted.map(\.word), ["你好"])
+    XCTAssertEqual(report.pending.map(\.reason), [.budgetExceeded])
+  }
+
+  func testSchemaPatchAddsSelectedSchemaTranslatorWithoutDuplicatingIt() throws {
+    let once = try SmartFreqValidator.schemaPatchYAML(existing: "patch:\n  menu/page_size: 9\n")
+    let twice = try SmartFreqValidator.schemaPatchYAML(existing: once)
+
+    XCTAssertTrue(once.contains("table_translator@claw_smart_freq"))
+    XCTAssertTrue(once.contains("user_dict: claw_smart_freq"))
+    XCTAssertTrue(once.contains("menu/page_size"))
+    XCTAssertEqual(once, twice)
+  }
+}

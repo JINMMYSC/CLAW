@@ -13,6 +13,10 @@ public struct SmartFreqConfig: Codable {
   public var budgetMonth: String
   /// 上次执行时间
   public var lastRunDate: Date?
+  /// Whether names and contextual phrases may be proposed. Off by default for privacy.
+  public var includePersonalSuggestions: Bool?
+  /// Cap retained custom phrases during each successful merge. Nil uses the default cap.
+  public var phraseBudget: Int?
 
   public init(
     isEnabled: Bool = false,
@@ -20,7 +24,9 @@ public struct SmartFreqConfig: Codable {
     monthlyTokenBudget: Int = 0,
     monthlyTokensUsed: Int = 0,
     budgetMonth: String = "",
-    lastRunDate: Date? = nil
+    lastRunDate: Date? = nil,
+    includePersonalSuggestions: Bool? = false,
+    phraseBudget: Int? = 500
   ) {
     self.isEnabled = isEnabled
     self.intervalMinutes = intervalMinutes
@@ -28,5 +34,7 @@ public struct SmartFreqConfig: Codable {
     self.monthlyTokensUsed = monthlyTokensUsed
     self.budgetMonth = budgetMonth
     self.lastRunDate = lastRunDate
+    self.includePersonalSuggestions = includePersonalSuggestions
+    self.phraseBudget = phraseBudget
   }
 }
