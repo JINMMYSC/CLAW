@@ -4,12 +4,13 @@ import XCTest
 
 final class ClawMemoryArchiveV2Tests: XCTestCase {
   func testArchiveRoundTripPreservesIdentityEvidenceAndLineage() throws {
-    let raw = RawMemoryEvent(kind: "message", content: "source")
+    let timestamp = Date(timeIntervalSince1970: 1_900_000_000)
+    let raw = RawMemoryEvent(kind: "message", content: "source", occurredAt: timestamp, ingestedAt: timestamp)
     let record = MemoryV2Record(
       type: .semantic, state: .confirmed, scope: .global, content: "CLAW ships Friday",
-      provenance: .init(originType: .userExplicit, ingestionMethod: "test"),
+      provenance: .init(originType: .userExplicit, observedAt: timestamp, ingestionMethod: "test"),
       evidence: [.init(rawEventID: raw.id, excerpt: "source")],
-      lineage: .init(rawEventIDs: [raw.id]), version: 4
+      lineage: .init(rawEventIDs: [raw.id]), version: 4, createdAt: timestamp, updatedAt: timestamp
     )
     let snapshot = ClawMemoryArchiveSnapshot(memories: [record], rawEvents: [raw], audits: [])
     let url = try ClawMemoryArchiveV2().export(snapshot: snapshot, now: Date(timeIntervalSince1970: 1_900_000_000))
