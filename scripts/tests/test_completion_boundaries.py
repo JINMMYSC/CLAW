@@ -33,6 +33,23 @@ class CompletionBoundaryTests(unittest.TestCase):
         controller = ROOT / "Packages/HamsteriOS/Sources/UILayer/Settings/HeartTargetSettingsViewController.swift"
         self.assertFalse(controller.exists(), "legacy HeartTarget settings screen still exists")
 
+    def test_startup_smoke_waits_for_migration_marker(self):
+        workflow = (ROOT / ".github/workflows/startup-smoke.yml").read_text(encoding="utf-8")
+        migration_step = workflow.split("- name: Launch legacy migration regression", 1)[1]
+        migration_step = migration_step.split("- name: Capture diagnostics", 1)[0]
+
+        self.assertRegex(
+            migration_step,
+            re.compile(
+                r"for _ in \$\(seq 1 \d+\); do.*"
+                r"grep -q \"clawtalk-v1-migration: start\".*"
+                r"kill -0 \"\$monitor\".*done",
+                re.DOTALL,
+            ),
+            "startup smoke must poll for the migration marker while the app stays alive",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
+

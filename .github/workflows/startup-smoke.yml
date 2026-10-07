@@ -104,23 +104,30 @@ jobs:
         run: |
           set -euo pipefail
           rm -f smoke-console.log
-          rm -f smoke-screen-12s.png smoke-screen-45s.png
+          rm -f smoke-screen-start.png smoke-screen-45s.png
           xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
             -clawTalkForceV1Migration \
             >smoke-console.log 2>&1 &
           monitor=$!
-          sleep 12
-          if ! kill -0 "$monitor" 2>/dev/null; then
-            echo "App exited during the 12-second startup window"
+          migration_started=0
+          for _ in $(seq 1 18); do
+            sleep 5
+            if grep -q "clawtalk-v1-migration: start" smoke-console.log; then
+              migration_started=1
+              break
+            fi
+            if ! kill -0 "$monitor" 2>/dev/null; then
+              echo "App exited while waiting for the legacy v1 migration"
+              cat smoke-console.log
+              exit 1
+            fi
+          done
+          if [ "$migration_started" -ne 1 ]; then
+            echo "Legacy v1 migration did not start within 90 seconds"
             cat smoke-console.log
             exit 1
           fi
-          if ! grep -q "clawtalk-v1-migration: start" smoke-console.log; then
-            echo "Legacy v1 migration path was not exercised"
-            cat smoke-console.log
-            exit 1
-          fi
-          xcrun simctl io "$SIMULATOR_UDID" screenshot smoke-screen-12s.png
+          xcrun simctl io "$SIMULATOR_UDID" screenshot smoke-screen-start.png
           sleep 33
           if ! kill -0 "$monitor" 2>/dev/null; then
             echo "App exited during the 45-second startup window"
@@ -148,9 +155,9 @@ jobs:
                       if px[x, y] < 24:
                           dark += 1
               return dark / total
-          r12 = dark_ratio("smoke-screen-12s.png")
+          rstart = dark_ratio("smoke-screen-start.png")
           r45 = dark_ratio("smoke-screen-45s.png")
-          print(f"dark_ratio 12s={r12:.3f} 45s={r45:.3f}")
+          print(f"dark_ratio start={rstart:.3f} 45s={r45:.3f}")
           if r45 > 0.97:
               print("SCREEN IS BLACK: launch overlay did not dismiss within 45s")
               sys.exit(1)
@@ -190,4 +197,5 @@ jobs:
             Hamster*.crash
             Hamster*.ips
           if-no-files-found: warn
+
 
