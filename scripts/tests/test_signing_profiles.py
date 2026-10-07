@@ -199,7 +199,9 @@ class SigningProfileTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("--list-extension-bundle-identifiers", workflow)
+        self.assertEqual(workflow.count("--allow-missing-icloud"), 2)
 
 
 if __name__ == "__main__":
     unittest.main()
+

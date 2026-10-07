@@ -202,6 +202,11 @@ def main():
     ap.add_argument("--widget-profile", help="profile for a WidgetKit extension")
     ap.add_argument("--widget-bundle-id", help="exact bundle identifier for --widget-profile")
     ap.add_argument(
+        "--allow-missing-icloud",
+        action="store_true",
+        help="sign without the CLAW iCloud container when the supplied profile omits it",
+    )
+    ap.add_argument(
         "--bundle-profile", action="append", default=[], metavar="BUNDLE_ID=PATH",
         help="profile for one exact extension bundle identifier (repeatable)")
     ap.add_argument("--list-extension-bundle-identifiers", action="store_true")
@@ -269,10 +274,20 @@ def main():
         # --- entitlements ---
         main_ent = extract_entitlements(args.main_profile)
         main_identifier = read_bundle_info(app_path)["CFBundleIdentifier"]
+        required_icloud_containers = (
+            [] if args.allow_missing_icloud else [DEFAULT_ICLOUD_CONTAINER]
+        )
+        if args.allow_missing_icloud and DEFAULT_ICLOUD_CONTAINER not in (
+            main_ent.get("com.apple.developer.icloud-container-identifiers", []) or []
+        ):
+            print(
+                "WARNING: signing without iCloud container %s; iCloud features are unavailable"
+                % DEFAULT_ICLOUD_CONTAINER
+            )
         validate_profile(
             main_identifier,
             main_ent,
-            required_icloud_containers=[DEFAULT_ICLOUD_CONTAINER],
+            required_icloud_containers=required_icloud_containers,
         )
         main_shared = add_shared_keychain_group(main_ent)
         main_ent_path = os.path.join(tmp, "main_ent.plist")
@@ -303,7 +318,7 @@ def main():
         print("signed app:", app_name)
 
         # --- verify ---
-        verify_bundle_tree(app_path)
+        verify_bundle_tree(app_path, require_icloud=not args.allow_missing_icloud)
         print("bundle signatures and entitlements verify OK")
 
         # --- repack ipa ---
@@ -324,3 +339,4 @@ if __name__ == "__main__":
     except SigningCommandError as error:
         print("ERROR:", error, file=sys.stderr)
         sys.exit(1)
+

@@ -140,7 +140,7 @@ def verification_commands(app_path, bundles):
     return commands
 
 
-def verify_bundle_tree(app_path):
+def verify_bundle_tree(app_path, require_icloud=True):
     main_identifier = bundle_identifier(app_path)
     bundles = discover_code_bundles(app_path)
     for bundle in bundles:
@@ -161,7 +161,9 @@ def verify_bundle_tree(app_path):
             signed_entitlements,
             required_app_groups=[DEFAULT_APP_GROUP],
             required_icloud_containers=(
-                [DEFAULT_ICLOUD_CONTAINER] if identifier == main_identifier else []
+                [DEFAULT_ICLOUD_CONTAINER]
+                if require_icloud and identifier == main_identifier
+                else []
             ),
         )
         print("verified bundle:", identifier)
@@ -172,7 +174,7 @@ def verify_bundle_tree(app_path):
     print("verified deep signature tree:", main_identifier)
 
 
-def verify_ipa(ipa_path):
+def verify_ipa(ipa_path, require_icloud=True):
     with tempfile.TemporaryDirectory() as tmp:
         with zipfile.ZipFile(ipa_path) as archive:
             archive.extractall(tmp)
@@ -180,16 +182,25 @@ def verify_ipa(ipa_path):
         apps = [name for name in os.listdir(payload) if name.endswith(".app")]
         if len(apps) != 1:
             raise ValueError("expected exactly one app in IPA Payload")
-        verify_bundle_tree(os.path.join(payload, apps[0]))
+        verify_bundle_tree(
+            os.path.join(payload, apps[0]),
+            require_icloud=require_icloud,
+        )
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("ipa", help="path to signed IPA")
+    parser.add_argument(
+        "--allow-missing-icloud",
+        action="store_true",
+        help="verify a build signed by a profile that omits the CLAW iCloud container",
+    )
     args = parser.parse_args()
-    verify_ipa(args.ipa)
+    verify_ipa(args.ipa, require_icloud=not args.allow_missing_icloud)
     print("signed IPA verification OK")
 
 
 if __name__ == "__main__":
     main()
+

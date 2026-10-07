@@ -175,6 +175,7 @@ jobs:
             --p12 sign.p12
             --password-env P12_PASSWORD
             --main-profile profiles/main.mobileprovision
+            --allow-missing-icloud
             --bundle-profile app.lgm.7517.123=profiles/ext.mobileprovision
             --out build/GuruIM-signed.ipa
           )
@@ -187,7 +188,7 @@ jobs:
 
       - name: Verify signed ipa bundles and entitlements
         if: steps.check.outputs.skip != 'true'
-        run: python3 scripts/verify_signed_ipa.py build/GuruIM-signed.ipa
+        run: python3 scripts/verify_signed_ipa.py --allow-missing-icloud build/GuruIM-signed.ipa
 
       - name: Upload signed .ipa artifact
         if: steps.check.outputs.skip != 'true'
@@ -204,3 +205,4 @@ jobs:
           name: guru-signing-logs
           path: sign.log
           if-no-files-found: ignore
+
