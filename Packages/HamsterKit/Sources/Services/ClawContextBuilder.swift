@@ -6,17 +6,23 @@ public struct ClawContextPack: Equatable {
   public var contactMemories: [ClawMemoryItem]
   public var recentConversation: [ClawConversationMessage]
   public var openTasks: [ClawSecretaryTask]
+  public var resolvedContactID: UUID?
+  public var contactDisplayName: String?
 
   public init(
     globalMemories: [ClawMemoryItem] = [],
     contactMemories: [ClawMemoryItem] = [],
     recentConversation: [ClawConversationMessage] = [],
-    openTasks: [ClawSecretaryTask] = []
+    openTasks: [ClawSecretaryTask] = [],
+    resolvedContactID: UUID? = nil,
+    contactDisplayName: String? = nil
   ) {
     self.globalMemories = globalMemories
     self.contactMemories = contactMemories
     self.recentConversation = recentConversation
     self.openTasks = openTasks
+    self.resolvedContactID = resolvedContactID
+    self.contactDisplayName = contactDisplayName
   }
 
   public var isEmpty: Bool {
@@ -29,7 +35,8 @@ public struct ClawContextPack: Equatable {
       sections.append("我的长期习惯：\n" + globalMemories.prefix(12).map { "- \($0.content)" }.joined(separator: "\n"))
     }
     if !contactMemories.isEmpty {
-      sections.append("当前聊天对象相关记忆：\n" + contactMemories.prefix(12).map { "- \($0.content)" }.joined(separator: "\n"))
+      let title = contactDisplayName.map { "\($0)相关记忆" } ?? "当前聊天对象相关记忆"
+      sections.append("\(title)：\n" + contactMemories.prefix(12).map { "- \($0.content)" }.joined(separator: "\n"))
     }
     if !recentConversation.isEmpty {
       let rows = recentConversation.suffix(16).map { message in
@@ -57,9 +64,17 @@ public struct ClawContextPack: Equatable {
 public final class ClawContextBuilder {
   public static let shared = ClawContextBuilder()
   private let store: ClawMemoryStore
+  private let profilesProvider: () -> [HeartTargetProfile]
+  private let personResolver: ClawQueryPersonResolver
 
-  public init(store: ClawMemoryStore = .shared) {
+  public init(
+    store: ClawMemoryStore = .shared,
+    profilesProvider: @escaping () -> [HeartTargetProfile] = { HeartTargetService.shared.profiles },
+    personResolver: ClawQueryPersonResolver = ClawQueryPersonResolver()
+  ) {
     self.store = store
+    self.profilesProvider = profilesProvider
+    self.personResolver = personResolver
   }
 
   public func build(contactID: UUID?, includeTasks: Bool = true, query: String? = nil) -> ClawContextPack {
@@ -68,27 +83,34 @@ public final class ClawContextBuilder {
     }
     let policy = ClawMemoryPolicyService.shared
     let vault = ClawPrivacyVaultService.shared
+    let profiles = profilesProvider()
+    let effectiveContactID = contactID ?? personResolver.resolve(query: query, profiles: profiles)
+    let resolvedProfile = effectiveContactID.flatMap { id in profiles.first(where: { $0.id == id }) }
     let rawGlobals = ((try? store.memories(scope: "global", limit: 80)) ?? [])
       .filter { policy.isSourceEnabled($0.sourceType) && vault.isVisibleToAI($0) }
     let globals = rank(rawGlobals, query: query).prefix(40).map { $0 }
     let contactMemories: [ClawMemoryItem]
     let timeline: [ClawConversationMessage]
-    if let contactID {
-      let rawContact = ((try? store.memories(scope: "contact", subjectID: contactID, limit: 80)) ?? [])
+    if let effectiveContactID {
+      let rawContact = ((try? store.memories(scope: "contact", subjectID: effectiveContactID, limit: 80)) ?? [])
         .filter { policy.isSourceEnabled($0.sourceType) && vault.isVisibleToAI($0) }
       contactMemories = rank(rawContact, query: query).prefix(40).map { $0 }
-      timeline = (try? store.conversation(contactID: contactID, limit: 32)) ?? []
+      timeline = (try? store.conversation(contactID: effectiveContactID, limit: 32)) ?? []
     } else {
       contactMemories = []
       timeline = []
     }
     let allTasks = includeTasks ? ((try? store.tasks(status: .open, limit: 40)) ?? []) : []
-    let relevantTasks = contactID == nil ? allTasks : allTasks.filter { $0.contactID == nil || $0.contactID == contactID }
+    let relevantTasks = effectiveContactID == nil
+      ? allTasks
+      : allTasks.filter { $0.contactID == nil || $0.contactID == effectiveContactID }
     return ClawContextPack(
       globalMemories: globals,
       contactMemories: contactMemories,
       recentConversation: timeline,
-      openTasks: relevantTasks
+      openTasks: relevantTasks,
+      resolvedContactID: effectiveContactID,
+      contactDisplayName: resolvedProfile?.displayName
     )
   }
 

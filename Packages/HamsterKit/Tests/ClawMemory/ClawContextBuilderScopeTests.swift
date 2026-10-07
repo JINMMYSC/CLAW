@@ -1,0 +1,97 @@
+import XCTest
+@testable import HamsterKit
+
+final class ClawContextBuilderScopeTests: XCTestCase {
+  private var root: URL!
+  private var store: ClawMemoryStore!
+
+  override func setUpWithError() throws {
+    root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("claw-scope-tests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    store = ClawMemoryStore(databaseURL: root.appendingPathComponent("memory.sqlite"))
+  }
+
+  override func tearDownWithError() throws {
+    store = nil
+    try? FileManager.default.removeItem(at: root)
+  }
+
+  func testGlobalQueryInjectsOnlyTheUniquelyNamedPersonsContext() throws {
+    let alice = HeartTargetProfile(name: "小王", aliases: ["Alice"])
+    let bob = HeartTargetProfile(name: "老张", aliases: ["Bob"])
+    try seedPerson(alice, memory: "答应小王周五交付方案", task: "给小王发方案")
+    try seedPerson(bob, memory: "老张喜欢电话沟通", task: "给老张回电话")
+    try store.upsertTask(ClawSecretaryTask(title: "全局事项", sourceType: "test"))
+
+    let pack = builder(profiles: [alice, bob]).build(
+      contactID: nil,
+      query: "我答应过小王什么？"
+    )
+
+    XCTAssertEqual(pack.resolvedContactID, alice.id)
+    XCTAssertEqual(pack.contactDisplayName, "小王")
+    XCTAssertEqual(pack.contactMemories.map(\.subjectID), [alice.id])
+    XCTAssertTrue(pack.openTasks.contains(where: { $0.title == "给小王发方案" }))
+    XCTAssertTrue(pack.openTasks.contains(where: { $0.title == "全局事项" }))
+    XCTAssertFalse(pack.openTasks.contains(where: { $0.title == "给老张回电话" }))
+    XCTAssertTrue(pack.promptBlock().contains("小王相关记忆"))
+  }
+
+  func testAmbiguousAliasDoesNotInjectEitherPersonsMemory() throws {
+    let first = HeartTargetProfile(name: "王一", aliases: ["小王"])
+    let second = HeartTargetProfile(name: "王二", aliases: ["小王"])
+    try seedPerson(first, memory: "第一人的私事")
+    try seedPerson(second, memory: "第二人的私事")
+
+    let pack = builder(profiles: [first, second]).build(contactID: nil, query: "小王最近怎么样")
+
+    XCTAssertNil(pack.resolvedContactID)
+    XCTAssertTrue(pack.contactMemories.isEmpty)
+    XCTAssertTrue(pack.recentConversation.isEmpty)
+  }
+
+  func testRelationshipWordsAloneNeverSelectAPerson() {
+    let profiles = [
+      HeartTargetProfile(name: "王一", relationship: "客户"),
+      HeartTargetProfile(name: "王二", relationship: "客户"),
+    ]
+    XCTAssertNil(ClawQueryPersonResolver().resolve(query: "最近哪个客户要跟进？", profiles: profiles))
+  }
+
+  func testExplicitContactOverridesANameInTheQuery() throws {
+    let selected = HeartTargetProfile(name: "当前对象")
+    let mentioned = HeartTargetProfile(name: "另一个人")
+    try seedPerson(selected, memory: "当前对象的记忆")
+    try seedPerson(mentioned, memory: "另一个人的记忆")
+
+    let pack = builder(profiles: [selected, mentioned]).build(
+      contactID: selected.id,
+      query: "另一个人说过什么"
+    )
+
+    XCTAssertEqual(pack.resolvedContactID, selected.id)
+    XCTAssertEqual(pack.contactMemories.map(\.subjectID), [selected.id])
+  }
+
+  private func builder(profiles: [HeartTargetProfile]) -> ClawContextBuilder {
+    ClawContextBuilder(store: store, profilesProvider: { profiles })
+  }
+
+  private func seedPerson(
+    _ profile: HeartTargetProfile,
+    memory: String,
+    task: String? = nil
+  ) throws {
+    try store.upsertMemory(ClawMemoryItem(
+      kind: .relationship,
+      scope: "contact",
+      subjectID: profile.id,
+      content: memory,
+      sourceType: "test"
+    ))
+    if let task {
+      try store.upsertTask(ClawSecretaryTask(title: task, contactID: profile.id, sourceType: "test"))
+    }
+  }
+}
