@@ -11,6 +11,8 @@ on:
       - "Packages/HamsterKeyboardKit/**"
       - "Packages/HamsteriOS/**"
       - "Hamster.xcodeproj/**"
+      - "scripts/**"
+      - ".github/workflows/build-ipa.yml"
       - ".github/workflows/startup-smoke.yml"
 
 jobs:
@@ -188,3 +190,4 @@ jobs:
             Hamster*.crash
             Hamster*.ips
           if-no-files-found: warn
+
