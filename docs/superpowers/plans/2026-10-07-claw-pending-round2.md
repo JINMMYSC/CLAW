@@ -130,3 +130,18 @@
 2. **首屏增加数据摘要**：显示"今日 N 条输入 / N 条剪贴板 / 最后采集时间"，并配一个「立即记录剪贴板」的主按钮（这是该页最高频动作）。摘要数字来源：输入记录走 `ClawTalkDataService.totalEntryCount()` 与按日期的 `entryCount(for:)`；剪贴板走 `ClawTalkViewModel.clipboardEntryCount`。
 
 不在本轮范围内：AI 分析/Prompt/Provider 的搬迁、危险操作归拢、导出完成反馈、说明文字折叠、深色模式对比度复查。
+
+## 十、助手页优化（用户已选，含追加的搜索）
+
+用户从建议里挑了三条，并追加了搜索功能：
+
+1. **回答可追溯（最高价值）**：每条 AI 回答下加入口（例如长按出现「为什么这样回答」），点开列出本次实际用到的记忆条目、聊天片段、人物画像与 Skill，以及各自的来源。
+2. **会话控制与查找**：生成中可停止；回答可重新生成；消息按日期分组；长会话增加「回到最新」的悬浮按钮；**新增搜索**——按关键词搜历史消息并跳转。
+3. **快捷提问常驻**：把空状态那两条示例问题（「我今天还有什么没做？」「最近和谁有事要跟进？」）做成输入框上方可横滑的胶囊，随时可点。
+
+### 实现要点（避免现找）
+
+- **停止生成**：`AIService.chat` 现在用 `URLSession.shared.dataTask`，没有暴露取消能力，需要先把 task 句柄或取消令牌暴露出来，否则"停止"只能停在界面上、请求仍在跑并回填结果。
+- **重新生成**：保留最后一条 user 消息，删掉其后的 assistant 消息再重发即可；要注意 `saveHistory()` 的落盘时机。
+- **搜索**：`ClawChatService.messages` 是内存 + 持久化数组，当前上下文的搜索直接过滤 `content` 就行；若要跨人物搜索，需要遍历各 `historyKey(for:)` 对应的持久化数据。
+- **可追溯**：`ClawContextBuilder.build` 已经返回 `ClawContextPack`（含 globalMemories／contactMemories／recentConversation／openTasks），但目前没人记录"本次用了哪些"。需要把这份摘要随回答一起落盘——给消息加一个可选的 trace 字段，或单独存一份 trace 记录。
