@@ -98,7 +98,7 @@ public final class DefaultMemorySDK: MemorySDK {
       }
     }
     try store.saveMemoryV2(record)
-    _ = try? store.setMemoryStatus(id: id, status: mode == .archive ? .archived : .deleted)
+    _ = try? store.setMemoryStatus(id: id, status: mode == .archive ? .archived : .superseded)
   }
 
   public func createTask(_ task: ClawSecretaryTask) throws {
@@ -140,15 +140,15 @@ public final class DefaultMemorySDK: MemorySDK {
   private func legacyProjection(_ record: MemoryV2Record) -> ClawMemoryItem {
     let kind: ClawMemoryKind
     switch record.type {
-    case .preference: kind = .preference
+    case .preference: kind = .communicationPreference
     case .people, .communication: kind = .relationship
-    case .task, .intent: kind = .commitment
+    case .task, .intent: kind = .procedure
     default: kind = .fact
     }
     let status: ClawMemoryStatus
     switch record.state {
     case .archived: status = .archived
-    case .invalidated: status = .deleted
+    case .invalidated: status = .superseded
     default: status = .active
     }
     return ClawMemoryItem(
@@ -167,3 +167,4 @@ public final class DefaultMemorySDK: MemorySDK {
     )
   }
 }
+
