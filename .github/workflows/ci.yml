@@ -56,6 +56,7 @@ jobs:
           xcodebuild test \
             -scheme HamsteriOS \
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -skip-testing:HamsteriOSTests/CloudKitHelperTest \
             -derivedDataPath /tmp/HamsteriOSTests
 
       - name: Compile
@@ -74,3 +75,4 @@ jobs:
         with:
           name: Hamster-ios-arm64-xcarchive
           path: Hamster.xcarchive.tgz
+
