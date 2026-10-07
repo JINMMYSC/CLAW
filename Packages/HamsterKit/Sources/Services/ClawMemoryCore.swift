@@ -1205,7 +1205,7 @@ public final class ClawMemoryStore {
       if let record = try? JSONDecoder().decode(MemoryV2Record.self, from: data) { result.append(record) }
     }
     if result.isEmpty {
-      return try memoryV2(limit: limit).filter { $0.content.localizedCaseInsensitiveContains(trimmed) || ($0.normalizedKey?.localizedCaseInsensitiveContains(trimmed) ?? false) }
+      result = try memoryV2(limit: limit).filter { $0.content.localizedCaseInsensitiveContains(trimmed) || ($0.normalizedKey?.localizedCaseInsensitiveContains(trimmed) ?? false) }
     }
     // Include recent non-matches for global defaults; ranking will put matches first.
     let recent = try memoryV2(limit: limit)

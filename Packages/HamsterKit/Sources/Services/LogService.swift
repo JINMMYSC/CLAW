@@ -107,6 +107,10 @@ public class LogService {
 
   /// 返回日志行（新→旧）
   public func entries() -> [String] {
+    writeQueue.sync { readEntries() }
+  }
+
+  private func readEntries() -> [String] {
     guard let url = fileURL,
           let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
     return content.components(separatedBy: "\n")

@@ -39,7 +39,15 @@ public final class ClawScreenshotIngestionService {
     let parsed = parser.parse(lines: lines, contactID: resolution.profile?.id, contactName: resolution.profile?.displayName, capturedAt: capturedAt, sourceRef: sourceRef)
     let hasUnknownSpeaker = parsed.messages.contains { $0.speaker == .unknown }
     let weakOCR = parsed.messages.contains { $0.confidence < 0.70 }
-    let requiresReview = resolution.confidence < 0.75 || hasUnknownSpeaker || weakOCR || parsed.messages.isEmpty
+    let requiresReview: Bool
+    if selectedProfile != nil {
+      // A user-selected person resolves identity ambiguity. OCR quality and an
+      // empty parse still require review; centered bubbles remain unknown
+      // evidence without blocking an otherwise explicit import.
+      requiresReview = weakOCR || parsed.messages.isEmpty
+    } else {
+      requiresReview = resolution.confidence < 0.75 || hasUnknownSpeaker || weakOCR || parsed.messages.isEmpty
+    }
     let result = ClawScreenshotIngestionResult(profile: resolution.profile, messages: parsed.messages, requiresReview: requiresReview, rawText: parsed.rawText)
     guard !requiresReview else { return result }
 
