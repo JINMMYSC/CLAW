@@ -161,3 +161,15 @@
 
 1. **详情页显示「这个人身上还没完成的事」**：现在详情只有画像、长期记忆和聊天时间线，缺任务。数据可从 `ClawMemoryStore.shared.tasks(status: .open)` 里按 `contactID` 过滤后取用，与今日页共用同一份数据源。
 2. **列表按最近互动排序**：`HeartTargetProfile.lastSeenAt` 字段已经存在，但目前列表没有用它排序，看不出谁最近联系过、谁很久没联系。
+
+## 十三、记忆页优化（用户已选两条）
+
+页面实现：`ClawAssistantRootView.swift` 里的 `ClawMemoryCenterView`（导航标题「记忆中心」）。
+
+用户从建议里只挑了两条，中间的「拆成记忆 / Skill 两个页」明确不做：
+
+1. **搜索与筛选**：加搜索框，并按人物、来源、类型筛选。现在只有一长条列表，记忆上百条后基本无法使用。
+   - 数据入口：`ClawMemoryStore.shared.memories(limit:)` 已经支持按 `scope` / `subjectID` 过滤，搜索可先取回后在前端按 `content` 过滤；筛选维度可复用 `ClawMemoryItem` 上已有的 `sourceType`、`kind`、`scope`、`subjectID` 字段。
+2. **「待确认」区块**：给冲突与待晋升的记忆一个入口，让用户确认或合并。目前记忆晋升（Candidate → Confirmed）与冲突处理都还没落地，所以这一块依赖第七节/Memory OS 那部分先做；界面上可以先留出区块与空态文案。
+
+不做：把「记忆」与「Skill / 自动进化」拆成两个页面。
