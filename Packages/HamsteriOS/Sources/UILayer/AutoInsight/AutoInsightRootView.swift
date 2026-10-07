@@ -334,7 +334,15 @@ public struct AutoInsightDetailView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(
       LinearGradient(
-        colors: [Color(red: 1.0, green: 0.93, blue: 0.95), Color(red: 0.96, green: 0.90, blue: 1.0)],
+        // 深浅两套底色：深色模式下若沿用浅色渐变，白色文字会几乎看不见。
+        colors: [
+          Color(UIColor { $0.userInterfaceStyle == .dark
+            ? UIColor(red: 0.22, green: 0.16, blue: 0.20, alpha: 1)
+            : UIColor(red: 1.0, green: 0.93, blue: 0.95, alpha: 1) }),
+          Color(UIColor { $0.userInterfaceStyle == .dark
+            ? UIColor(red: 0.18, green: 0.14, blue: 0.24, alpha: 1)
+            : UIColor(red: 0.96, green: 0.90, blue: 1.0, alpha: 1) }),
+        ],
         startPoint: .topLeading, endPoint: .bottomTrailing
       )
     )
@@ -357,7 +365,14 @@ public struct AutoInsightDetailView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(
       LinearGradient(
-        colors: [Color(red: 0.90, green: 0.95, blue: 1.0), Color(red: 0.90, green: 0.98, blue: 0.95)],
+        colors: [
+          Color(UIColor { $0.userInterfaceStyle == .dark
+            ? UIColor(red: 0.14, green: 0.19, blue: 0.26, alpha: 1)
+            : UIColor(red: 0.90, green: 0.95, blue: 1.0, alpha: 1) }),
+          Color(UIColor { $0.userInterfaceStyle == .dark
+            ? UIColor(red: 0.13, green: 0.22, blue: 0.20, alpha: 1)
+            : UIColor(red: 0.90, green: 0.98, blue: 0.95, alpha: 1) }),
+        ],
         startPoint: .topLeading, endPoint: .bottomTrailing
       )
     )
