@@ -283,7 +283,7 @@ public struct SmartFreqSettingsView: View {
           Text("开启后，输入法每隔设定时间自动分析输入记录，优化候选词排序并添加新词。全程后台静默执行。")
         }
 
-        Section("词条治理") {
+        Section {
           Toggle("允许人名与上下文建议", isOn: $viewModel.includePersonalSuggestions)
             .tint(.cyan)
           HStack {
@@ -300,6 +300,8 @@ public struct SmartFreqSettingsView: View {
               .keyboardType(.numberPad)
               .frame(width: 90)
           }
+        } header: {
+          Text("词条治理")
         } footer: {
           Text("人名与上下文建议默认关闭。词条上限会在每次应用前清理超出预算的旧条目；所有 AI 输出仍需通过本地校验。")
         }
