@@ -73,10 +73,29 @@ private struct ClawAssistantChatView: View {
   @State private var voiceHint = ""
   @State private var voiceMode = ClawVoiceInputService.shared.languageMode
   @State private var selectedProfileName = HeartTargetService.shared.selectedProfile?.displayName
+  @State private var searchText = ""
+  @State private var showingSearch = false
+  @State private var showingPhotoAttachment = false
+  @State private var showingFileAttachment = false
+  @State private var attachmentStatus = ""
+  @State private var quickPrompts = ClawQuickPromptStore(
+    defaults: UserDefaults(suiteName: HamsterConstants.appGroupName) ?? .standard
+  ).prompts
+  @State private var voiceGesture = ClawVoiceGestureState()
+
+  private var displayedMessages: [ClawChatMessage] {
+    ClawConversationPresentation.search(chat.messages, query: searchText)
+  }
 
   var body: some View {
     VStack(spacing: 0) {
       contextHeader
+      if showingSearch {
+        TextField("搜索当前对话", text: $searchText)
+          .textFieldStyle(.roundedBorder)
+          .padding(.horizontal, 12)
+          .padding(.vertical, 6)
+      }
       Divider()
       ScrollViewReader { proxy in
         ScrollView {
@@ -84,9 +103,15 @@ private struct ClawAssistantChatView: View {
             if chat.messages.isEmpty {
               emptyAssistant
             }
-            ForEach(chat.messages) { message in
-              assistantBubble(message)
-                .id(message.id)
+            ForEach(ClawConversationPresentation.group(displayedMessages)) { section in
+              Text(section.day.formatted(date: .abbreviated, time: .omitted))
+                .font(.caption2.weight(.semibold))
+                .foregroundColor(.secondary)
+                .id(section.day)
+              ForEach(section.messages) { message in
+                assistantBubble(message)
+                  .id(message.id)
+              }
             }
             if chat.isSending {
               HStack {
@@ -101,6 +126,14 @@ private struct ClawAssistantChatView: View {
         }
         .onChange(of: chat.messages.count) { _ in
           if let id = chat.messages.last?.id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
+        }
+        .overlay(alignment: .bottomTrailing) {
+          if chat.messages.count > 5, let latest = chat.messages.last?.id {
+            Button { withAnimation { proxy.scrollTo(latest, anchor: .bottom) } } label: {
+              Image(systemName: "arrow.down.circle.fill").font(.title2)
+            }
+            .padding(10)
+          }
         }
       }
       Divider()
@@ -123,6 +156,22 @@ private struct ClawAssistantChatView: View {
     }
     .onDisappear {
       stopHandsFreeCall()
+    }
+    .sheet(isPresented: $showingPhotoAttachment) {
+      ClawAvatarPicker { image in
+        showingPhotoAttachment = false
+        ingestScreenshot(image)
+      }
+    }
+    .fileImporter(isPresented: $showingFileAttachment, allowedContentTypes: [.plainText, .text, .pdf], allowsMultipleSelection: false) { result in
+      guard case .success(let urls) = result, let url = urls.first else { return }
+      let scoped = url.startAccessingSecurityScopedResource()
+      defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+      if let text = try? String(contentsOf: url), !text.isEmpty {
+        input = [input, "文件：\(url.lastPathComponent)\n\(String(text.prefix(8_000)))"].filter { !$0.isEmpty }.joined(separator: "\n")
+      } else {
+        attachmentStatus = "无法读取这个文件"
+      }
     }
     .onReceive(NotificationCenter.default.publisher(for: .clawVoiceCallRequested)) { _ in
       startHandsFreeCall()
@@ -191,6 +240,14 @@ private struct ClawAssistantChatView: View {
         }
       }
       Spacer()
+      Button { showingSearch.toggle(); if !showingSearch { searchText = "" } } label: {
+        Image(systemName: showingSearch ? "xmark.circle.fill" : "magnifyingglass")
+      }
+      if chat.isSending {
+        Button("停止") { chat.stopGenerating() }.font(.caption.weight(.semibold)).foregroundColor(.red)
+      } else if chat.messages.contains(where: { $0.role == "assistant" && !$0.excludeFromContext }) {
+        Button("重生成") { chat.regenerateLastResponse() }.font(.caption.weight(.semibold))
+      }
       Button("新对话") { chat.clearHistory() }
         .font(.caption.weight(.semibold))
     }
@@ -205,9 +262,10 @@ private struct ClawAssistantChatView: View {
       Text("我是 CLAW").font(.title3.weight(.semibold))
       Text("可以直接问我人物、最近聊过的事情、未完成事项，或者让我帮你规划下一步。")
         .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
-      HStack {
-        quickAsk("我今天还有什么没做？")
-        quickAsk("最近和谁有事要跟进？")
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack {
+          ForEach(quickPrompts, id: \.self) { quickAsk($0) }
+        }
       }
     }
     .padding(.horizontal, 24)
@@ -223,19 +281,25 @@ private struct ClawAssistantChatView: View {
   private func assistantBubble(_ message: ClawChatMessage) -> some View {
     HStack {
       if message.role == "user" { Spacer(minLength: 44) }
-      Text(message.content)
-        .font(.body)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(message.role == "user" ? Color.accentColor : Color(.secondarySystemGroupedBackground))
-        .foregroundColor(message.role == "user" ? .white : .primary)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .contextMenu {
-          Button("复制") { UIPasteboard.general.string = message.content }
-          if message.role == "assistant" {
-            Button("朗读") { chat.speak(message.content) }
+      VStack(alignment: message.role == "user" ? .trailing : .leading, spacing: 3) {
+        Text(message.content)
+          .font(.body)
+          .padding(.horizontal, 12)
+          .padding(.vertical, 9)
+          .background(message.role == "user" ? Color.accentColor : Color(.secondarySystemGroupedBackground))
+          .foregroundColor(message.role == "user" ? .white : .primary)
+          .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+          .contextMenu {
+            Button("复制") { UIPasteboard.general.string = message.content }
+            if message.role == "assistant" {
+              Button("朗读") { chat.speak(message.content) }
+            }
           }
+        if let trace = message.trace {
+          Text("\(trace.provider) · \(trace.model)\(trace.regenerated ? " · 重生成" : "")")
+            .font(.system(size: 9)).foregroundColor(.secondary)
         }
+      }
       if message.role != "user" { Spacer(minLength: 44) }
     }
     .padding(.horizontal, 12)
@@ -247,7 +311,18 @@ private struct ClawAssistantChatView: View {
         Text(voiceHint).font(.caption).foregroundColor(.secondary)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
+      if !attachmentStatus.isEmpty {
+        Text(attachmentStatus).font(.caption).foregroundColor(.secondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
       HStack(spacing: 8) {
+        Menu {
+          Button { showingPhotoAttachment = true } label: { Label("照片 / 截图", systemImage: "photo") }
+          Button { showingFileAttachment = true } label: { Label("文件", systemImage: "doc") }
+          Button { attachClipboard() } label: { Label("剪贴板", systemImage: "doc.on.clipboard") }
+        } label: {
+          Image(systemName: "plus.circle.fill").font(.system(size: 28))
+        }
         Menu {
           ForEach(ClawVoiceLanguageMode.allCases, id: \.rawValue) { mode in
             Button {
@@ -270,13 +345,18 @@ private struct ClawAssistantChatView: View {
           }
           .foregroundColor(.accentColor)
         }
-        Button {
-          toggleVoice()
-        } label: {
-          Image(systemName: recording ? "stop.circle.fill" : "mic.circle.fill")
-            .font(.system(size: 30))
-            .foregroundColor(recording ? .red : .accentColor)
-        }
+        Image(systemName: recording ? (voiceGesture.willCancel ? "xmark.circle.fill" : "waveform.circle.fill") : "mic.circle.fill")
+          .font(.system(size: 30))
+          .foregroundColor(recording ? (voiceGesture.willCancel ? .orange : .red) : .accentColor)
+          .gesture(
+            DragGesture(minimumDistance: 0)
+              .onChanged { value in
+                if !voiceGesture.isRecording { beginHoldVoice() }
+                voiceGesture.update(verticalTranslation: value.translation.height)
+                voiceHint = voiceGesture.willCancel ? "松开取消" : "松开发送 · 上滑取消"
+              }
+              .onEnded { _ in finishHoldVoice() }
+          )
         Button {
           callActive ? stopHandsFreeCall() : startHandsFreeCall()
         } label: {
@@ -284,9 +364,10 @@ private struct ClawAssistantChatView: View {
             .font(.system(size: 30))
             .foregroundColor(callActive ? .red : .green)
         }
-        TextField("问 CLAW…", text: $input)
-          .textFieldStyle(.roundedBorder)
-          .onSubmit { send(input) }
+        TextEditor(text: $input)
+          .frame(minHeight: 36, maxHeight: 88)
+          .padding(.horizontal, 5)
+          .background(RoundedRectangle(cornerRadius: 8).fill(Color(.tertiarySystemFill)))
         Button {
           send(input)
         } label: {
@@ -326,6 +407,62 @@ private struct ClawAssistantChatView: View {
           send(text)
         case .failure(let error):
           voiceHint = "语音识别失败：\(error.localizedDescription)"
+        }
+      }
+    }
+  }
+
+  private func beginHoldVoice() {
+    if callActive { stopHandsFreeCall() }
+    voiceGesture.begin()
+    withVoiceAuthorization {
+      recording = true
+      ClawVoiceInputService.shared.start { result in
+        recording = false
+        guard !voiceGesture.willCancel else { voiceHint = ""; return }
+        switch result {
+        case .success(let text): voiceHint = ""; send(text)
+        case .failure(let error): voiceHint = "语音识别失败：\(error.localizedDescription)"
+        }
+      }
+    }
+  }
+
+  private func finishHoldVoice() {
+    let outcome = voiceGesture.finish()
+    ClawVoiceInputService.shared.stop()
+    recording = false
+    if outcome == .cancel { voiceHint = "已取消" } else { voiceHint = "正在完成识别…" }
+  }
+
+  private func attachClipboard() {
+    if let image = UIPasteboard.general.image { ingestScreenshot(image); return }
+    if let text = UIPasteboard.general.string, !text.isEmpty {
+      input = [input, text].filter { !$0.isEmpty }.joined(separator: "\n")
+      attachmentStatus = "已附加剪贴板文字"
+    } else {
+      attachmentStatus = "剪贴板里没有可附加的文字或图片"
+    }
+  }
+
+  private func ingestScreenshot(_ image: UIImage) {
+    attachmentStatus = "正在本地识别截图…"
+    let sourceRef = image.jpegData(compressionQuality: 0.88).flatMap { ClawScreenshotEvidenceStore.shared.saveJPEG($0) }
+    VisionOCRService.shared.recognizeLines(in: image) { result in
+      DispatchQueue.main.async {
+        switch result {
+        case .failure(let error): attachmentStatus = "截图识别失败：\(error.localizedDescription)"
+        case .success(let lines):
+          do {
+            let ingestion = try ClawScreenshotIngestionService().ingest(lines: lines, selectedProfile: HeartTargetService.shared.selectedProfile, sourceRef: sourceRef)
+            if ingestion.requiresReview {
+              input = [input, "待确认的截图文字：\n\(ingestion.rawText)"].filter { !$0.isEmpty }.joined(separator: "\n")
+              attachmentStatus = "人物或发言方置信度不足，请检查文字后再发送"
+            } else {
+              input = [input, "已导入 \(ingestion.messages.count) 条截图消息，请结合这些内容回答。"].filter { !$0.isEmpty }.joined(separator: "\n")
+              attachmentStatus = "截图已归档到当前人物时间线"
+            }
+          } catch { attachmentStatus = "截图导入失败：\(error.localizedDescription)" }
         }
       }
     }
@@ -605,7 +742,7 @@ private struct ClawTaskEditorView: View {
             dueAt: hasDueDate ? dueAt : nil,
             sourceType: "manual"
           )
-          _ = try? ClawMemoryStore.shared.upsertTask(task)
+          try? DefaultMemorySDK.shared.createTask(task)
           onSaved()
           dismiss()
         }
@@ -1278,6 +1415,8 @@ private struct ClawMemoryCenterView: View {
   @State private var protectedMemoryCount = 0
   @State private var availableSourceTypes: [String] = []
   @State private var skills: [ClawSkillDefinition] = []
+  @State private var pendingMemories: [MemoryV2Record] = []
+  @State private var pendingConflicts: [MemoryConflict] = []
   @State private var editingMemory: ClawMemoryItem?
   @State private var showingImporter = false
   @State private var showingSkillImporter = false
@@ -1326,6 +1465,38 @@ private struct ClawMemoryCenterView: View {
           if memories.isEmpty { Text("新的长期记忆会保留来源、范围和置信度。").font(.caption).foregroundColor(.secondary) }
         } header: {
           Text("我的 AI 知道什么")
+        }
+
+        if !pendingMemories.isEmpty || !pendingConflicts.isEmpty {
+          Section {
+            ForEach(pendingMemories) { candidate in
+              VStack(alignment: .leading, spacing: 6) {
+                Text(candidate.content).font(.subheadline)
+                Text("\(candidate.provenance.ingestionMethod) · 置信度 \(Int(candidate.confidence * 100))%")
+                  .font(.caption2).foregroundColor(.secondary)
+                HStack {
+                  Button("采用") { approve(candidate) }.buttonStyle(.borderedProminent)
+                  Button("忽略", role: .destructive) { reject(candidate) }.buttonStyle(.bordered)
+                }
+                .font(.caption)
+              }
+            }
+            ForEach(pendingConflicts) { conflict in
+              VStack(alignment: .leading, spacing: 5) {
+                Label("发现两条互相冲突的记忆", systemImage: "exclamationmark.triangle.fill")
+                  .foregroundColor(.orange)
+                Text("现有：\(conflict.existingMemoryID.uuidString.prefix(8)) · 新增：\(conflict.incomingMemoryID.uuidString.prefix(8))")
+                  .font(.caption2).foregroundColor(.secondary)
+                Button("标记已处理") {
+                  try? ClawMemoryStore.shared.resolveMemoryConflict(id: conflict.id)
+                  reload()
+                }
+                .buttonStyle(.bordered)
+              }
+            }
+          } header: {
+            Text("待确认 · \(pendingMemories.count + pendingConflicts.count)")
+          }
         }
 
         Section {
@@ -1621,6 +1792,8 @@ private struct ClawMemoryCenterView: View {
     )) ?? 0
     availableSourceTypes = (try? ClawMemoryStore.shared.activeMemorySourceTypes()) ?? []
     skills = (try? ClawMemoryStore.shared.skills()) ?? []
+    pendingMemories = (try? ClawMemoryStore.shared.memoryV2(state: .candidate, limit: 100)) ?? []
+    pendingConflicts = (try? ClawMemoryStore.shared.memoryConflicts()) ?? []
     discoveredSkillDrafts = ClawSkillDiscoveryService.shared.discover()
     temporaryMode = ClawMemoryPolicyService.shared.temporaryMode
     vaultRefreshVersion &+= 1
@@ -1628,6 +1801,21 @@ private struct ClawMemoryCenterView: View {
 
   private var sourceTypes: [String] {
     availableSourceTypes
+  }
+
+  private func approve(_ candidate: MemoryV2Record) {
+    var approved = candidate
+    approved.state = .confirmed
+    approved.confirmedAt = Date()
+    approved.updatedAt = Date()
+    approved.version += 1
+    try? DefaultMemorySDK.shared.remember(approved, evidence: approved.evidence)
+    reload()
+  }
+
+  private func reject(_ candidate: MemoryV2Record) {
+    try? DefaultMemorySDK.shared.forget(id: candidate.id, mode: .archive)
+    reload()
   }
 
   private func commit(_ preview: ClawMemoryImportPreview) {

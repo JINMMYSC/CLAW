@@ -446,6 +446,7 @@ public final class ClawMemoryStore {
       """,
       "CREATE INDEX IF NOT EXISTS idx_memory_v2_scope ON memory_v2(scope, person_id, state);",
       "CREATE INDEX IF NOT EXISTS idx_memory_v2_updated ON memory_v2(type, updated_at DESC);",
+      "CREATE VIRTUAL TABLE IF NOT EXISTS memory_v2_fts USING fts5(id UNINDEXED, content, normalized_key);",
       """
       CREATE TABLE IF NOT EXISTS memory_evidence (
         id TEXT PRIMARY KEY,
@@ -475,7 +476,36 @@ public final class ClawMemoryStore {
         source_memory_id TEXT
       );
       """,
-      "CREATE INDEX IF NOT EXISTS idx_memory_lineage_memory ON memory_lineage(memory_id);"
+      "CREATE INDEX IF NOT EXISTS idx_memory_lineage_memory ON memory_lineage(memory_id);",
+      """
+      CREATE TABLE IF NOT EXISTS memory_audit (
+        id TEXT PRIMARY KEY,
+        memory_id TEXT NOT NULL,
+        run_id TEXT,
+        kind TEXT NOT NULL,
+        payload BLOB NOT NULL,
+        created_at REAL NOT NULL
+      );
+      """,
+      "CREATE INDEX IF NOT EXISTS idx_memory_audit_memory ON memory_audit(memory_id, created_at);",
+      "CREATE INDEX IF NOT EXISTS idx_memory_audit_run ON memory_audit(run_id, created_at);",
+      """
+      CREATE TABLE IF NOT EXISTS standing_intents (
+        id TEXT PRIMARY KEY,
+        payload BLOB NOT NULL,
+        is_active INTEGER NOT NULL,
+        expires_at REAL,
+        created_at REAL NOT NULL
+      );
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS memory_conflicts (
+        id TEXT PRIMARY KEY,
+        payload BLOB NOT NULL,
+        is_resolved INTEGER NOT NULL,
+        created_at REAL NOT NULL
+      );
+      """
     ]
     for statement in statements { try? execute(statement) }
   }
@@ -1043,6 +1073,10 @@ public final class ClawMemoryStore {
         DELETE FROM memory_evidence;
         DELETE FROM memory_versions;
         DELETE FROM memory_lineage;
+        DELETE FROM memory_v2_fts;
+        DELETE FROM memory_audit;
+        DELETE FROM standing_intents;
+        DELETE FROM memory_conflicts;
         DELETE FROM memory_v2;
         DELETE FROM raw_events;
         DELETE FROM evolution_feedback;
@@ -1147,6 +1181,145 @@ public final class ClawMemoryStore {
     return Int(sqlite3_column_int(statement, 0))
   }
 
+  /// FTS5-backed candidate collection. The router performs scope guards and
+  /// final hybrid ranking. Empty or tokenization-incompatible queries fall back
+  /// to the full recent set so CJK and punctuation-heavy input remain usable.
+  public func searchMemoryV2(query: String, limit: Int = 200) throws -> [MemoryV2Record] {
+    lock.lock(); defer { lock.unlock() }
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return try memoryV2(limit: limit) }
+    let tokens = trimmed.split { $0.isWhitespace || $0.isPunctuation }.map { "\($0)*" }
+    guard !tokens.isEmpty else { return try memoryV2(limit: limit) }
+    let statement: OpaquePointer?
+    do {
+      statement = try prepare("SELECT memory_v2.payload FROM memory_v2_fts JOIN memory_v2 ON memory_v2.id = memory_v2_fts.id WHERE memory_v2_fts MATCH ? ORDER BY bm25(memory_v2_fts) LIMIT ?;")
+    } catch {
+      return try memoryV2(limit: limit)
+    }
+    defer { sqlite3_finalize(statement) }
+    bindText(tokens.joined(separator: " OR "), at: 1, in: statement)
+    sqlite3_bind_int(statement, 2, Int32(max(1, limit)))
+    var result: [MemoryV2Record] = []
+    while sqlite3_step(statement) == SQLITE_ROW, let blob = sqlite3_column_blob(statement, 0) {
+      let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0)))
+      if let record = try? JSONDecoder().decode(MemoryV2Record.self, from: data) { result.append(record) }
+    }
+    if result.isEmpty {
+      return try memoryV2(limit: limit).filter { $0.content.localizedCaseInsensitiveContains(trimmed) || ($0.normalizedKey?.localizedCaseInsensitiveContains(trimmed) ?? false) }
+    }
+    // Include recent non-matches for global defaults; ranking will put matches first.
+    let recent = try memoryV2(limit: limit)
+    let ids = Set(result.map(\.id))
+    result.append(contentsOf: recent.filter { !ids.contains($0.id) })
+    return Array(result.prefix(max(1, limit)))
+  }
+
+  public func saveMemoryAudit(_ audit: MemoryAuditRecord) throws {
+    lock.lock(); defer { lock.unlock() }
+    let payload = try JSONEncoder().encode(audit)
+    let statement = try prepare("INSERT OR REPLACE INTO memory_audit (id,memory_id,run_id,kind,payload,created_at) VALUES (?,?,?,?,?,?);")
+    defer { sqlite3_finalize(statement) }
+    bindText(audit.id.uuidString, at: 1, in: statement)
+    bindText(audit.memoryID.uuidString, at: 2, in: statement)
+    bindText(audit.runID?.uuidString, at: 3, in: statement)
+    bindText(audit.kind.rawValue, at: 4, in: statement)
+    payload.withUnsafeBytes { _ = sqlite3_bind_blob(statement, 5, $0.baseAddress, Int32(payload.count), transient) }
+    sqlite3_bind_double(statement, 6, audit.createdAt.timeIntervalSince1970)
+    guard sqlite3_step(statement) == SQLITE_DONE else { throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB()))) }
+  }
+
+  public func memoryAuditRecord(id: UUID) throws -> MemoryAuditRecord? {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("SELECT payload FROM memory_audit WHERE id = ?;")
+    defer { sqlite3_finalize(statement) }
+    bindText(id.uuidString, at: 1, in: statement)
+    guard sqlite3_step(statement) == SQLITE_ROW, let blob = sqlite3_column_blob(statement, 0) else { return nil }
+    return try? JSONDecoder().decode(MemoryAuditRecord.self, from: Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0))))
+  }
+
+  public func memoryAuditRecords(memoryID: UUID) throws -> [MemoryAuditRecord] {
+    try memoryAuditRecords(column: "memory_id", value: memoryID)
+  }
+
+  public func memoryAuditRecords(runID: UUID) throws -> [MemoryAuditRecord] {
+    try memoryAuditRecords(column: "run_id", value: runID)
+  }
+
+  private func memoryAuditRecords(column: String, value: UUID) throws -> [MemoryAuditRecord] {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("SELECT payload FROM memory_audit WHERE \(column) = ? ORDER BY created_at;")
+    defer { sqlite3_finalize(statement) }
+    bindText(value.uuidString, at: 1, in: statement)
+    var result: [MemoryAuditRecord] = []
+    while sqlite3_step(statement) == SQLITE_ROW, let blob = sqlite3_column_blob(statement, 0) {
+      let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0)))
+      if let item = try? JSONDecoder().decode(MemoryAuditRecord.self, from: data) { result.append(item) }
+    }
+    return result
+  }
+
+  public func saveStandingIntent(_ intent: StandingIntent) throws {
+    lock.lock(); defer { lock.unlock() }
+    let payload = try JSONEncoder().encode(intent)
+    let statement = try prepare("INSERT OR REPLACE INTO standing_intents (id,payload,is_active,expires_at,created_at) VALUES (?,?,?,?,?);")
+    defer { sqlite3_finalize(statement) }
+    bindText(intent.id.uuidString, at: 1, in: statement)
+    payload.withUnsafeBytes { _ = sqlite3_bind_blob(statement, 2, $0.baseAddress, Int32(payload.count), transient) }
+    sqlite3_bind_int(statement, 3, intent.isActive ? 1 : 0)
+    if let expiresAt = intent.expiresAt { sqlite3_bind_double(statement, 4, expiresAt.timeIntervalSince1970) } else { sqlite3_bind_null(statement, 4) }
+    sqlite3_bind_double(statement, 5, intent.createdAt.timeIntervalSince1970)
+    guard sqlite3_step(statement) == SQLITE_DONE else { throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB()))) }
+  }
+
+  public func standingIntents() throws -> [StandingIntent] {
+    lock.lock(); defer { lock.unlock() }
+    let statement = try prepare("SELECT payload FROM standing_intents ORDER BY created_at;")
+    defer { sqlite3_finalize(statement) }
+    var result: [StandingIntent] = []
+    while sqlite3_step(statement) == SQLITE_ROW, let blob = sqlite3_column_blob(statement, 0) {
+      let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0)))
+      if let item = try? JSONDecoder().decode(StandingIntent.self, from: data) { result.append(item) }
+    }
+    return result
+  }
+
+  public func cancelStandingIntent(id: UUID) throws {
+    guard var intent = try standingIntents().first(where: { $0.id == id }) else { return }
+    intent.isActive = false
+    try saveStandingIntent(intent)
+  }
+
+  public func saveMemoryConflict(_ conflict: MemoryConflict) throws {
+    lock.lock(); defer { lock.unlock() }
+    let payload = try JSONEncoder().encode(conflict)
+    let statement = try prepare("INSERT OR REPLACE INTO memory_conflicts (id,payload,is_resolved,created_at) VALUES (?,?,?,?);")
+    defer { sqlite3_finalize(statement) }
+    bindText(conflict.id.uuidString, at: 1, in: statement)
+    payload.withUnsafeBytes { _ = sqlite3_bind_blob(statement, 2, $0.baseAddress, Int32(payload.count), transient) }
+    sqlite3_bind_int(statement, 3, conflict.isResolved ? 1 : 0)
+    sqlite3_bind_double(statement, 4, conflict.createdAt.timeIntervalSince1970)
+    guard sqlite3_step(statement) == SQLITE_DONE else { throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB()))) }
+  }
+
+  public func memoryConflicts(includeResolved: Bool = false) throws -> [MemoryConflict] {
+    lock.lock(); defer { lock.unlock() }
+    let sql = includeResolved ? "SELECT payload FROM memory_conflicts ORDER BY created_at DESC;" : "SELECT payload FROM memory_conflicts WHERE is_resolved = 0 ORDER BY created_at DESC;"
+    let statement = try prepare(sql)
+    defer { sqlite3_finalize(statement) }
+    var result: [MemoryConflict] = []
+    while sqlite3_step(statement) == SQLITE_ROW, let blob = sqlite3_column_blob(statement, 0) {
+      let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0)))
+      if let item = try? JSONDecoder().decode(MemoryConflict.self, from: data) { result.append(item) }
+    }
+    return result
+  }
+
+  public func resolveMemoryConflict(id: UUID) throws {
+    guard var conflict = try memoryConflicts(includeResolved: true).first(where: { $0.id == id }) else { return }
+    conflict.isResolved = true
+    try saveMemoryConflict(conflict)
+  }
+
   /// 按 id 读取原始证据事件。
   public func rawEvents(ids: [UUID]) throws -> [RawMemoryEvent] {
     lock.lock(); defer { lock.unlock() }
@@ -1235,6 +1408,24 @@ public final class ClawMemoryStore {
     guard sqlite3_step(statement) == SQLITE_DONE else {
       throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
     }
+    try? syncMemoryFTS(record)
+  }
+
+  private func syncMemoryFTS(_ record: MemoryV2Record) throws {
+    let removeFTS = try prepare("DELETE FROM memory_v2_fts WHERE id = ?;")
+    bindText(record.id.uuidString, at: 1, in: removeFTS)
+    _ = sqlite3_step(removeFTS)
+    sqlite3_finalize(removeFTS)
+    let insertFTS = try prepare("INSERT INTO memory_v2_fts (id,content,normalized_key) VALUES (?,?,?);")
+    bindText(record.id.uuidString, at: 1, in: insertFTS)
+    bindText(record.content, at: 2, in: insertFTS)
+    bindText(record.normalizedKey, at: 3, in: insertFTS)
+    guard sqlite3_step(insertFTS) == SQLITE_DONE else {
+      let message = String(cString: sqlite3_errmsg(try requireDB()))
+      sqlite3_finalize(insertFTS)
+      throw ClawMemoryStoreError.sqlite(message: message)
+    }
+    sqlite3_finalize(insertFTS)
   }
 
   private func insertMemoryVersion(_ record: MemoryV2Record, payload: Data) throws {

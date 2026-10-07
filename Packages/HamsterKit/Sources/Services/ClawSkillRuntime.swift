@@ -233,7 +233,7 @@ public final class ClawSkillRuntime {
         sourceType: "skill:\(skillID)"
       )
       let tasks = ClawSecretaryExtractor.shared.extractTasks(from: message)
-      for task in tasks { try store.upsertTask(task) }
+      for task in tasks { try DefaultMemorySDK(store: store).createTask(task) }
       return "created:\(tasks.count)"
     default:
       throw ClawSkillRuntimeError.permissionDenied(toolID)

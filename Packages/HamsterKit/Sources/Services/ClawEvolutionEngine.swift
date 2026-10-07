@@ -84,7 +84,7 @@ public final class ClawEvolutionEngine {
         sourceRef: "skill:\(skillID):v\(skill.version)",
         confidence: min(0.95, 0.65 + Double(acceptedRows.count) * 0.04)
       )
-      try? store.upsertMemory(memory)
+      try? DefaultMemorySDK(store: store).rememberLegacy(memory)
     }
 
     // Per-contact edits stay contact-scoped, so one person's tone never contaminates another.
@@ -96,7 +96,7 @@ public final class ClawEvolutionEngine {
       guard !finals.isEmpty else { continue }
       let medianLength = finals.map(\.count).sorted()[finals.count / 2]
       let contactDirective = "与该联系人沟通时，用户最终采用的表达长度通常约 \(medianLength) 个字；优先模仿这些已确认的最终版本。"
-      try? store.upsertMemory(ClawMemoryItem(
+      try? DefaultMemorySDK(store: store).rememberLegacy(ClawMemoryItem(
         kind: .contactStyle,
         scope: "contact",
         subjectID: contactID,

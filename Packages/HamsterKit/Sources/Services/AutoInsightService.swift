@@ -280,7 +280,7 @@ public class AutoInsightService {
     if taskOK {
       let day = ClawTalkDataService.dateFormatter.string(from: Date())
       let content = String(task.prefix(1_000))
-      try? ClawMemoryStore.shared.upsertMemory(ClawMemoryItem(
+      try? DefaultMemorySDK.shared.rememberLegacy(ClawMemoryItem(
         kind: .event,
         content: content,
         normalizedKey: "auto-insight-task:\(day)",

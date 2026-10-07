@@ -208,10 +208,10 @@ public final class ClawMemoryExchangeService {
     for var item in preview.candidates {
       item.sourceType = item.sourceType.isEmpty ? "agent-import" : item.sourceType
       item.sourceRef = item.sourceRef ?? preview.sourceName
-      _ = try store.upsertMemory(item)
+      try DefaultMemorySDK(store: store).rememberLegacy(item)
       inserted += 1
     }
-    for task in preview.tasks { try store.upsertTask(task) }
+    for task in preview.tasks { try DefaultMemorySDK(store: store).createTask(task) }
     let runtime = ClawSkillRuntime(store: store)
     for skill in preview.skills {
       if let existing = try store.skills().first(where: { $0.id == skill.id }) {

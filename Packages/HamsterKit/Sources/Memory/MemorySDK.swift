@@ -9,6 +9,7 @@ public protocol MemorySDK {
   func createTask(_ task: ClawSecretaryTask) throws
   func createIntent(_ intent: StandingIntent) throws
   func flush(_ session: MemoryFlushSession) throws
+  func projection(_ kind: MemoryProjectionKind, personID: UUID?, projectID: UUID?, limit: Int) throws -> MemoryProjection
 }
 
 public enum MemorySDKError: LocalizedError {
@@ -37,21 +38,44 @@ public final class DefaultMemorySDK: MemorySDK {
     try store.saveMemoryV2(record, legacyProjection: legacyProjection(record))
   }
 
+  /// Compatibility inlet for features still producing the legacy value type.
+  /// The write still crosses the SDK boundary and creates the V2 source of truth.
+  public func rememberLegacy(_ item: ClawMemoryItem) throws {
+    let type: MemoryType
+    switch item.kind {
+    case .communicationPreference, .globalStyle, .languagePreference, .negativePreference, .reusablePhrase:
+      type = .preference
+    case .contactStyle, .relationship:
+      type = .people
+    case .event:
+      type = .episodic
+    case .project:
+      type = .project
+    case .procedure:
+      type = .task
+    default:
+      type = .semantic
+    }
+    let scope: MemoryScope = item.subjectID == nil ? (MemoryScope(rawValue: item.scope) ?? .global) : .person
+    let state: MemoryState = item.status == .active ? .active : (item.status == .archived ? .archived : .invalidated)
+    let record = MemoryV2Record(
+      id: item.id,
+      type: type,
+      state: state,
+      scope: scope,
+      content: item.content,
+      normalizedKey: item.normalizedKey,
+      personID: item.subjectID,
+      confidence: item.confidence,
+      provenance: MemoryProvenance(originType: .systemObserved, sourceApp: item.sourceType, observedAt: item.lastObservedAt, ingestionMethod: item.sourceType),
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    )
+    try store.saveMemoryV2(record, legacyProjection: item)
+  }
+
   public func recall(_ request: MemoryRecallRequest) throws -> [MemoryV2Record] {
-    let candidates = try store.memoryV2(
-      scope: request.scope,
-      personID: request.personID,
-      limit: max(request.limit * 4, request.limit)
-    ).filter { record in
-      guard record.state == .active || record.state == .confirmed else { return false }
-      if let projectID = request.projectID, record.projectID != projectID { return false }
-      return true
-    }
-    let query = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let ranked = candidates.sorted { lhs, rhs in
-      score(lhs, query: query) > score(rhs, query: query)
-    }
-    return Array(ranked.prefix(max(1, request.limit)))
+    try MemoryRouter(store: store).recall(request)
   }
 
   public func context(_ request: MemoryContextRequest) throws -> MemoryContext {
@@ -106,6 +130,7 @@ public final class DefaultMemorySDK: MemorySDK {
   }
 
   public func createIntent(_ intent: StandingIntent) throws {
+    try store.saveStandingIntent(intent)
     let record = MemoryV2Record(
       id: intent.id,
       type: .intent,
@@ -132,9 +157,20 @@ public final class DefaultMemorySDK: MemorySDK {
     }
   }
 
-  private func score(_ record: MemoryV2Record, query: String) -> Double {
-    let match = query.isEmpty || record.content.localizedCaseInsensitiveContains(query) ? 2.0 : 0
-    return match + record.importance + record.confidence + Double(record.provenance.trustLevel) / 100
+  public func projection(_ kind: MemoryProjectionKind, personID: UUID? = nil, projectID: UUID? = nil, limit: Int = 100) throws -> MemoryProjection {
+    let records = try store.memoryV2(limit: max(limit * 4, limit)).filter { record in
+      guard record.state == .active || record.state == .confirmed else { return false }
+      if let personID, record.personID != personID { return false }
+      if let projectID, record.projectID != projectID { return false }
+      switch kind {
+      case .relationship: return record.type == .people || record.scope == .relationship
+      case .project: return record.type == .project || record.scope == .project
+      case .episode: return record.type == .episodic
+      case .knowledge: return record.type == .knowledge || record.type == .semantic
+      case .communication: return record.type == .communication || record.type == .preference
+      }
+    }
+    return MemoryProjection(kind: kind, records: Array(records.prefix(max(1, limit))))
   }
 
   private func legacyProjection(_ record: MemoryV2Record) -> ClawMemoryItem {

@@ -220,7 +220,7 @@ NEW\t全拼编码\t词语
     // Mirror durable lexical learning into the shared Memory Core so rewrite/reply Skills
     // can benefit from the same phrases instead of SmartFreq owning a private silo.
     for rule in acceptedFreqRules.filter({ $0.action == "boost" }).prefix(30) {
-      try? ClawMemoryStore.shared.upsertMemory(ClawMemoryItem(
+      try? DefaultMemorySDK.shared.rememberLegacy(ClawMemoryItem(
         kind: .reusablePhrase,
         content: "用户常用词：\(rule.word)",
         normalizedKey: "smartfreq:boost:\(rule.word.lowercased())",
@@ -230,7 +230,7 @@ NEW\t全拼编码\t词语
       ))
     }
     for phrase in acceptedNewPhrases.prefix(30) {
-      try? ClawMemoryStore.shared.upsertMemory(ClawMemoryItem(
+      try? DefaultMemorySDK.shared.rememberLegacy(ClawMemoryItem(
         kind: .reusablePhrase,
         content: "用户常用短语：\(phrase.word)",
         normalizedKey: "smartfreq:phrase:\(phrase.word.lowercased())",

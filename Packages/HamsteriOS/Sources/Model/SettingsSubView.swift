@@ -62,7 +62,6 @@ public enum SettingsSubView: String {
   case debugLog
 
   /// 聊天对象档案页面
-  case heartTargets
 
   /// 空页面
   case none

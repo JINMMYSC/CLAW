@@ -87,7 +87,7 @@ public final class ClawContactProfileLearner {
           memory.createdAt = existingMemory.createdAt
           memory.updatedAt = now
         }
-        try? self.store.upsertMemory(memory)
+        try? DefaultMemorySDK(store: self.store).rememberLegacy(memory)
       }
     }
   }

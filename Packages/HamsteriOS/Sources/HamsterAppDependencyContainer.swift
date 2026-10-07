@@ -378,7 +378,4 @@ extension HamsterAppDependencyContainer: SubViewControllerFactory {
   }
 
 
-  func makeHeartTargetSettingsViewController() -> HeartTargetSettingsViewController {
-    HeartTargetSettingsViewController()
-  }
 }

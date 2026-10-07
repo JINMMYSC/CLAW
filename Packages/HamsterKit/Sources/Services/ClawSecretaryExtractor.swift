@@ -48,7 +48,7 @@ public final class ClawSecretaryExtractor {
       let duplicate = existing.contains {
         $0.title == task.title && $0.contactID == task.contactID && $0.kind == task.kind
       }
-      if !duplicate { try? store.upsertTask(task) }
+      if !duplicate { try? DefaultMemorySDK(store: store).createTask(task) }
     }
   }
 

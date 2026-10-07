@@ -208,14 +208,6 @@ public class SettingsViewModel: ObservableObject {
             self.navigate(.voice)
           }
         ),
-        .init(
-          icon: UIImage(systemName: "heart.fill")!,
-          text: "聊天对象档案",
-          accessoryType: .disclosureIndicator,
-          navigationAction: { [unowned self] in
-            self.navigate(.heartTargets)
-          }
-        ),
       ]),
       SettingSectionModel(title: "云同步与备份", items: [
         .init(
