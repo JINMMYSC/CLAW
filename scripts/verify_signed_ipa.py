@@ -2,6 +2,7 @@
 """Verify signatures, profiles, and required entitlements in a signed IPA."""
 
 import argparse
+from dataclasses import dataclass
 import fnmatch
 import os
 import plistlib
@@ -13,6 +14,12 @@ import zipfile
 
 DEFAULT_APP_GROUP = "group.7518554"
 DEFAULT_ICLOUD_CONTAINER = "iCloud.dev.fuxiao.app.hamsterapp"
+
+
+@dataclass(frozen=True)
+class CodeBundle:
+    path: str
+    requires_profile: bool
 
 
 def _application_identifier_matches(application_identifier, bundle_identifier):
@@ -41,12 +48,13 @@ def validate_bundle_entitlements(
             % bundle_identifier
         )
 
-    team_identifier = profile_entitlements.get("com.apple.developer.team-identifier")
-    if not team_identifier and "." in profile_app_id:
-        team_identifier = profile_app_id.split(".", 1)[0]
-    expected_app_id = "%s.%s" % (team_identifier, bundle_identifier)
+    app_identifier_prefix = profile_app_id.split(".", 1)[0]
+    expected_app_id = "%s.%s" % (app_identifier_prefix, bundle_identifier)
     if signed_entitlements.get("application-identifier") != expected_app_id:
         raise ValueError("signed application-identifier does not match bundle identifier %s" % bundle_identifier)
+    team_identifier = profile_entitlements.get("com.apple.developer.team-identifier")
+    if not team_identifier:
+        raise ValueError("provisioning profile is missing team identifier")
     if signed_entitlements.get("com.apple.developer.team-identifier") != team_identifier:
         raise ValueError("signed team identifier does not match provisioning profile")
 
@@ -100,21 +108,47 @@ def bundle_identifier(bundle_path):
         return plistlib.load(stream)["CFBundleIdentifier"]
 
 
-def bundle_paths(app_path):
-    paths = []
-    plug_ins = os.path.join(app_path, "PlugIns")
-    if os.path.isdir(plug_ins):
-        for root, dirs, _files in os.walk(plug_ins):
-            for directory in dirs:
-                if directory.endswith(".appex"):
-                    paths.append(os.path.join(root, directory))
-    return sorted(paths) + [app_path]
+def discover_code_bundles(app_path):
+    """Return all nested code bundles, deepest first, followed by the main app."""
+    suffix_profiles = {
+        ".framework": False,
+        ".appex": True,
+        ".xpc": True,
+        ".app": True,
+    }
+    bundles = []
+    for root, dirs, _files in os.walk(app_path):
+        for directory in dirs:
+            path = os.path.join(root, directory)
+            if os.path.normpath(path) == os.path.normpath(app_path):
+                continue
+            for suffix, requires_profile in suffix_profiles.items():
+                if directory.endswith(suffix):
+                    bundles.append(CodeBundle(path, requires_profile))
+                    break
+    bundles.sort(key=lambda item: (-item.path.count(os.sep), item.path))
+    bundles.append(CodeBundle(app_path, True))
+    return bundles
+
+
+def verification_commands(app_path, bundles):
+    commands = [
+        ["codesign", "--verify", "--strict", bundle.path]
+        for bundle in bundles
+    ]
+    commands.append(["codesign", "--verify", "--deep", "--strict", app_path])
+    return commands
 
 
 def verify_bundle_tree(app_path):
     main_identifier = bundle_identifier(app_path)
-    for path in bundle_paths(app_path):
+    bundles = discover_code_bundles(app_path)
+    for bundle in bundles:
+        path = bundle.path
         subprocess.run(["codesign", "--verify", "--strict", path], check=True)
+        if not bundle.requires_profile:
+            print("verified code bundle:", os.path.relpath(path, app_path))
+            continue
         identifier = bundle_identifier(path)
         profile_path = os.path.join(path, "embedded.mobileprovision")
         if not os.path.isfile(profile_path):
@@ -131,6 +165,11 @@ def verify_bundle_tree(app_path):
             ),
         )
         print("verified bundle:", identifier)
+    subprocess.run(
+        ["codesign", "--verify", "--deep", "--strict", app_path],
+        check=True,
+    )
+    print("verified deep signature tree:", main_identifier)
 
 
 def verify_ipa(ipa_path):
