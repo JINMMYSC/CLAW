@@ -360,6 +360,9 @@ final class ClawMemoryCoreTests: XCTestCase {
     }
     XCTAssertEqual(try store.memories(scope: "global", limit: 3_000).count, 1_000)
     XCTAssertEqual(try store.memories(scope: "contact", subjectID: contact, limit: 3_000).count, 1_000)
+    XCTAssertEqual(try store.memoryCount(), 2_000)
+    XCTAssertEqual(try store.memoryCount(scope: "contact", subjectID: contact), 1_000)
+    XCTAssertEqual(try store.allMemories().count, 2_000)
   }
 
   /// Opt-in long-run benchmark for release qualification:

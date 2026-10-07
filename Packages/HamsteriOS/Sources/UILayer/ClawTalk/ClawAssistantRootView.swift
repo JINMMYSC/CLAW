@@ -826,8 +826,210 @@ private struct ClawContactDetailView: View {
   }
 }
 
+private enum MemoryCenterAnchor {
+  static let skills = "memory-center-skills"
+}
+
+private struct ClawAllMemoriesView: View {
+  @State private var memories: [ClawMemoryItem] = []
+  @State private var profiles: [HeartTargetProfile] = []
+  @State private var query = ""
+  @State private var personID: UUID?
+  @State private var sourceType: String?
+  @State private var kind: ClawMemoryKind?
+  @State private var scope: String?
+  @State private var editingMemory: ClawMemoryItem?
+  @State private var vaultRefreshVersion = 0
+  @State private var isLoading = false
+  @State private var status = ""
+
+  private var vaultUnlocked: Bool {
+    _ = vaultRefreshVersion
+    return ClawPrivacyVaultService.shared.isUnlocked
+  }
+
+  private var filteredMemories: [ClawMemoryItem] {
+    ClawMemoryFilter.apply(
+      memories,
+      query: query,
+      personID: personID,
+      sourceType: sourceType,
+      kind: kind,
+      scope: scope,
+      protectedIDs: ClawPrivacyVaultService.shared.protectedMemoryIDs,
+      includeProtectedContent: vaultUnlocked
+    )
+  }
+
+  private var sourceTypes: [String] {
+    Array(Set(memories.map(\.sourceType))).sorted()
+  }
+
+  private var scopes: [String] {
+    Array(Set(memories.map(\.scope))).sorted()
+  }
+
+  var body: some View {
+    List {
+      Section {
+        Menu {
+          Button("全部人物") { personID = nil }
+          ForEach(profiles) { profile in
+            Button(profile.displayName) { personID = profile.id }
+          }
+        } label: {
+          filterLabel("人物", value: profiles.first(where: { $0.id == personID })?.displayName)
+        }
+
+        Menu {
+          Button("全部来源") { sourceType = nil }
+          ForEach(sourceTypes, id: \.self) { source in
+            Button(source) { sourceType = source }
+          }
+        } label: {
+          filterLabel("来源", value: sourceType)
+        }
+
+        Menu {
+          Button("全部类型") { kind = nil }
+          ForEach(ClawMemoryKind.allCases, id: \.self) { value in
+            Button(value.rawValue) { kind = value }
+          }
+        } label: {
+          filterLabel("类型", value: kind?.rawValue)
+        }
+
+        Menu {
+          Button("全部范围") { scope = nil }
+          ForEach(scopes, id: \.self) { value in
+            Button(value) { scope = value }
+          }
+        } label: {
+          filterLabel("范围", value: scope)
+        }
+      } header: {
+        Text("筛选")
+      }
+
+      Section {
+        if isLoading {
+          HStack {
+            Spacer()
+            ProgressView("正在读取全部记忆…")
+            Spacer()
+          }
+        } else if filteredMemories.isEmpty {
+          Text("没有符合条件的记忆。")
+            .foregroundColor(.secondary)
+        } else {
+          ForEach(filteredMemories) { item in
+            Button {
+              open(item)
+            } label: {
+              VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                  if ClawPrivacyVaultService.shared.isProtected(item) {
+                    Image(systemName: vaultUnlocked ? "lock.open.fill" : "lock.fill")
+                      .font(.caption)
+                      .foregroundColor(.orange)
+                  }
+                  Text(
+                    ClawPrivacyVaultService.shared.isProtected(item) && !vaultUnlocked
+                      ? "已锁定的私人记忆"
+                      : item.content
+                  )
+                  .foregroundColor(.primary)
+                }
+                Text(memoryMetadata(item))
+                  .font(.caption2)
+                  .foregroundColor(.secondary)
+              }
+            }
+            .buttonStyle(.plain)
+            .swipeActions(edge: .trailing) {
+              Button("删除", role: .destructive) {
+                _ = try? ClawMemoryStore.shared.deleteMemory(id: item.id)
+                reload()
+              }
+              Button("归档") {
+                _ = try? ClawMemoryStore.shared.setMemoryStatus(id: item.id, status: .archived)
+                reload()
+              }
+              .tint(.orange)
+            }
+          }
+        }
+      } header: {
+        Text("全部记忆 · \(filteredMemories.count) / \(memories.count)")
+      } footer: {
+        if !status.isEmpty { Text(status) }
+      }
+    }
+    .navigationTitle("全部记忆")
+    .searchable(text: $query, prompt: "搜索内容、来源或类型")
+    .onAppear(perform: reload)
+    .task {
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(nanoseconds: 1_000_000_000)
+        } catch {
+          return
+        }
+        vaultRefreshVersion &+= 1
+      }
+    }
+    .sheet(item: $editingMemory) { item in
+      ClawMemoryEditorView(item: item) {
+        editingMemory = nil
+        reload()
+      }
+    }
+  }
+
+  private func filterLabel(_ title: String, value: String?) -> some View {
+    HStack {
+      Text(title)
+      Spacer()
+      Text(value ?? "全部")
+        .foregroundColor(.secondary)
+      Image(systemName: "chevron.up.chevron.down")
+        .font(.caption2)
+        .foregroundColor(.secondary)
+    }
+  }
+
+  private func memoryMetadata(_ item: ClawMemoryItem) -> String {
+    let person = profiles.first(where: { $0.id == item.subjectID })?.displayName
+    return [person, item.kind.rawValue, item.sourceType, item.scope]
+      .compactMap { $0 }
+      .joined(separator: " · ")
+  }
+
+  private func open(_ item: ClawMemoryItem) {
+    if !ClawPrivacyVaultService.shared.isProtected(item) || ClawPrivacyVaultService.shared.isUnlocked {
+      editingMemory = item
+    } else {
+      status = "这条记忆在隐私保险箱中，请先回到记忆中心解锁。"
+    }
+  }
+
+  private func reload() {
+    profiles = HeartTargetService.shared.profiles
+    vaultRefreshVersion &+= 1
+    isLoading = true
+    DispatchQueue.global(qos: .userInitiated).async {
+      let loaded = (try? ClawMemoryStore.shared.allMemories()) ?? []
+      DispatchQueue.main.async {
+        memories = loaded
+        isLoading = false
+      }
+    }
+  }
+}
+
 private struct ClawMemoryCenterView: View {
   @State private var memories: [ClawMemoryItem] = []
+  @State private var memoryCount = 0
   @State private var skills: [ClawSkillDefinition] = []
   @State private var editingMemory: ClawMemoryItem?
   @State private var showingImporter = false
@@ -836,15 +1038,38 @@ private struct ClawMemoryCenterView: View {
   @State private var skillPreview: [ClawSkillDefinition] = []
   @State private var discoveredSkillDrafts: [ClawSkillDraftCandidate] = []
   @State private var temporaryMode = ClawMemoryPolicyService.shared.temporaryMode
-  @State private var vaultUnlocked = ClawPrivacyVaultService.shared.isUnlocked
+  @State private var vaultRefreshVersion = 0
   @State private var status = ""
+
+  private var vaultUnlocked: Bool {
+    _ = vaultRefreshVersion
+    return ClawPrivacyVaultService.shared.isUnlocked
+  }
 
   var body: some View {
     NavigationView {
-      List {
+      ScrollViewReader { proxy in
+        List {
         Section {
-          HStack { Label("结构化记忆", systemImage: "brain"); Spacer(); Text("\(memories.count)").foregroundColor(.secondary) }
-          HStack { Label("可用 Skills", systemImage: "puzzlepiece.extension"); Spacer(); Text("\(skills.filter(\.enabled).count)").foregroundColor(.secondary) }
+          NavigationLink {
+            ClawAllMemoriesView()
+          } label: {
+            HStack {
+              Label("结构化记忆", systemImage: "brain")
+              Spacer()
+              Text("\(memoryCount)").foregroundColor(.secondary)
+            }
+          }
+          Button {
+            withAnimation { proxy.scrollTo(MemoryCenterAnchor.skills, anchor: .top) }
+          } label: {
+            HStack {
+              Label("可用 Skills", systemImage: "puzzlepiece.extension")
+              Spacer()
+              Text("\(skills.filter(\.enabled).count)").foregroundColor(.secondary)
+            }
+          }
+          .foregroundColor(.primary)
           HStack {
             Label("隐私保险箱", systemImage: vaultUnlocked ? "lock.open.fill" : "lock.fill")
             Spacer()
@@ -867,11 +1092,11 @@ private struct ClawMemoryCenterView: View {
           Button {
             if vaultUnlocked {
               ClawPrivacyVaultService.shared.lockNow()
-              vaultUnlocked = false
+              vaultRefreshVersion &+= 1
             } else {
               ClawPrivacyVaultService.shared.unlock { success, error in
                 DispatchQueue.main.async {
-                  vaultUnlocked = success
+                  vaultRefreshVersion &+= 1
                   status = success ? "隐私保险箱已临时解锁。" : "解锁失败：\(error?.localizedDescription ?? "未知错误")"
                 }
               }
@@ -946,7 +1171,7 @@ private struct ClawMemoryCenterView: View {
             }
           }
         } header: {
-          Text("最近记忆")
+          Text("最近记忆 · 共 \(memoryCount) 条 · 显示最近 \(memories.count) 条")
         }
 
         Section {
@@ -1086,30 +1311,42 @@ private struct ClawMemoryCenterView: View {
         } header: {
           Text("Skill / 自动进化")
         }
-      }
-      .navigationTitle("记忆中心")
-      .onAppear(perform: reload)
-      .sheet(item: $editingMemory) { item in
-        ClawMemoryEditorView(item: item) {
-          editingMemory = nil
-          reload()
+        .id(MemoryCenterAnchor.skills)
         }
-      }
-      .sheet(isPresented: $showingImporter) {
-        ClawMemoryDocumentPicker(allowsMultipleSelection: true) { urls in
-          showingImporter = false
-          analyzeImports(urls)
+        .navigationTitle("记忆中心")
+        .onAppear(perform: reload)
+        .task {
+          while !Task.isCancelled {
+            do {
+              try await Task.sleep(nanoseconds: 1_000_000_000)
+            } catch {
+              return
+            }
+            vaultRefreshVersion &+= 1
+          }
         }
-      }
-      .sheet(isPresented: $showingSkillImporter) {
-        ClawMemoryDocumentPicker(allowsMultipleSelection: false) { urls in
-          showingSkillImporter = false
-          guard let url = urls.first else { return }
-          do {
-            skillPreview = try ClawSkillImportService.shared.preview(data: Data(contentsOf: url))
-            status = "Skill 包已通过声明式校验，请确认安装。"
-          } catch {
-            status = "Skill 解析失败：\(error.localizedDescription)"
+        .sheet(item: $editingMemory) { item in
+          ClawMemoryEditorView(item: item) {
+            editingMemory = nil
+            reload()
+          }
+        }
+        .sheet(isPresented: $showingImporter) {
+          ClawMemoryDocumentPicker(allowsMultipleSelection: true) { urls in
+            showingImporter = false
+            analyzeImports(urls)
+          }
+        }
+        .sheet(isPresented: $showingSkillImporter) {
+          ClawMemoryDocumentPicker(allowsMultipleSelection: false) { urls in
+            showingSkillImporter = false
+            guard let url = urls.first else { return }
+            do {
+              skillPreview = try ClawSkillImportService.shared.preview(data: Data(contentsOf: url))
+              status = "Skill 包已通过声明式校验，请确认安装。"
+            } catch {
+              status = "Skill 解析失败：\(error.localizedDescription)"
+            }
           }
         }
       }
@@ -1117,11 +1354,12 @@ private struct ClawMemoryCenterView: View {
   }
 
   private func reload() {
-    memories = (try? ClawMemoryStore.shared.memories(limit: 1_000)) ?? []
+    memories = (try? ClawMemoryStore.shared.memories(limit: 30)) ?? []
+    memoryCount = (try? ClawMemoryStore.shared.memoryCount()) ?? memories.count
     skills = (try? ClawMemoryStore.shared.skills()) ?? []
     discoveredSkillDrafts = ClawSkillDiscoveryService.shared.discover()
     temporaryMode = ClawMemoryPolicyService.shared.temporaryMode
-    vaultUnlocked = ClawPrivacyVaultService.shared.isUnlocked
+    vaultRefreshVersion &+= 1
   }
 
   private var sourceTypes: [String] {

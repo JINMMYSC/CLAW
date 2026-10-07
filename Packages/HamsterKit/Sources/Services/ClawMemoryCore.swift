@@ -556,16 +556,40 @@ public final class ClawMemoryStore {
   }
 
   public func memories(scope: String? = nil, subjectID: UUID? = nil, limit: Int = 200) throws -> [ClawMemoryItem] {
+    try loadMemories(scope: scope, subjectID: subjectID, limit: max(1, limit))
+  }
+
+  /// Returns every active memory matching the optional scope without applying a UI-oriented limit.
+  public func allMemories(scope: String? = nil, subjectID: UUID? = nil) throws -> [ClawMemoryItem] {
+    try loadMemories(scope: scope, subjectID: subjectID, limit: nil)
+  }
+
+  public func memoryCount(scope: String? = nil, subjectID: UUID? = nil) throws -> Int {
     lock.lock(); defer { lock.unlock() }
     var clauses = ["status = 'active'"]
     if scope != nil { clauses.append("scope = ?") }
     if subjectID != nil { clauses.append("subject_id = ?") }
-    let sql = "SELECT id,kind,scope,subject_id,content,normalized_key,source_type,source_ref,confidence,created_at,updated_at,last_observed_at,status FROM memory_items WHERE \(clauses.joined(separator: " AND ")) ORDER BY last_observed_at DESC LIMIT ?;"
+    let sql = "SELECT COUNT(*) FROM memory_items WHERE \(clauses.joined(separator: " AND "));"
+    let statement = try prepare(sql); defer { sqlite3_finalize(statement) }
+    var index: Int32 = 1
+    if let scope { bindText(scope, at: index, in: statement); index += 1 }
+    if let subjectID { bindText(subjectID.uuidString, at: index, in: statement) }
+    guard sqlite3_step(statement) == SQLITE_ROW else { return 0 }
+    return Int(sqlite3_column_int64(statement, 0))
+  }
+
+  private func loadMemories(scope: String?, subjectID: UUID?, limit: Int?) throws -> [ClawMemoryItem] {
+    lock.lock(); defer { lock.unlock() }
+    var clauses = ["status = 'active'"]
+    if scope != nil { clauses.append("scope = ?") }
+    if subjectID != nil { clauses.append("subject_id = ?") }
+    let limitClause = limit == nil ? "" : " LIMIT ?"
+    let sql = "SELECT id,kind,scope,subject_id,content,normalized_key,source_type,source_ref,confidence,created_at,updated_at,last_observed_at,status FROM memory_items WHERE \(clauses.joined(separator: " AND ")) ORDER BY last_observed_at DESC\(limitClause);"
     let statement = try prepare(sql); defer { sqlite3_finalize(statement) }
     var index: Int32 = 1
     if let scope { bindText(scope, at: index, in: statement); index += 1 }
     if let subjectID { bindText(subjectID.uuidString, at: index, in: statement); index += 1 }
-    sqlite3_bind_int(statement, index, Int32(max(1, limit)))
+    if let limit { sqlite3_bind_int(statement, index, Int32(limit)) }
     var result: [ClawMemoryItem] = []
     while sqlite3_step(statement) == SQLITE_ROW {
       guard let idText = text(statement, 0), let id = UUID(uuidString: idText),
