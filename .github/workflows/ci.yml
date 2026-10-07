@@ -38,6 +38,26 @@ jobs:
       - name: Show toolchain
         run: xcodebuild -version && swift --version
 
+      - name: Run HamsterKit unit tests
+        run: |
+          set -euo pipefail
+          SIMULATOR_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(d["udid"] for runtime in data["devices"].values() for d in runtime if d["name"].startswith("iPhone")))')
+          xcodebuild test \
+            -packagePath Packages/HamsterKit \
+            -scheme HamsterKit \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath /tmp/HamsterKitTests
+
+      - name: Run HamsteriOS unit tests
+        run: |
+          set -euo pipefail
+          SIMULATOR_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(d["udid"] for runtime in data["devices"].values() for d in runtime if d["name"].startswith("iPhone")))')
+          xcodebuild test \
+            -packagePath Packages/HamsteriOS \
+            -scheme HamsteriOS \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath /tmp/HamsteriOSTests
+
       - name: Compile
         run: |
           xcodebuild archive -archivePath "Hamster" -scheme "Hamster" -sdk "iphoneos" -arch arm64 -configuration Release CODE_SIGNING_ALLOWED=NO
