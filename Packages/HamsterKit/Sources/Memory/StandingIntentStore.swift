@@ -42,7 +42,10 @@ public struct MemoryFlushService {
     for message in messages {
       let event = RawMemoryEvent(kind: "conversation", content: message.content, sourceApp: message.sourceType, sourceRef: message.sourceRef, occurredAt: message.occurredAt)
       let evidence = [MemoryEvidence(rawEventID: event.id, locator: message.id.uuidString, excerpt: message.content)]
-      if message.content.contains("答应") || message.content.contains("要") || message.content.contains("截止") {
+      // Treat explicit commitments and delivery/reminder language as actionable
+      // tasks while leaving ordinary conversational messages as timeline-only.
+      let taskMarkers = ["答应", "要", "截止", "提交", "交付", "完成", "提醒"]
+      if taskMarkers.contains(where: message.content.contains) {
         tasks.append(ClawSecretaryTask(kind: .commitment, title: message.content, contactID: personID, sourceType: message.sourceType, sourceRef: message.id.uuidString))
         records.append(record(type: .task, content: message.content, sessionID: sessionID, personID: personID, evidence: evidence))
       }

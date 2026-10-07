@@ -97,6 +97,8 @@ public final class ClawScreenshotChatParser {
   }
 
   private func looksLikeTimestamp(_ text: String) -> Bool {
+    // Match standalone date/time chrome only. A message such as “周五提交方案”
+    // starts with a weekday token but is still actual conversation content.
     let pattern = #"^(今天|昨天|星期.|周.|\d{1,2}:\d{2}|\d{1,2}月\d{1,2}日|\d{4}年.*)$"#
     return text.range(of: pattern, options: .regularExpression) != nil
   }
