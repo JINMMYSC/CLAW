@@ -164,6 +164,7 @@ NEW\t全拼编码\t词语
     guard case .success(let (response, usage)) = result else {
       if case .failure(let error) = result {
         logger.error("SmartFreq: AI call failed: \(error.localizedDescription)")
+        LogService.shared.log(.smartFreqRequestFailed)
       }
       return
     }

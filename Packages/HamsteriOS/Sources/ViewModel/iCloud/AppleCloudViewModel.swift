@@ -97,6 +97,7 @@ public class AppleCloudViewModel: ObservableObject {
       await MainActor.run { syncState = .finished(success: true, message: "文件已成功拷贝至 iCloud") }
     } catch {
       Logger.statistics.error("apple cloud copy to iCloud error: \(error)")
+      LogService.shared.log(.iCloudCopyFailed)
       UserDefaults.standard.set(Date(), forKey: lastSyncTimeKey)
       UserDefaults.standard.set(false, forKey: lastSyncSuccessKey)
       await ProgressHUD.dismiss()
@@ -118,6 +119,7 @@ public class AppleCloudViewModel: ObservableObject {
       await MainActor.run { syncState = .finished(success: true, message: "已从 iCloud 恢复，请执行「重新部署」生效") }
     } catch {
       Logger.statistics.error("apple cloud restore error: \(error)")
+      LogService.shared.log(.iCloudRestoreFailed)
       UserDefaults.standard.set(Date(), forKey: lastSyncTimeKey)
       UserDefaults.standard.set(false, forKey: lastSyncSuccessKey)
       await ProgressHUD.dismiss()

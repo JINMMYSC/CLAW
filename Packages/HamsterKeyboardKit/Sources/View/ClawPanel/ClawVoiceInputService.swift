@@ -89,15 +89,20 @@ public final class ClawVoiceInputService: NSObject {
   /// 仅主 App 调用。键盘扩展不会主动弹权限框。
   public func requestAuthorization(completion: @escaping (Bool) -> Void) {
     guard !isKeyboardExtensionRuntime else {
+      LogService.shared.log(.voiceAuthorizationFailed)
       completion(false)
       return
     }
     SFSpeechRecognizer.requestAuthorization { speechStatus in
       guard speechStatus == .authorized else {
+        LogService.shared.log(.voiceAuthorizationFailed)
         DispatchQueue.main.async { completion(false) }
         return
       }
       AVAudioSession.sharedInstance().requestRecordPermission { granted in
+        if !granted {
+          LogService.shared.log(.voiceAuthorizationFailed)
+        }
         DispatchQueue.main.async { completion(granted) }
       }
     }
@@ -113,6 +118,7 @@ public final class ClawVoiceInputService: NSObject {
   public func start(completion: @escaping (Result<String, Error>) -> Void) {
     let generation = resetForNewSession()
     guard let recognizer = makeRecognizer(), recognizer.isAvailable else {
+      LogService.shared.log(.voiceRecognizerUnavailable)
       completion(.failure(ClawVoiceError.recognizerUnavailable))
       return
     }
@@ -127,6 +133,7 @@ public final class ClawVoiceInputService: NSObject {
     let inputNode = audioEngine.inputNode
     let format = inputNode.outputFormat(forBus: 0)
     guard format.sampleRate > 0 else {
+      LogService.shared.log(.voiceAudioUnavailable)
       completion(.failure(ClawVoiceError.audioUnavailable))
       return
     }
@@ -145,6 +152,7 @@ public final class ClawVoiceInputService: NSObject {
         completion(.success(text))
       } else if let error {
         self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
+        LogService.shared.log(.voiceRecognitionFailed)
         completion(.failure(error))
       }
     }
@@ -158,6 +166,7 @@ public final class ClawVoiceInputService: NSObject {
       isRecording = true
     } catch {
       finishSession(generation, cancelTask: true, clearStreamingCallbacks: true)
+      LogService.shared.log(.voiceSessionStartFailed)
       completion(.failure(error))
     }
   }
@@ -178,6 +187,7 @@ public final class ClawVoiceInputService: NSObject {
 
     guard let recognizer = makeRecognizer(), recognizer.isAvailable else {
       clearStreamingCallbacks()
+      LogService.shared.log(.voiceRecognizerUnavailable)
       onError(ClawVoiceError.recognizerUnavailable)
       return
     }
@@ -193,6 +203,7 @@ public final class ClawVoiceInputService: NSObject {
     let format = inputNode.outputFormat(forBus: 0)
     guard format.sampleRate > 0 else {
       clearStreamingCallbacks()
+      LogService.shared.log(.voiceAudioUnavailable)
       onError(ClawVoiceError.audioUnavailable)
       return
     }
@@ -218,6 +229,7 @@ self.streamingPartial?(text)
       } else if let error {
         let onError = self.streamingError
         self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
+        LogService.shared.log(.voiceRecognitionFailed)
         onError?(error)
       }
     }
@@ -232,6 +244,7 @@ self.streamingPartial?(text)
     } catch {
       let callback = streamingError
       finishSession(generation, cancelTask: true, clearStreamingCallbacks: true)
+      LogService.shared.log(.voiceSessionStartFailed)
       callback?(error)
     }
   }
