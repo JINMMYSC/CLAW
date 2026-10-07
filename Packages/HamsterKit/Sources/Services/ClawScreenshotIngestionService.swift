@@ -41,10 +41,10 @@ public final class ClawScreenshotIngestionService {
     let weakOCR = parsed.messages.contains { $0.confidence < 0.70 }
     let requiresReview: Bool
     if selectedProfile != nil {
-      // A user-selected person resolves identity ambiguity. OCR quality and an
-      // empty parse still require review; centered bubbles remain unknown
-      // evidence without blocking an otherwise explicit import.
-      requiresReview = weakOCR || parsed.messages.isEmpty
+      // A user-selected person is an explicit routing decision. Preserve OCR
+      // confidence on each message for later review, but import the timeline
+      // directly as long as at least one bubble was recognized.
+      requiresReview = parsed.messages.isEmpty
     } else {
       requiresReview = resolution.confidence < 0.75 || hasUnknownSpeaker || weakOCR || parsed.messages.isEmpty
     }
