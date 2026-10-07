@@ -120,10 +120,10 @@ public struct ClawMemoryArchiveV2 {
   }
 
   private static var encoder: JSONEncoder {
-    let value = JSONEncoder(); value.outputFormatting = [.prettyPrinted, .sortedKeys]; value.dateEncodingStrategy = .iso8601; return value
+    let value = JSONEncoder(); value.outputFormatting = [.prettyPrinted, .sortedKeys]; value.dateEncodingStrategy = .secondsSince1970; return value
   }
   private static var decoder: JSONDecoder {
-    let value = JSONDecoder(); value.dateDecodingStrategy = .iso8601; return value
+    let value = JSONDecoder(); value.dateDecodingStrategy = .secondsSince1970; return value
   }
   private static func sha256(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
   private static func isSafeRelativePath(_ path: String) -> Bool {
