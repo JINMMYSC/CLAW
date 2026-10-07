@@ -6,6 +6,7 @@
 //
 
 import Combine
+import HamsterKit
 import HamsterUIKit
 import ProgressHUD
 import UIKit
@@ -122,3 +123,4 @@ class AboutViewController: NibLessViewController, UIDocumentPickerDelegate {
     navigationController?.pushViewController(openSourceViewController, animated: true)
   }
 }
+

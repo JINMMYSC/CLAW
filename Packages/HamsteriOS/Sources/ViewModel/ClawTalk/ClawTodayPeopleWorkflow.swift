@@ -134,14 +134,15 @@ enum ClawPeoplePresentation {
   }
 
   private static func pinyinForms(_ text: String) -> (full: String, initials: String) {
-    guard let latin = text.applyingTransform(.toLatin, reverse: false)?
-      .applyingTransform(.stripDiacritics, reverse: false)
-      .lowercased()
+    guard let latin = text.applyingTransform(.toLatin, reverse: false),
+          let stripped = latin.applyingTransform(.stripDiacritics, reverse: false)
     else { return ("", "") }
-    let parts = latin.split(whereSeparator: { $0.isWhitespace || $0 == "-" })
+    let normalizedLatin = stripped.lowercased()
+    let parts = normalizedLatin.split(whereSeparator: { $0.isWhitespace || $0 == "-" })
     return (
       parts.joined(),
       parts.compactMap { $0.first }.map { String($0) }.joined()
     )
   }
 }
+

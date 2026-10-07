@@ -289,7 +289,13 @@ public struct SmartFreqSettingsView: View {
           HStack {
             Text("词条上限")
             Spacer()
-            TextField("500", value: $viewModel.phraseBudget, format: .number)
+            TextField(
+              "500",
+              text: Binding(
+                get: { String(viewModel.phraseBudget) },
+                set: { viewModel.phraseBudget = Int($0) ?? 0 }
+              )
+            )
               .multilineTextAlignment(.trailing)
               .keyboardType(.numberPad)
               .frame(width: 90)
@@ -423,3 +429,4 @@ private struct SmartFreqSecureKeyField: View {
     .onAppear { text = key }
   }
 }
+
