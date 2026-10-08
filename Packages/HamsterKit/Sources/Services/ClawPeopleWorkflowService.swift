@@ -37,12 +37,18 @@ public final class ClawPeopleWorkflowService {
     }
   }
 
-  public func deleteProfilePreservingRecords(_ id: UUID) {
+  /// Safely delete *only* empty profiles. Legacy behavior promoted all
+  /// dependent records to global scope and could leak person-specific context.
+  /// Callers must explicitly handle a false result and leave data untouched.
+  @discardableResult
+  public func deleteProfilePreservingRecords(_ id: UUID) -> Bool {
+    guard profiles.profile(id: id) != nil else { return false }
     do {
-      try store.reassignContactReferences(from: id, to: nil)
+      guard try !store.hasContactReferences(id: id) else { return false }
       profiles.delete(id: id)
+      return true
     } catch {
-      // Keep the profile when its dependent data could not be preserved.
+      return false
     }
   }
 

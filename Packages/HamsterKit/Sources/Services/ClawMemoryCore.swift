@@ -933,8 +933,35 @@ public final class ClawMemoryStore {
     return sqlite3_changes(try requireDB()) > 0
   }
 
-  /// Reassigns every contact-bound record atomically. Passing `nil` preserves
-  /// the records as global data when a profile is deleted.
+  /// A person cannot be removed if any dependent data still references the
+  /// person. Detaching such records into global scope would expose private
+  /// context to unrelated chats. This query checks both legacy and V2 data.
+  public func hasContactReferences(id: UUID) throws -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    let columns: [(String, String)] = [
+      ("memory_items", "subject_id"),
+      ("conversation_messages", "contact_id"),
+      ("secretary_tasks", "contact_id"),
+      ("evolution_feedback", "contact_id"),
+      ("memory_v2", "person_id"),
+    ]
+    for (table, column) in columns {
+      // Names are constants defined above, never arbitrary user input.
+      let stmt = try prepare("SELECT 1 FROM \(table) WHERE \(column) = ? LIMIT 1;")
+      bindText(id.uuidString, at: 1, in: stmt)
+      let outcome = sqlite3_step(stmt)
+      sqlite3_finalize(stmt)
+      if outcome == SQLITE_ROW { return true }
+      if outcome != SQLITE_DONE {
+        throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+      }
+    }
+    return false
+  }
+
+  /// Reassigns every contact-bound record atomically. Only use non-nil
+  /// destinations for explicitly confirmed merges. Never promote person
+  /// memories to global when removing a profile.
   public func reassignContactReferences(from sourceID: UUID, to destinationID: UUID?) throws {
     guard sourceID != destinationID else { return }
     lock.lock(); defer { lock.unlock() }

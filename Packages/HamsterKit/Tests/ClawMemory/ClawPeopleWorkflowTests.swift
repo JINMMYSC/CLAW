@@ -59,6 +59,24 @@ final class ClawPeopleWorkflowTests: XCTestCase {
     XCTAssertNil(try store.tasks().first?.contactID)
   }
 
+  func testContactDeletionGateRetainsPersonScopedData() throws {
+    let person = UUID()
+    XCTAssertFalse(try store.hasContactReferences(id: person))
+    try store.upsertMemory(ClawMemoryItem(
+      kind: .relationship,
+      scope: "contact",
+      subjectID: person,
+      content: "仅属于此人的保密记忆",
+      sourceType: "test"
+    ))
+    XCTAssertTrue(try store.hasContactReferences(id: person))
+    XCTAssertTrue(try store.memories(scope: "global").isEmpty)
+    XCTAssertEqual(
+      try store.memories(scope: "contact", subjectID: person).map(\.content),
+      ["仅属于此人的保密记忆"]
+    )
+  }
+
   func testMergePreservesDestinationAndAddsSourceIdentity() {
     let source = HeartTargetProfile(
       name: "Alice",

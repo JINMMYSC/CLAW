@@ -213,8 +213,9 @@ private struct ClawScreenshotReviewSheet: View {
                 Text("对方").tag(ClawConversationSpeaker.other)
               }
               .pickerStyle(.segmented)
-              TextField("识别文字", text: $message.content, axis: .vertical)
-                .lineLimit(2...5)
+              TextEditor(text: $message.content)
+                .frame(minHeight: 56, maxHeight: 108)
+                .accessibilityLabel("校对消息文字")
             }
             .padding(.vertical, 4)
           }
@@ -1361,11 +1362,16 @@ private struct ClawPeopleView: View {
         }
       }
       .alert(item: $pendingDelete) { profile in
-        Alert(
-          title: Text("删除 \(profile.displayName)？"),
-          message: Text("人物档案会删除；关联记忆、待办和聊天记录会保留并转为全局记录。"),
-          primaryButton: .destructive(Text("删除")) {
-            ClawPeopleWorkflowService.shared.deleteProfilePreservingRecords(profile.id)
+        let hasRecords = (try? ClawMemoryStore.shared.hasContactReferences(id: profile.id)) ?? true
+        return Alert(
+          title: Text(hasRecords ? "无法直接删除 \(profile.displayName)" : "删除 \(profile.displayName)？"),
+          message: Text(hasRecords
+            ? "该人物关联着私密聊天、记忆或任务。为防止这些资料暴露为全局记忆，暂不删除。可先将人物合并到正确对象，或在数据管理中处理关联资料。"
+            : "该人物没有关联记录。删除档案不会影响其他人物。"),
+          primaryButton: .default(Text(hasRecords ? "知道了" : "确认删除")) {
+            if !hasRecords {
+              _ = ClawPeopleWorkflowService.shared.deleteProfilePreservingRecords(profile.id)
+            }
           },
           secondaryButton: .cancel()
         )
