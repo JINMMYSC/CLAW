@@ -208,6 +208,12 @@ extension MainViewController {
 
   func presentMainViewController() {
     primaryNavigationViewController.popToRootViewController(animated: false)
+    // Legacy "main" deep links must still reach the old complete settings.
+    // In compact layout the detail navigation may be the visible column.
+    if isCollapsed, secondaryNavigationViewController.viewIfLoaded?.window != nil {
+      let settings = subViewControllerFactory.makeSettingsViewController()
+      secondaryNavigationViewController.pushViewController(settings, animated: true)
+    }
   }
 
   func presentInputSchemaViewController() {
@@ -251,8 +257,14 @@ extension MainViewController {
   }
 
   func presentClawTalkViewController() {
-    if primaryNavigationViewController.topViewController === clawTalkViewController ||
-       secondaryNavigationViewController.topViewController === clawTalkViewController {
+    // CLAW is already the secondary navigation root. Reuse that controller
+    // rather than attempting to push the same instance twice on iPhone.
+    if secondaryNavigationViewController.viewControllers.contains(where: { $0 === clawTalkViewController }) {
+      secondaryNavigationViewController.popToViewController(clawTalkViewController, animated: true)
+      return
+    }
+    if primaryNavigationViewController.viewControllers.contains(where: { $0 === clawTalkViewController }) {
+      primaryNavigationViewController.popToViewController(clawTalkViewController, animated: true)
       return
     }
     presentViewController(clawTalkViewController)
@@ -282,7 +294,12 @@ extension MainViewController {
   private func presentViewController(_ vc: UIViewController) {
     primaryNavigationViewController.popToRootViewController(animated: false)
     if isCollapsed {
-      primaryNavigationViewController.pushViewController(vc, animated: true)
+      // The compact app now defaults to the CLAW secondary column. Pushing
+      // into a hidden primary nav would make keyboard/settings links appear
+      // broken. Route through whichever navigation is actually on screen.
+      let secondaryVisible = secondaryNavigationViewController.viewIfLoaded?.window != nil
+      let visibleNav = secondaryVisible ? secondaryNavigationViewController : primaryNavigationViewController
+      visibleNav.pushViewController(vc, animated: true)
       return
     }
     secondaryNavigationViewController.viewControllers = [vc]
