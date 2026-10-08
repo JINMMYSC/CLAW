@@ -46,6 +46,6 @@ let package = Package(
     ),
     .testTarget(
       name: "HamsteriOSTests",
-      dependencies: ["HamsteriOS", "HamsterKit"],
+      dependencies: ["HamsteriOS", "HamsterKit", "HamsterKeyboardKit"],
       path: "Tests"),
   ])
