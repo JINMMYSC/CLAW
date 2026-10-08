@@ -12,6 +12,7 @@ import UIKit
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
   var window: UIWindow?
+  private var openedVoiceDeepLinkInCurrentActivation = false
 
   func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
     guard let windowScene = (scene as? UIWindowScene) else { return }
@@ -57,6 +58,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
       // url.query(): 获取 `URL` 查询参数
       // url.lastPathComponent 获取 `URL` 中 `/a/b` 中最后一个 b
       if url.query?.contains("voiceInput=1") == true {
+        openedVoiceDeepLinkInCurrentActivation = true
         UserDefaults(suiteName: HamsterConstants.appGroupName)?
           .set(true, forKey: HamsterConstants.clawVoiceInputLaunchKey)
         NotificationCenter.default.post(name: .clawVoiceInputRequested, object: nil)
@@ -107,6 +109,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
       // url.query(): 获取 `URL` 查询参数
       // url.lastPathComponent 获取 `URL` 中 `/a/b` 中最后一个 b
       if url.query?.contains("voiceInput=1") == true {
+        openedVoiceDeepLinkInCurrentActivation = true
         UserDefaults(suiteName: HamsterConstants.appGroupName)?
           .set(true, forKey: HamsterConstants.clawVoiceInputLaunchKey)
         NotificationCenter.default.post(name: .clawVoiceInputRequested, object: nil)
@@ -154,10 +157,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
   func sceneDidBecomeActive(_ scene: UIScene) {
     // Called when the scene has moved from an inactive state to an active state.
     // Use this method to restart any tasks that were paused (or not yet started) when the scene was inactive.
+    if !openedVoiceDeepLinkInCurrentActivation,
+       ClawVoiceDictationHandoff.shared.snapshot.state == .pending {
+      DispatchQueue.main.async {
+        NotificationCenter.default.post(name: .clawVoiceInputRequested, object: nil)
+        HamsterAppDependencyContainer.shared.mainViewModel.navigation(.clawTalk)
+      }
+    }
   }
 
   /// 应用注册 quick action
   func sceneWillResignActive(_ scene: UIScene) {
+    openedVoiceDeepLinkInCurrentActivation = false
     let application = UIApplication.shared
     let rimeDeploy = UIApplicationShortcutItem(type: "RIME", localizedTitle: ShortcutItemType.rimeDeploy.rawValue)
     let rimeSync = UIApplicationShortcutItem(type: "RIME", localizedTitle: ShortcutItemType.rimeSync.rawValue)

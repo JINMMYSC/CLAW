@@ -248,6 +248,10 @@ extension MainViewController {
   }
 
   func presentClawTalkViewController() {
+    if primaryNavigationViewController.topViewController === clawTalkViewController ||
+       secondaryNavigationViewController.topViewController === clawTalkViewController {
+      return
+    }
     presentViewController(clawTalkViewController)
   }
 

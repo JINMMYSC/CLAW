@@ -429,7 +429,7 @@ final class ClawChatComposerBar: UIView, UITextViewDelegate {
         p.move(to: CGPoint(x: 10.5, y: 12)); p.addLine(to: CGPoint(x: 10.5, y: 13))
         p.move(to: CGPoint(x: 19.5, y: 12)); p.addLine(to: CGPoint(x: 19.5, y: 13))
         p.move(to: CGPoint(x: 9.5, y: 18))
-        p.addQuadCurve(to: CGPoint(x: 20.5, y: 18), control: CGPoint(x: 15, y: 25))
+        p.addQuadCurve(to: CGPoint(x: 20.5, y: 18), controlPoint: CGPoint(x: 15, y: 25))
       case .more:
         p.addArc(withCenter: CGPoint(x: 15, y: 15), radius: 12.3, startAngle: 0, endAngle: 2 * .pi, clockwise: true)
         p.move(to: CGPoint(x: 15, y: 8)); p.addLine(to: CGPoint(x: 15, y: 22))
@@ -437,7 +437,7 @@ final class ClawChatComposerBar: UIView, UITextViewDelegate {
       }
       p.stroke()
     }
-    return image.withRenderingMode(.alwaysTemplate)
+    return image.withRenderingMode(UIImage.RenderingMode.alwaysTemplate)
   }
 }
 

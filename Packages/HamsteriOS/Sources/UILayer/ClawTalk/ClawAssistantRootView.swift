@@ -229,7 +229,9 @@ private struct ClawAssistantChatView: View {
       }
 #endif
       let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
-      if defaults?.bool(forKey: HamsterConstants.clawVoiceInputLaunchKey) == true {
+      // Fallback when iOS declines to open the containing app from the keyboard.
+      if defaults?.bool(forKey: HamsterConstants.clawVoiceInputLaunchKey) == true ||
+          ClawVoiceDictationHandoff.shared.snapshot.state == .pending {
         defaults?.set(false, forKey: HamsterConstants.clawVoiceInputLaunchKey)
         startOneShotVoiceInput()
       }

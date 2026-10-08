@@ -651,7 +651,7 @@ class KeyboardToolbarView: NibLessView {
       )
     }
     let handoff = ClawVoiceDictationHandoff.shared
-    let dictationTitle = handoff.snapshot.state == .ready ? "插入语音文字" : "语音输入"
+    let dictationTitle = handoff.snapshot.state == .ready ? "插入语音文字" : "语音输入（打开 CLAW）"
     let voiceInput = UIAction(title: dictationTitle, image: UIImage(systemName: "mic.fill")) { [weak self] _ in
       guard let self else { return }
       let handoff = ClawVoiceDictationHandoff.shared
@@ -662,7 +662,8 @@ class KeyboardToolbarView: NibLessView {
         return
       }
       guard handoff.isSharedAvailable else { return }
-      _ = handoff.begin()
+      let requestID = handoff.begin()
+      guard handoff.snapshot.id == requestID else { return }
       self.actionHandler.handle(
         .release,
         on: .url(URL(string: HamsterConstants.appURLForGuruVoiceInput), id: "openClawVoiceInput")

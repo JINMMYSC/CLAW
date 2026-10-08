@@ -975,8 +975,12 @@ public final class ClawPanelOverlayView: UIView {
         showResultMessage("CLAW App Group 未就绪，无法跨 App 传递语音文字")
         return
       }
-      _ = ClawVoiceDictationHandoff.shared.begin()
-      showResultMessage("正在打开 CLAW 录音。完成后返回聊天，点击话筒插入文字")
+      let requestID = ClawVoiceDictationHandoff.shared.begin()
+      guard ClawVoiceDictationHandoff.shared.snapshot.id == requestID else {
+        showResultMessage("无法保存语音请求。请在 iOS 键盘设置中开启 CLAW 的「允许完全访问」")
+        return
+      }
+      showResultMessage("若未自动跳转，请手动打开 CLAW 录音；完成后返回聊天再点话筒插入")
       actionHandler.handle(
         .release,
         on: .url(URL(string: HamsterConstants.appURLForGuruVoiceInput), id: "openClawVoiceInput")
