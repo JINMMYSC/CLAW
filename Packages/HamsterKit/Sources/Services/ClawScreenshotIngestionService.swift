@@ -102,8 +102,10 @@ public final class ClawScreenshotIngestionService {
       return item
     }
     var inserted: [ClawConversationMessage] = []
-    for item in approved where try store.appendConversation(item) {
-      inserted.append(item)
+    for item in approved {
+      if try store.appendConversation(item) {
+        inserted.append(item)
+      }
     }
     guard !inserted.isEmpty else { return 0 }
     let flush = MemoryFlushService().extract(

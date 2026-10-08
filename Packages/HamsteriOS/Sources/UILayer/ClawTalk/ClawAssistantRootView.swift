@@ -141,6 +141,126 @@ enum ClawComposerPresentation {
   }
 }
 
+
+private struct ClawScreenshotReviewSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  let preview: ClawScreenshotIngestionResult
+  let profiles: [HeartTargetProfile]
+  let onConfirm: (UUID, [ClawConversationMessage]) throws -> Int
+  let onUseText: (String) -> Void
+  @State private var selectedProfileID: UUID?
+  @State private var reviewedMessages: [ClawConversationMessage]
+  @State private var errorText: String?
+
+  init(
+    preview: ClawScreenshotIngestionResult,
+    profiles: [HeartTargetProfile],
+    onConfirm: @escaping (UUID, [ClawConversationMessage]) throws -> Int,
+    onUseText: @escaping (String) -> Void
+  ) {
+    self.preview = preview
+    self.profiles = profiles
+    self.onConfirm = onConfirm
+    self.onUseText = onUseText
+    _selectedProfileID = State(initialValue: preview.profile?.id)
+    _reviewedMessages = State(initialValue: preview.messages)
+  }
+
+  private var canConfirm: Bool {
+    selectedProfileID != nil && !reviewedMessages.isEmpty &&
+      reviewedMessages.allSatisfy {
+        $0.speaker != .unknown &&
+        !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      }
+  }
+
+  var body: some View {
+    NavigationView {
+      Form {
+        Section {
+          Menu {
+            ForEach(profiles) { profile in
+              Button(profile.displayName) { selectedProfileID = profile.id }
+            }
+          } label: {
+            HStack {
+              Text("聊天对象")
+              Spacer()
+              Text(profiles.first(where: { $0.id == selectedProfileID })?.displayName ?? "请手动选择")
+                .foregroundColor(.secondary)
+            }
+          }
+          if profiles.isEmpty {
+            Text("还没有人物档案。请先在「人物」页新建，再导入截图。")
+              .font(.caption).foregroundColor(.secondary)
+          }
+        } header: {
+          Text("确认归属")
+        } footer: {
+          Text("不会依据截图标题自动创建人物；内容只归档到你确认的对象。")
+        }
+
+        Section("逐条校对") {
+          if reviewedMessages.isEmpty {
+            Text("未识别出独立聊天气泡，可先将 OCR 原文加入草稿。")
+              .font(.footnote).foregroundColor(.secondary)
+          }
+          ForEach($reviewedMessages) { $message in
+            VStack(alignment: .leading, spacing: 8) {
+              Picker("发言者", selection: $message.speaker) {
+                Text("请确认").tag(ClawConversationSpeaker.unknown)
+                Text("我").tag(ClawConversationSpeaker.me)
+                Text("对方").tag(ClawConversationSpeaker.other)
+              }
+              .pickerStyle(.segmented)
+              TextField("识别文字", text: $message.content, axis: .vertical)
+                .lineLimit(2...5)
+            }
+            .padding(.vertical, 4)
+          }
+        }
+
+        Section {
+          Button("仅把 OCR 原文加入聊天草稿") {
+            onUseText(preview.rawText)
+            dismiss()
+          }
+          .disabled(preview.rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        } footer: {
+          Text("此操作不会创建联系人、任务或长期记忆，也不会保存截图原图。")
+        }
+      }
+      .navigationTitle("核对聊天截图")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .topBarLeading) {
+          Button("取消") { dismiss() }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("确认归档") {
+            guard let id = selectedProfileID else { return }
+            do {
+              _ = try onConfirm(id, reviewedMessages)
+              dismiss()
+            } catch {
+              errorText = error.localizedDescription
+            }
+          }
+          .disabled(!canConfirm)
+        }
+      }
+      .alert("无法归档", isPresented: Binding(
+        get: { errorText != nil },
+        set: { if !$0 { errorText = nil } }
+      )) {
+        Button("知道了", role: .cancel) { errorText = nil }
+      } message: {
+        Text(errorText ?? "")
+      }
+    }
+  }
+}
+
 private struct ClawAssistantChatView: View {
   @ObservedObject private var chat = ClawChatService.shared
   @State private var input = ""
@@ -156,6 +276,8 @@ private struct ClawAssistantChatView: View {
   @State private var showingPhotoAttachment = false
   @State private var showingFileAttachment = false
   @State private var attachmentStatus = ""
+  @State private var pendingScreenshotReview: ClawScreenshotIngestionResult?
+  @State private var showingScreenshotReview = false
   @State private var quickPrompts = ClawQuickPromptStore(
     defaults: UserDefaults(suiteName: HamsterConstants.appGroupName) ?? .standard
   ).prompts
@@ -316,6 +438,36 @@ private struct ClawAssistantChatView: View {
       ClawAvatarPicker { image in
         showingPhotoAttachment = false
         ingestScreenshot(image)
+      }
+    }
+    .sheet(isPresented: $showingScreenshotReview, onDismiss: {
+      pendingScreenshotReview = nil
+    }) {
+      if let preview = pendingScreenshotReview {
+        ClawScreenshotReviewSheet(
+          preview: preview,
+          profiles: HeartTargetService.shared.profiles,
+          onConfirm: { id, reviewed in
+            guard let profile = HeartTargetService.shared.profile(id: id) else {
+              throw ClawScreenshotReviewError.missingPerson
+            }
+            let count = try ClawScreenshotIngestionService().confirmReviewed(
+              messages: reviewed, for: profile
+            )
+            attachmentStatus = count == 0
+              ? "截图消息已经归档，无需重复导入"
+              : "已审核并归档 \(count) 条截图消息到 \(profile.displayName)"
+            if count > 0 {
+              input = [input, "已确认归档 \(count) 条截图消息，请结合这些内容回答。"]
+                .filter { !$0.isEmpty }.joined(separator: "\n")
+            }
+            return count
+          },
+          onUseText: { text in
+            input = [input, text].filter { !$0.isEmpty }.joined(separator: "\n")
+            attachmentStatus = "截图文字已加入草稿，未写入长期记忆"
+          }
+        )
       }
     }
     .fileImporter(isPresented: $showingFileAttachment, allowedContentTypes: [.plainText, .text, .pdf], allowsMultipleSelection: false) { result in
@@ -664,22 +816,27 @@ private struct ClawAssistantChatView: View {
 
   private func ingestScreenshot(_ image: UIImage) {
     attachmentStatus = "正在本地识别截图…"
-    let sourceRef = image.jpegData(compressionQuality: 0.88).flatMap { ClawScreenshotEvidenceStore.shared.saveJPEG($0) }
     VisionOCRService.shared.recognizeLines(in: image) { result in
       DispatchQueue.main.async {
         switch result {
-        case .failure(let error): attachmentStatus = "截图识别失败：\(error.localizedDescription)"
+        case .failure(let error):
+          attachmentStatus = "截图识别失败：\(error.localizedDescription)"
         case .success(let lines):
           do {
-            let ingestion = try ClawScreenshotIngestionService().ingest(lines: lines, selectedProfile: HeartTargetService.shared.selectedProfile, sourceRef: sourceRef)
-            if ingestion.requiresReview {
-              input = [input, "待确认的截图文字：\n\(ingestion.rawText)"].filter { !$0.isEmpty }.joined(separator: "\n")
-              attachmentStatus = "人物或发言方置信度不足，请检查文字后再发送"
-            } else {
-              input = [input, "已导入 \(ingestion.messages.count) 条截图消息，请结合这些内容回答。"].filter { !$0.isEmpty }.joined(separator: "\n")
-              attachmentStatus = "截图已归档到当前人物时间线"
-            }
-          } catch { attachmentStatus = "截图导入失败：\(error.localizedDescription)" }
+            // OCR is a preview only. No new person, conversation, task, memory
+            // or evidence file is created until the user explicitly confirms.
+            let preview = try ClawScreenshotIngestionService().ingest(
+              lines: lines,
+              selectedProfile: HeartTargetService.shared.selectedProfile,
+              sourceRef: nil,
+              requireUserReview: true
+            )
+            pendingScreenshotReview = preview
+            showingScreenshotReview = true
+            attachmentStatus = "请核对人物、发言者与文字，再决定是否归档"
+          } catch {
+            attachmentStatus = "截图识别失败：\(error.localizedDescription)"
+          }
         }
       }
     }
