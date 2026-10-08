@@ -650,6 +650,24 @@ class KeyboardToolbarView: NibLessView {
         on: .url(URL(string: HamsterConstants.appURLForGuruVoice), id: "openClawVoiceCall")
       )
     }
+    let handoff = ClawVoiceDictationHandoff.shared
+    let dictationTitle = handoff.snapshot.state == .ready ? "插入语音文字" : "语音输入"
+    let voiceInput = UIAction(title: dictationTitle, image: UIImage(systemName: "mic.fill")) { [weak self] _ in
+      guard let self else { return }
+      let handoff = ClawVoiceDictationHandoff.shared
+      if handoff.snapshot.state == .ready, let text = handoff.consume() {
+        // Insert only after an explicit action, and into the originating host field.
+        self.keyboardContext.clawPanelInputActive = false
+        ClawPanelInputBridge.shared.send(text)
+        return
+      }
+      guard handoff.isSharedAvailable else { return }
+      _ = handoff.begin()
+      self.actionHandler.handle(
+        .release,
+        on: .url(URL(string: HamsterConstants.appURLForGuruVoiceInput), id: "openClawVoiceInput")
+      )
+    }
     let privacy = UIAction(
       title: collecting ? "暂停输入记录" : "恢复输入记录",
       image: UIImage(systemName: collecting ? "eye.slash" : "eye")
@@ -668,7 +686,7 @@ class KeyboardToolbarView: NibLessView {
         on: .url(URL(string: HamsterConstants.appURLForKeyboardSettings), id: "openKeyboardSettings")
       )
     }
-    button.menu = UIMenu(children: [openAssistant, voiceCall, privacy, settings])
+    button.menu = UIMenu(children: [openAssistant, voiceInput, voiceCall, privacy, settings])
   }
 
   // MARK: - 按钮动作

@@ -44,4 +44,16 @@ final class ClawVoiceDictationHandoffTests: XCTestCase {
     XCTAssertNil(store.consume())
   }
 
+  func testSecondProcessReadsSameAppGroupResultAndNewRequestInvalidatesOldOne() {
+    let (keyboard, defaults, suite) = makeStore()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let host = ClawVoiceDictationHandoff(defaults: UserDefaults(suiteName: suite)!)
+    let superseded = keyboard.begin()
+    let current = keyboard.begin()
+    XCTAssertFalse(host.complete(id: superseded, text: "旧任务"))
+    XCTAssertTrue(host.complete(id: current, text: "新的语音文字"))
+    XCTAssertEqual(keyboard.consume(), "新的语音文字")
+    XCTAssertNil(host.consume())
+  }
+
 }

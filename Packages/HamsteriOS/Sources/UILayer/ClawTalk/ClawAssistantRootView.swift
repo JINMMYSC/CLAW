@@ -601,7 +601,7 @@ private struct ClawAssistantChatView: View {
     recording = false
     voiceHint = "正在完成语音识别…"
     // Speech usually returns an isFinal callback after endAudio. Avoid a stuck pending result.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 7) {
       guard keyboardDictationID == id, keyboardDictationFinalizing else { return }
       oneShotRequestID = UUID()
       _ = ClawVoiceDictationHandoff.shared.fail(id: id, reason: "语音识别未返回结果，请重试")

@@ -158,9 +158,17 @@ public final class ClawVoiceInputService: NSObject {
       request.requiresOnDeviceRecognition = true
     }
 
+    do {
+      try activateMicrophoneSession()
+    } catch {
+      LogService.shared.log(.voiceSessionStartFailed)
+      completion(.failure(error))
+      return
+    }
     let inputNode = audioEngine.inputNode
     let format = inputNode.outputFormat(forBus: 0)
     guard format.sampleRate > 0 else {
+      try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
       LogService.shared.log(.voiceAudioUnavailable)
       completion(.failure(ClawVoiceError.audioUnavailable))
       return
@@ -186,9 +194,6 @@ public final class ClawVoiceInputService: NSObject {
     }
 
     do {
-      let session = AVAudioSession.sharedInstance()
-      try session.setCategory(.record, mode: .measurement, options: [])
-      try session.setActive(true, options: .notifyOthersOnDeactivation)
       audioEngine.prepare()
       try audioEngine.start()
       isRecording = true
@@ -231,9 +236,18 @@ public final class ClawVoiceInputService: NSObject {
       request.requiresOnDeviceRecognition = true
     }
 
+    do {
+      try activateMicrophoneSession()
+    } catch {
+      clearStreamingCallbacks()
+      LogService.shared.log(.voiceSessionStartFailed)
+      onError(error)
+      return
+    }
     let inputNode = audioEngine.inputNode
     let format = inputNode.outputFormat(forBus: 0)
     guard format.sampleRate > 0 else {
+      try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
       clearStreamingCallbacks()
       LogService.shared.log(.voiceAudioUnavailable)
       onError(ClawVoiceError.audioUnavailable)
@@ -267,9 +281,6 @@ self.streamingPartial?(text)
     }
 
     do {
-      let session = AVAudioSession.sharedInstance()
-      try session.setCategory(.record, mode: .measurement, options: [])
-      try session.setActive(true, options: .notifyOthersOnDeactivation)
       audioEngine.prepare()
       try audioEngine.start()
       isRecording = true
@@ -316,6 +327,14 @@ self.streamingPartial?(text)
     SFSpeechRecognizer(locale: Locale(identifier: activeLocaleIdentifier))
   }
 
+  /// iOS can report a zero-Hz input format until AVAudioSession is active.
+  /// Configure and activate *before* inspecting AVAudioEngine.inputNode.
+  private func activateMicrophoneSession() throws {
+    let session = AVAudioSession.sharedInstance()
+    try session.setCategory(.record, mode: .measurement, options: [])
+    try session.setActive(true, options: .notifyOthersOnDeactivation)
+  }
+
   private func clearStreamingCallbacks() {
     streamingPartial = nil
     streamingSegment = nil
@@ -343,15 +362,15 @@ self.streamingPartial?(text)
     }
     audioEngine = nil
     isRecording = false
-    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
-    // 正常情况下 Speech 会很快返回 final；兜底避免无 final 时 task/callback 长期滞留。
+    // Speech must finish processing buffered audio before AVAudioSession is
+    // deactivated in teardown. Slow devices may need several seconds to finalise.
     let cleanup = DispatchWorkItem { [weak self] in
       guard let self, self.sessionGeneration == generation else { return }
       self.finishSession(generation, cancelTask: true, clearStreamingCallbacks: true)
     }
     pendingCleanupWorkItem = cleanup
-    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: cleanup)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 6.0, execute: cleanup)
   }
 
   /// 新会话开始前强制取消上一会话；generation 让上一 task 的迟到 callback 自动失效。
