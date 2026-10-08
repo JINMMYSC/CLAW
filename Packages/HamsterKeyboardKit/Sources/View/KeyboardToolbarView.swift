@@ -299,8 +299,8 @@ class KeyboardToolbarView: NibLessView {
 
     if userInterfaceStyle != keyboardContext.colorScheme {
       userInterfaceStyle = keyboardContext.colorScheme
+      // setupAppearance already restyles the candidate view once.
       setupAppearance()
-      candidateBarView.setStyle(self.style)
     }
 
     updateSuggestionBarHeight()
@@ -551,7 +551,10 @@ class KeyboardToolbarView: NibLessView {
     let panelHeight = ClawPanelOverlayView.preferredHeight(for: keyboardContext.clawPanelTab)
     let available = max(0, bounds.height - keyboardContext.heightOfToolbar - panelHeight - 12)
     let show = !ClawSuggestionEngine.shared.suggestions.isEmpty && keyboardContext.clawPanelTab < 0 && !lastInputEmpty
-    suggestionBarHeightConstraint.constant = show ? min(max(available, 0), 120) : 0
+    let desired = show ? min(max(available, 0), 120) : 0
+    if abs(suggestionBarHeightConstraint.constant - desired) > 0.5 {
+      suggestionBarHeightConstraint.constant = desired
+    }
   }
 
   // MARK: - 状态联动
@@ -566,7 +569,7 @@ class KeyboardToolbarView: NibLessView {
         let expanded = !state.isCollapse()
         self.candidateTopToFunctionBar?.isActive = !expanded
         self.candidateTopToPanel?.isActive = expanded
-        self.layoutIfNeeded()
+        self.setNeedsLayout()
       }
       .store(in: &subscriptions)
 
@@ -611,8 +614,10 @@ class KeyboardToolbarView: NibLessView {
         self.updateEntryButtonStates()
         self.updateSuggestionBarVisibility()
         let target = ClawPanelOverlayView.preferredHeight(for: tab)
-        self.panelHeightConstraint.constant = target
-        self.layoutIfNeeded()
+        if abs(self.panelHeightConstraint.constant - target) > 0.5 {
+          self.panelHeightConstraint.constant = target
+        }
+        self.setNeedsLayout()
       }
       .store(in: &subscriptions)
 
