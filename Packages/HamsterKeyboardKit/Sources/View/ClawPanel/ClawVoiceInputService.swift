@@ -55,6 +55,10 @@ public final class ClawVoiceInputService: NSObject {
   private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
   private var recognitionTask: SFSpeechRecognitionTask?
   private var sessionGeneration: UInt = 0
+  /// Keep the best partial result until Speech finishes after endAudio().
+  /// Some devices never deliver isFinal, so the stop watchdog must complete once.
+  private var oneShotPartialText = ""
+  private var oneShotCompletion: ((Result<String, Error>) -> Void)?
 
   /// 是否正在录音
   public private(set) var isRecording = false
@@ -152,8 +156,7 @@ public final class ClawVoiceInputService: NSObject {
     }
 
     let audioEngine = AVAudioEngine()
-    let request = SFSpeechAudioBufferRecognitionRequest()
-    request.shouldReportPartialResults = false
+    let request = Self.makeOneShotRequest()
     if preferOnDeviceRecognition, recognizer.supportsOnDeviceRecognition {
       request.requiresOnDeviceRecognition = true
     }
@@ -176,20 +179,40 @@ public final class ClawVoiceInputService: NSObject {
 
     self.audioEngine = audioEngine
     self.recognitionRequest = request
+    oneShotPartialText = ""
+    oneShotCompletion = completion
     inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
       request.append(buffer)
     }
 
     recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-      guard let self, self.sessionGeneration == generation else { return }
-      if let result, result.isFinal {
-        let text = result.bestTranscription.formattedString
-        self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
-        completion(.success(text))
-      } else if let error {
-        self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
-        LogService.shared.log(.voiceRecognitionFailed)
-        completion(.failure(error))
+      DispatchQueue.main.async {
+        guard let self, self.sessionGeneration == generation else { return }
+        if let result {
+          let text = result.bestTranscription.formattedString
+          if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            self.oneShotPartialText = text
+          }
+          if result.isFinal {
+            let callback = self.oneShotCompletion
+            self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
+            callback?(.success(text))
+            return
+          }
+        }
+        if let error {
+          // An error following endAudio can still contain a usable transcript.
+          let partial = self.oneShotPartialText.trimmingCharacters(in: .whitespacesAndNewlines)
+          let stopped = !self.isRecording
+          let callback = self.oneShotCompletion
+          self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
+          LogService.shared.log(.voiceRecognitionFailed)
+          if stopped && !partial.isEmpty {
+            callback?(.success(partial))
+          } else {
+            callback?(.failure(error))
+          }
+        }
       }
     }
 
@@ -327,6 +350,15 @@ self.streamingPartial?(text)
     SFSpeechRecognizer(locale: Locale(identifier: activeLocaleIdentifier))
   }
 
+  /// One-shot dictation also needs interim transcripts. Some iOS Speech
+  /// sessions never emit an isFinal callback after endAudio(), so stop() can
+  /// fall back to the last nonempty partial result instead of losing speech.
+  static func makeOneShotRequest() -> SFSpeechAudioBufferRecognitionRequest {
+    let request = SFSpeechAudioBufferRecognitionRequest()
+    request.shouldReportPartialResults = true
+    return request
+  }
+
   /// iOS can report a zero-Hz input format until AVAudioSession is active.
   /// Configure and activate *before* inspecting AVAudioEngine.inputNode.
   private func activateMicrophoneSession() throws {
@@ -367,7 +399,14 @@ self.streamingPartial?(text)
     // deactivated in teardown. Slow devices may need several seconds to finalise.
     let cleanup = DispatchWorkItem { [weak self] in
       guard let self, self.sessionGeneration == generation else { return }
+      let callback = self.oneShotCompletion
+      let partial = self.oneShotPartialText.trimmingCharacters(in: .whitespacesAndNewlines)
       self.finishSession(generation, cancelTask: true, clearStreamingCallbacks: true)
+      if !partial.isEmpty {
+        callback?(.success(partial))
+      } else {
+        callback?(.failure(ClawVoiceError.noTranscriptAfterStop))
+      }
     }
     pendingCleanupWorkItem = cleanup
     DispatchQueue.main.asyncAfter(deadline: .now() + 6.0, execute: cleanup)
@@ -409,6 +448,8 @@ self.streamingPartial?(text)
     audioEngine = nil
     recognitionRequest = nil
     recognitionTask = nil
+    oneShotCompletion = nil
+    oneShotPartialText = ""
     isRecording = false
     if clearStreamingCallbacks {
       self.clearStreamingCallbacks()
@@ -421,6 +462,7 @@ public enum ClawVoiceError: LocalizedError {
   case recognizerUnavailable
   case audioUnavailable
   case keyboardExtensionUnsupported
+  case noTranscriptAfterStop
   case unknown
 
   public var errorDescription: String? {
@@ -428,6 +470,7 @@ public enum ClawVoiceError: LocalizedError {
     case .recognizerUnavailable: return "语音识别不可用，请检查系统设置"
     case .audioUnavailable: return "麦克风不可用"
     case .keyboardExtensionUnsupported: return "键盘扩展无法直接使用麦克风，请切换到系统键盘使用听写"
+    case .noTranscriptAfterStop: return "录音已结束，但没有识别到文字，请检查语音识别权限和网络后重试"
     case .unknown: return "语音识别失败"
     }
   }
