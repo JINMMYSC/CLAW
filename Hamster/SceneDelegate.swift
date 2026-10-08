@@ -20,25 +20,31 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
     if window == nil {
 #if DEBUG
       // Startup smoke regression hook: exercise the legacy v1 migration path.
-      if ProcessInfo.processInfo.arguments.contains("-clawTalkForceV1Migration") {
+      let launchArguments = ProcessInfo.processInfo.arguments
+      if launchArguments.contains("-clawTalkForceV1Migration") {
         UserDefaults.hamster._setFirstRunningForV1(false)
       }
 #endif
       let window = UIWindow(windowScene: windowScene)
+#if DEBUG
+      if let index = launchArguments.firstIndex(of: "-clawComposerScreenshot"), index + 1 < launchArguments.count {
+        // Mount the production CLAW screen directly so screenshot readiness does
+        // not depend on the asynchronous root-navigation observer being installed.
+        window.rootViewController = UINavigationController(rootViewController: ClawTalkViewController())
+      } else {
+        window.rootViewController = HamsterAppDependencyContainer.shared.makeRootController()
+      }
+#else
       window.rootViewController = HamsterAppDependencyContainer.shared.makeRootController()
+#endif
       window.tintColor = ClawTalkTheme.accent
       // 主程序外观偏好（系统 / 浅色 / 深色），与键盘扩展共用同一份 App Group 值。
       window.overrideUserInterfaceStyle = ClawAppearanceService.style.userInterfaceStyle
       self.window = window
       window.makeKeyAndVisible()
 #if DEBUG
-      let args = ProcessInfo.processInfo.arguments
-      if let index = args.firstIndex(of: "-clawComposerScreenshot"), index + 1 < args.count {
-        if args[index + 1] == "dark" { window.overrideUserInterfaceStyle = .dark }
-        // Drive the real assistant root, rather than a separate mock screen.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-          HamsterAppDependencyContainer.shared.mainViewModel.navigation(.clawTalk)
-        }
+      if let index = launchArguments.firstIndex(of: "-clawComposerScreenshot"), index + 1 < launchArguments.count {
+        if launchArguments[index + 1] == "dark" { window.overrideUserInterfaceStyle = .dark }
       }
 #endif
       // ClawTalk 品牌启动层：与 LaunchScreen 视觉一致，1.5s 淡出
