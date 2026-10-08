@@ -938,7 +938,8 @@ public final class ClawMemoryStore {
 
   /// A person cannot be removed if any dependent data still references the
   /// person. Detaching such records into global scope would expose private
-  /// context to unrelated chats. This query checks both legacy and V2 data.
+  /// context to unrelated chats. Check V2/legacy SQLite, standing intents and
+  /// the chat history held in App Group UserDefaults.
   public func hasContactReferences(id: UUID) throws -> Bool {
     lock.lock(); defer { lock.unlock() }
     let columns: [(String, String)] = [
@@ -958,6 +959,13 @@ public final class ClawMemoryStore {
       if outcome != SQLITE_DONE {
         throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
       }
+    }
+    // Standing intents are stored as Codable payloads, not in a person_id
+    // index. Even cancelled/expired intents remain associated with the person.
+    if try standingIntents().contains(where: { $0.personID == id }) { return true }
+    let historyKey = "claw_chat_history_v2_contact_\(id.uuidString)"
+    if UserDefaults(suiteName: HamsterConstants.appGroupName)?.object(forKey: historyKey) != nil {
+      return true
     }
     return false
   }

@@ -77,6 +77,20 @@ final class ClawPeopleWorkflowTests: XCTestCase {
     )
   }
 
+  func testContactDeletionGateAlsoProtectsStandingIntents() throws {
+    let person = UUID()
+    XCTAssertFalse(try store.hasContactReferences(id: person))
+    let intent = StandingIntent(
+      trigger: "下次联系", personID: person,
+      context: "项目群", condition: "再次聊天",
+      action: "提醒完成报价",
+      provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    )
+    try store.saveStandingIntent(intent)
+    XCTAssertTrue(try store.hasContactReferences(id: person),
+                  "A standing intent must prevent unsafe person deletion")
+  }
+
   func testMergePreservesDestinationAndAddsSourceIdentity() {
     let source = HeartTargetProfile(
       name: "Alice",
