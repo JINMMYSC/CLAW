@@ -17,6 +17,10 @@ final class ClawVoiceAndCandidatePolicyTests: XCTestCase {
     )
   }
 
+  func testOneShotDictationKeepsPartialTranscriptForStopFallback() {
+    XCTAssertTrue(ClawVoiceInputService.makeOneShotRequest().shouldReportPartialResults)
+  }
+
   func testExpandedCandidateHeightUsesRootHeightWhenKeyboardBoundsAreNotReady() {
     XCTAssertEqual(
       CandidateExpandedLayoutMetrics.toolbarHeight(
