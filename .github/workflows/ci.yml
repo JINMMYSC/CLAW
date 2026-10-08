@@ -57,7 +57,28 @@ jobs:
             -scheme HamsteriOS \
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
             -skip-testing:HamsteriOSTests/CloudKitHelperTest \
-            -derivedDataPath /tmp/HamsteriOSTests
+            -derivedDataPath /tmp/HamsteriOSTests \
+            -resultBundlePath /tmp/HamsteriOSTests.xcresult
+
+      - name: Export native composer test screenshots
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -d /tmp/HamsteriOSTests.xcresult ]; then
+            xcrun xcresulttool export attachments \
+              --path /tmp/HamsteriOSTests.xcresult \
+              --output-path composer-test-screenshots
+          fi
+
+      - name: Upload native composer test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claw-composer-native-tests
+          path: |
+            composer-test-screenshots/
+            /tmp/HamsteriOSTests.xcresult/
+          if-no-files-found: warn
 
       - name: Compile
         run: |

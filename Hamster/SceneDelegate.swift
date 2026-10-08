@@ -30,6 +30,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
       window.overrideUserInterfaceStyle = ClawAppearanceService.style.userInterfaceStyle
       self.window = window
       window.makeKeyAndVisible()
+#if DEBUG
+      let args = ProcessInfo.processInfo.arguments
+      if let index = args.firstIndex(of: "-clawComposerScreenshot"), index + 1 < args.count {
+        if args[index + 1] == "dark" { window.overrideUserInterfaceStyle = .dark }
+        // Drive the real assistant root, rather than a separate mock screen.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+          HamsterAppDependencyContainer.shared.mainViewModel.navigation(.clawTalk)
+        }
+      }
+#endif
       // ClawTalk 品牌启动层：与 LaunchScreen 视觉一致，1.5s 淡出
       SplashOverlayView().presentAndDismiss(in: window)
     }

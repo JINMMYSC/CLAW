@@ -83,14 +83,6 @@ enum ClawComposerPresentation {
   }
 }
 
-private enum ClawComposerMode: Equatable {
-  case text, voice
-}
-
-private enum ClawComposerAccessory: Equatable {
-  case emoji, more
-}
-
 private struct ClawAssistantChatView: View {
   @ObservedObject private var chat = ClawChatService.shared
   @State private var input = ""
@@ -110,9 +102,15 @@ private struct ClawAssistantChatView: View {
   ).prompts
   @State private var voiceGesture = ClawVoiceGestureState()
   @State private var discardVoiceResult = false
-  @State private var composerMode = ClawComposerMode.text
-  @State private var composerAccessory: ClawComposerAccessory?
-  @FocusState private var composerFocused: Bool
+  @State private var composerHeight: CGFloat = 56
+  @State private var showingVoiceLanguages = false
+  @State private var holdVoiceRequestID = UUID()
+  @State private var activeHoldRecognitionID: UUID?
+  @State private var oneShotRequestID = UUID()
+  @State private var voiceAuthorizationRequestID = UUID()
+  @State private var keyboardDictationID: UUID?
+  @State private var keyboardDictationFinalizing = false
+  @State private var completedKeyboardDictationText: String?
 
   private var displayedMessages: [ClawChatMessage] {
     ClawConversationPresentation.search(chat.messages, query: searchText)
@@ -166,8 +164,49 @@ private struct ClawAssistantChatView: View {
             .padding(10)
           }
         }
+        .overlay(alignment: .bottom) {
+          if !voiceHint.isEmpty || !attachmentStatus.isEmpty {
+            Text(!voiceHint.isEmpty ? voiceHint : attachmentStatus)
+              .font(.caption)
+              .padding(.horizontal, 16)
+              .padding(.vertical, 8)
+              .background(.ultraThinMaterial, in: Capsule())
+              .padding(.bottom, 10)
+              .allowsHitTesting(false)
+          }
+        }
       }
       Divider()
+      if let id = keyboardDictationID {
+        HStack(spacing: 12) {
+          Image(systemName: recording ? "waveform" : "mic")
+            .foregroundColor(.accentColor)
+          Text(keyboardDictationFinalizing ? "正在完成语音转文字…" : "键盘语音输入：请说话")
+            .font(.subheadline)
+          Spacer()
+          Button("完成录音") { finishKeyboardDictation(id: id) }
+            .disabled(!recording || keyboardDictationFinalizing)
+          Button("取消") { cancelKeyboardDictation() }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(.secondarySystemGroupedBackground))
+      } else if let result = completedKeyboardDictationText {
+        VStack(alignment: .leading, spacing: 6) {
+          Text("识别完成，请返回原聊天 App，打开 CLAW 键盘，点话筒插入：")
+            .font(.subheadline.weight(.medium))
+          Text(result).font(.subheadline).lineLimit(3)
+          HStack {
+            Button("复制文字") { UIPasteboard.general.string = result }
+            Spacer()
+            Button("关闭提示") { completedKeyboardDictationText = nil }
+          }
+          .font(.caption)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+      }
       composer
     }
     .background(Color(.systemGroupedBackground))
@@ -175,6 +214,20 @@ private struct ClawAssistantChatView: View {
       let profile = HeartTargetService.shared.selectedProfile
       selectedProfileName = profile?.displayName
       chat.switchContext(contactID: profile?.id)
+#if DEBUG
+      if let screenshotState = ClawComposerScreenshotFixture.state {
+        switch screenshotState {
+        case "text": input = "你好，CLAW"
+        case "multiline": input = "第一行输入内容\n第二行文本\n第三行内容\n第四行内容"
+        case "dark": input = "深色模式输入测试"
+        default: input = ""
+        }
+        // Allow the actual composer, system input view, and launch overlay to settle.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+          print("[clawComposer] screenshot ready: \(screenshotState)")
+        }
+      }
+#endif
       let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
       if defaults?.bool(forKey: HamsterConstants.clawVoiceInputLaunchKey) == true {
         defaults?.set(false, forKey: HamsterConstants.clawVoiceInputLaunchKey)
@@ -186,7 +239,16 @@ private struct ClawAssistantChatView: View {
       }
     }
     .onDisappear {
+      cancelPendingVoice()
       stopHandsFreeCall()
+    }
+    .confirmationDialog("语音识别语言", isPresented: $showingVoiceLanguages, titleVisibility: .visible) {
+      ForEach(ClawVoiceLanguageMode.allCases, id: \.rawValue) { mode in
+        Button(mode.displayName) {
+          voiceMode = mode
+          ClawVoiceInputService.shared.languageMode = mode
+        }
+      }
     }
     .sheet(isPresented: $showingPhotoAttachment) {
       ClawAvatarPicker { image in
@@ -337,157 +399,32 @@ private struct ClawAssistantChatView: View {
   }
 
   private var composer: some View {
-    VStack(spacing: 0) {
-      if !voiceHint.isEmpty {
-        Text(voiceHint).font(.caption).foregroundColor(.secondary)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.horizontal, 12)
-          .padding(.top, 6)
+    ClawChatComposer(
+      text: $input,
+      isSending: chat.isSending,
+      voiceActive: recording,
+      voiceWillCancel: voiceGesture.willCancel,
+      onSend: { send($0) },
+      onAction: { action in
+        switch action {
+        case .photo: showingPhotoAttachment = true
+        case .file: showingFileAttachment = true
+        case .clipboard: attachClipboard()
+        case .call:
+          if callActive { stopHandsFreeCall() } else { startHandsFreeCall() }
+        case .language: showingVoiceLanguages = true
+        }
+      },
+      onVoiceBegin: { beginHoldVoice() },
+      onVoiceMove: { vertical in
+        voiceGesture.update(verticalTranslation: vertical)
+      },
+      onVoiceEnd: { systemCancelled in finishHoldVoice(systemCancelled: systemCancelled) },
+      onHeightChange: { height in
+        if abs(composerHeight - height) > 0.5 { composerHeight = height }
       }
-      if !attachmentStatus.isEmpty {
-        Text(attachmentStatus).font(.caption).foregroundColor(.secondary)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.horizontal, 12)
-          .padding(.top, 4)
-      }
-      HStack(alignment: .bottom, spacing: 8) {
-        composerIconButton(composerMode == .voice ? "keyboard" : "waveform.circle") {
-          composerAccessory = nil
-          composerMode = composerMode == .voice ? .text : .voice
-          composerFocused = composerMode == .text
-        }
-
-        if composerMode == .voice {
-          Text(recording ? (voiceGesture.willCancel ? "松开取消" : "松开发送 · 上滑取消") : "按住 说话")
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundColor(recording && voiceGesture.willCancel ? .red : .primary)
-            .frame(maxWidth: .infinity, minHeight: 38)
-            .background(Color(.systemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.black.opacity(0.08), lineWidth: 0.5))
-            .contentShape(Rectangle())
-            .gesture(
-              DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                  if !voiceGesture.isRecording { beginHoldVoice() }
-                  voiceGesture.update(verticalTranslation: value.translation.height)
-                  voiceHint = voiceGesture.willCancel ? "松开取消" : "松开发送 · 上滑取消"
-                }
-                .onEnded { _ in finishHoldVoice() }
-            )
-        } else {
-          TextEditor(text: $input)
-            .font(.system(size: 16))
-            .focused($composerFocused)
-            .frame(minHeight: 38, maxHeight: 96)
-            .padding(.horizontal, 4)
-            .background(Color(.systemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.black.opacity(0.08), lineWidth: 0.5))
-        }
-
-        composerIconButton("face.smiling") {
-          composerFocused = false
-          composerMode = .text
-          composerAccessory = composerAccessory == .emoji ? nil : .emoji
-        }
-
-        if ClawComposerPresentation.trailingAction(for: input) == .send {
-          Button("发送") { send(input) }
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundColor(.white)
-            .frame(width: 52, height: 36)
-            .background(Color(red: 0.03, green: 0.72, blue: 0.29))
-            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-            .disabled(chat.isSending)
-        } else {
-          composerIconButton("plus.circle") {
-            composerFocused = false
-            composerAccessory = composerAccessory == .more ? nil : .more
-          }
-        }
-      }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 7)
-
-      if let composerAccessory {
-        Divider()
-        composerAccessoryView(composerAccessory)
-          .frame(height: 205)
-          .transition(.move(edge: .bottom).combined(with: .opacity))
-      }
-    }
-    .background(Color(red: 0.95, green: 0.95, blue: 0.96))
-    .animation(.easeOut(duration: 0.18), value: composerAccessory)
-  }
-
-  private func composerIconButton(_ systemName: String, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
-      Image(systemName: systemName)
-        .font(.system(size: 27, weight: .regular))
-        .foregroundColor(.primary)
-        .frame(width: 32, height: 38)
-    }
-    .buttonStyle(.plain)
-  }
-
-  @ViewBuilder
-  private func composerAccessoryView(_ accessory: ClawComposerAccessory) -> some View {
-    switch accessory {
-    case .emoji:
-      ScrollView {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 7), spacing: 14) {
-          ForEach(Array(["😀", "😂", "🥰", "😍", "🤔", "😭", "😡", "👍", "👏", "🙏", "🎉", "❤️", "🔥", "✨", "😅", "😴", "🤝", "👌", "💪", "🙌", "🌹"].enumerated()), id: \.offset) { _, emoji in
-            Button(emoji) { input.append(emoji) }
-              .font(.system(size: 28))
-              .buttonStyle(.plain)
-          }
-        }
-        .padding(16)
-      }
-    case .more:
-      LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: 4), spacing: 20) {
-        composerMoreButton("照片", systemImage: "photo") { showingPhotoAttachment = true }
-        composerMoreButton("文件", systemImage: "folder") { showingFileAttachment = true }
-        composerMoreButton("剪贴板", systemImage: "doc.on.clipboard") { attachClipboard() }
-        composerMoreButton(callActive ? "挂断" : "语音通话", systemImage: callActive ? "phone.down.fill" : "phone.fill") {
-          callActive ? stopHandsFreeCall() : startHandsFreeCall()
-        }
-        Menu {
-          ForEach(ClawVoiceLanguageMode.allCases, id: \.rawValue) { mode in
-            Button {
-              voiceMode = mode
-              ClawVoiceInputService.shared.languageMode = mode
-            } label: {
-              if voiceMode == mode { Label(mode.displayName, systemImage: "checkmark") }
-              else { Text(mode.displayName) }
-            }
-          }
-        } label: {
-          composerMoreLabel("语音语言", systemImage: "globe")
-        }
-      }
-      .padding(.horizontal, 18)
-      .padding(.top, 18)
-      Spacer(minLength: 0)
-    }
-  }
-
-  private func composerMoreButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-    Button(action: action) { composerMoreLabel(title, systemImage: systemImage) }
-      .buttonStyle(.plain)
-  }
-
-  private func composerMoreLabel(_ title: String, systemImage: String) -> some View {
-    VStack(spacing: 7) {
-      Image(systemName: systemImage)
-        .font(.system(size: 25))
-        .foregroundColor(.primary)
-        .frame(width: 58, height: 58)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-      Text(title).font(.caption).foregroundColor(.secondary)
-    }
+    )
+    .frame(height: composerHeight)
   }
 
   private func send(_ text: String) {
@@ -500,25 +437,51 @@ private struct ClawAssistantChatView: View {
   private func toggleVoice() {
     if callActive { stopHandsFreeCall() }
     if recording {
+      oneShotRequestID = UUID()
       ClawVoiceInputService.shared.stop()
       recording = false
       endLiveActivity("语音识别完成")
       voiceHint = "正在完成识别…"
       return
     }
+    let requestID = UUID()
+    oneShotRequestID = requestID
     withVoiceAuthorization {
+      guard oneShotRequestID == requestID else { return }
       recording = true
       startLiveActivity(kind: "recording", detail: "正在语音输入")
       voiceHint = "正在听…点停止结束"
       ClawVoiceInputService.shared.start { result in
-        recording = false
-        endLiveActivity("语音识别完成")
-        switch result {
-        case .success(let text):
-          voiceHint = ""
-          send(text)
-        case .failure(let error):
-          voiceHint = "语音识别失败：\(error.localizedDescription)"
+        DispatchQueue.main.async {
+          guard oneShotRequestID == requestID else { return }
+          oneShotRequestID = UUID()
+          recording = false
+          endLiveActivity("语音识别完成")
+          if let keyboardID = keyboardDictationID {
+            keyboardDictationID = nil
+            keyboardDictationFinalizing = false
+            switch result {
+            case .success(let text):
+              if ClawVoiceDictationHandoff.shared.complete(id: keyboardID, text: text) {
+                completedKeyboardDictationText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                voiceHint = "已保存语音文字，请返回聊天点击 CLAW 键盘话筒插入"
+              } else {
+                _ = ClawVoiceDictationHandoff.shared.fail(id: keyboardID, reason: "没有识别到文字")
+                voiceHint = "没有识别到文字，请重试"
+              }
+            case .failure(let error):
+              _ = ClawVoiceDictationHandoff.shared.fail(id: keyboardID, reason: error.localizedDescription)
+              voiceHint = "语音识别失败：\(error.localizedDescription)"
+            }
+            return
+          }
+          switch result {
+          case .success(let text):
+            voiceHint = ""
+            send(text)
+          case .failure(let error):
+            voiceHint = "语音识别失败：\(error.localizedDescription)"
+          }
         }
       }
     }
@@ -526,30 +489,63 @@ private struct ClawAssistantChatView: View {
 
   private func beginHoldVoice() {
     if callActive { stopHandsFreeCall() }
+    guard !voiceGesture.isRecording, !recording else { return }
     voiceGesture.begin()
     discardVoiceResult = false
+    voiceHint = ""
+    let requestID = UUID()
+    holdVoiceRequestID = requestID
     withVoiceAuthorization {
+      // Authorization can complete after the user has released the gesture.
+      guard holdVoiceRequestID == requestID, voiceGesture.isRecording else { return }
+      let recognitionID = UUID()
+      activeHoldRecognitionID = recognitionID
       recording = true
       startLiveActivity(kind: "recording", detail: "按住说话")
       ClawVoiceInputService.shared.start { result in
-        recording = false
-        endLiveActivity("语音识别完成")
-        guard !discardVoiceResult else { discardVoiceResult = false; voiceHint = ""; return }
-        switch result {
-        case .success(let text): voiceHint = ""; send(text)
-        case .failure(let error): voiceHint = "语音识别失败：\(error.localizedDescription)"
+        DispatchQueue.main.async {
+          guard activeHoldRecognitionID == recognitionID else { return }
+          activeHoldRecognitionID = nil
+          recording = false
+          endLiveActivity("语音识别完成")
+          guard !discardVoiceResult else { discardVoiceResult = false; voiceHint = ""; return }
+          switch result {
+          case .success(let text): voiceHint = ""; send(text)
+          case .failure(let error): voiceHint = "语音识别失败：\(error.localizedDescription)"
+          }
         }
       }
     }
   }
 
-  private func finishHoldVoice() {
+  private func finishHoldVoice(systemCancelled: Bool = false) {
+    guard voiceGesture.isRecording else { return }
     let outcome = voiceGesture.finish()
-    discardVoiceResult = outcome == .cancel
-    ClawVoiceInputService.shared.stop()
+    holdVoiceRequestID = UUID()
+    discardVoiceResult = systemCancelled || outcome == .cancel
+    if discardVoiceResult { activeHoldRecognitionID = nil }
+    if recording { ClawVoiceInputService.shared.stop() }
     recording = false
-    endLiveActivity(outcome == .cancel ? "录音已取消" : "语音识别完成")
-    if outcome == .cancel { voiceHint = "已取消" } else { voiceHint = "正在完成识别…" }
+    endLiveActivity(discardVoiceResult ? "录音已取消" : "语音识别完成")
+    voiceHint = discardVoiceResult ? "已取消" : "正在完成识别…"
+  }
+
+  private func cancelPendingVoice() {
+    if let keyboardID = keyboardDictationID {
+      ClawVoiceDictationHandoff.shared.cancel(id: keyboardID)
+      keyboardDictationID = nil
+    }
+    keyboardDictationFinalizing = false
+    voiceAuthorizationRequestID = UUID()
+    holdVoiceRequestID = UUID()
+    oneShotRequestID = UUID()
+    activeHoldRecognitionID = nil
+    discardVoiceResult = true
+    if voiceGesture.isRecording { _ = voiceGesture.finish() }
+    if recording { ClawVoiceInputService.shared.stop() }
+    recording = false
+    voiceHint = ""
+    endLiveActivity("录音已结束")
   }
 
   private func attachClipboard() {
@@ -589,7 +585,42 @@ private struct ClawAssistantChatView: View {
   private func startOneShotVoiceInput() {
     if callActive { stopHandsFreeCall() }
     guard !recording else { return }
+    let handoff = ClawVoiceDictationHandoff.shared
+    if handoff.snapshot.state == .pending {
+      keyboardDictationID = handoff.snapshot.id
+      completedKeyboardDictationText = nil
+      keyboardDictationFinalizing = false
+    }
     toggleVoice()
+  }
+
+  private func finishKeyboardDictation(id: UUID) {
+    guard keyboardDictationID == id, recording, !keyboardDictationFinalizing else { return }
+    keyboardDictationFinalizing = true
+    ClawVoiceInputService.shared.stop()
+    recording = false
+    voiceHint = "正在完成语音识别…"
+    // Speech usually returns an isFinal callback after endAudio. Avoid a stuck pending result.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+      guard keyboardDictationID == id, keyboardDictationFinalizing else { return }
+      oneShotRequestID = UUID()
+      _ = ClawVoiceDictationHandoff.shared.fail(id: id, reason: "语音识别未返回结果，请重试")
+      keyboardDictationID = nil
+      keyboardDictationFinalizing = false
+      voiceHint = "语音识别未返回结果，请重试"
+    }
+  }
+
+  private func cancelKeyboardDictation() {
+    guard let id = keyboardDictationID else { return }
+    oneShotRequestID = UUID()
+    voiceAuthorizationRequestID = UUID()
+    ClawVoiceDictationHandoff.shared.cancel(id: id)
+    keyboardDictationID = nil
+    keyboardDictationFinalizing = false
+    if recording { ClawVoiceInputService.shared.stop() }
+    recording = false
+    voiceHint = "已取消键盘语音输入"
   }
 
   private func startHandsFreeCall() {
@@ -670,21 +701,35 @@ private struct ClawAssistantChatView: View {
   }
 
   private func withVoiceAuthorization(_ action: @escaping () -> Void) {
+    let requestID = UUID()
+    voiceAuthorizationRequestID = requestID
     switch ClawVoiceInputService.shared.authorizationStatus {
     case .authorized:
-      action()
+      if voiceAuthorizationRequestID == requestID { action() }
     case .denied:
       voiceHint = "请在系统设置中允许 CLAW 使用麦克风和语音识别"
+      failKeyboardDictationAuthorization()
     case .undetermined:
       voiceHint = "正在请求语音权限…"
       ClawVoiceInputService.shared.requestAuthorization { granted in
-        if granted {
-          action()
-        } else {
-          voiceHint = "未获得麦克风/语音识别权限"
+        DispatchQueue.main.async {
+          guard voiceAuthorizationRequestID == requestID else { return }
+          if granted {
+            action()
+          } else {
+            voiceHint = "未获得麦克风/语音识别权限"
+            failKeyboardDictationAuthorization()
+          }
         }
       }
     }
+  }
+
+  private func failKeyboardDictationAuthorization() {
+    guard let id = keyboardDictationID else { return }
+    _ = ClawVoiceDictationHandoff.shared.fail(id: id, reason: "请在设置中允许 CLAW 使用麦克风和语音识别")
+    keyboardDictationID = nil
+    keyboardDictationFinalizing = false
   }
 }
 

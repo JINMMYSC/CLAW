@@ -193,6 +193,24 @@ public final class ClawPanelOverlayView: UIView {
     fatalError("init(coder:) has not been implemented")
   }
 
+  public override func didMoveToWindow() {
+    super.didMoveToWindow()
+    guard window != nil, isKeyboardExtensionRuntime else { return }
+    DispatchQueue.main.async { [weak self] in
+      self?.showDictationReturnHintIfNeeded()
+    }
+  }
+
+  private func showDictationReturnHintIfNeeded() {
+    switch ClawVoiceDictationHandoff.shared.snapshot.state {
+    case .ready: showResultMessage("语音识别完成，点击话筒将文字插入当前输入框")
+    case .failed:
+      showResultMessage(ClawVoiceDictationHandoff.shared.snapshot.error ?? "语音识别失败，请重试")
+    case .pending: showResultMessage("语音输入尚未完成，请返回 CLAW 主程序完成录音")
+    case .idle: break
+    }
+  }
+
   // MARK: - 视图构建
 
   private func setupViews() {
@@ -881,6 +899,34 @@ public final class ClawPanelOverlayView: UIView {
 
 @objc private func micTapped() {
   guard !isCallActive else { return }
+  if isKeyboardExtensionRuntime {
+    let handoff = ClawVoiceDictationHandoff.shared
+    switch handoff.snapshot.state {
+    case .ready:
+      guard let controller = clawParentViewController as? UIInputViewController else {
+        showResultMessage("无法定位当前输入框，语音结果已保留")
+        return
+      }
+      guard let text = handoff.consume() else { return }
+      inputTextView.resignFirstResponder()
+      keyboardContext.clawPanelInputActive = false
+      controller.textDocumentProxy.insertText(text)
+      keyboardContext.clawPanelTab = -1
+      return
+    case .failed:
+      let reason = handoff.snapshot.error ?? "语音识别失败"
+      handoff.dismissFailure()
+      showResultMessage(reason + "，再点话筒重试")
+      return
+    case .pending:
+      // Some iOS versions reject extensionContext.open(...); allow a retry
+      // instead of trapping the user in a ten-minute pending state.
+      startVoiceInput()
+      return
+    case .idle:
+      break
+    }
+  }
   if isListening {
     isMicHeld = false
     ClawVoiceInputService.shared.stop()
@@ -893,6 +939,10 @@ public final class ClawPanelOverlayView: UIView {
 }
 
 @objc private func micLongPressed(_ sender: UILongPressGestureRecognizer) {
+    if isKeyboardExtensionRuntime {
+      if sender.state == .began { micTapped() }
+      return
+    }
     switch sender.state {
     case .began:
       guard !isListening, !isCallActive else { return }
@@ -921,7 +971,12 @@ public final class ClawPanelOverlayView: UIView {
       isMicHeld = false
       isListening = false
       updateMicUI(recording: false)
-      showResultMessage("正在打开 CLAW 语音输入…")
+      guard ClawVoiceDictationHandoff.shared.isSharedAvailable else {
+        showResultMessage("CLAW App Group 未就绪，无法跨 App 传递语音文字")
+        return
+      }
+      _ = ClawVoiceDictationHandoff.shared.begin()
+      showResultMessage("正在打开 CLAW 录音。完成后返回聊天，点击话筒插入文字")
       actionHandler.handle(
         .release,
         on: .url(URL(string: HamsterConstants.appURLForGuruVoiceInput), id: "openClawVoiceInput")

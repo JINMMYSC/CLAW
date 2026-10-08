@@ -171,6 +171,51 @@ jobs:
           xcrun simctl terminate "$SIMULATOR_UDID" app.lgm.7517 || true
           wait "$monitor" 2>/dev/null || true
 
+      - name: Capture native assistant composer states
+        run: |
+          set -euo pipefail
+          xcrun simctl ui "$SIMULATOR_UDID" appearance light
+          for state in empty text multiline voice emoji more dark; do
+            if [ "$state" = dark ]; then
+              xcrun simctl ui "$SIMULATOR_UDID" appearance dark
+            fi
+            xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
+              -clawComposerScreenshot "$state" \
+              >"composer-$state.log" 2>&1 &
+            monitor=$!
+            ready=0
+            for _ in $(seq 1 30); do
+              sleep 1
+              if grep -Fq "[clawComposer] screenshot ready: $state" "composer-$state.log"; then
+                ready=1
+                break
+              fi
+              if ! kill -0 "$monitor" 2>/dev/null; then
+                echo "App exited while preparing composer state: $state"
+                cat "composer-$state.log"
+                exit 1
+              fi
+            done
+            if [ "$ready" -ne 1 ]; then
+              echo "Composer state did not become ready within 30 seconds: $state"
+              cat "composer-$state.log"
+              exit 1
+            fi
+            xcrun simctl io "$SIMULATOR_UDID" screenshot "composer-$state.png"
+            kill "$monitor" 2>/dev/null || true
+            xcrun simctl terminate "$SIMULATOR_UDID" app.lgm.7517 || true
+            wait "$monitor" 2>/dev/null || true
+          done
+          xcrun simctl ui "$SIMULATOR_UDID" appearance light
+
+      - name: Upload native assistant composer screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claw-composer-screenshots
+          path: composer-*.png
+          if-no-files-found: warn
+
       - name: Capture diagnostics
         if: always()
         run: |
@@ -192,8 +237,9 @@ jobs:
             smoke-first-launch-console.log
             smoke-console.log
             smoke-system.log
-            smoke-screen-12s.png
+            smoke-screen-start.png
             smoke-screen-45s.png
+            composer-*.log
             Hamster*.crash
             Hamster*.ips
           if-no-files-found: warn
