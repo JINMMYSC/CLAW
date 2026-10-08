@@ -910,20 +910,32 @@ public final class ClawPanelOverlayView: UIView {
     }
   }
 
-  /// 语音输入：按住说话 → STT 转文字填入输入框。
-  /// 键盘扩展里同样直接录音，但麦克风与语音识别权限必须已经在主程序授权过
-  /// （扩展不能弹权限框，所以这里只读状态、不主动申请）。
+  /// 语音输入：主程序内直接听写；键盘扩展必须跳到包含它的主程序采音。
+  /// iOS 不给第三方键盘扩展麦克风输入，主程序即使已经授权也不会改变这一限制。
   private func startVoiceInput() {
-    switch ClawVoiceInputService.shared.authorizationStatus {
-    case .denied:
+    switch ClawVoiceLaunchPolicy.action(
+      isKeyboardExtension: isKeyboardExtensionRuntime,
+      authorization: ClawVoiceInputService.shared.authorizationStatus
+    ) {
+    case .openHostDictation:
+      isMicHeld = false
+      isListening = false
+      updateMicUI(recording: false)
+      showResultMessage("正在打开 CLAW 语音输入…")
+      actionHandler.handle(
+        .release,
+        on: .url(URL(string: HamsterConstants.appURLForGuruVoiceInput), id: "openClawVoiceInput")
+      )
+      return
+    case .showPermissionDenied:
       isMicHeld = false
       showResultMessage("麦克风/语音识别权限未开启，请到 ClawTalk 主程序或系统设置中开启")
       return
-    case .undetermined:
+    case .showPermissionRequired:
       isMicHeld = false
       showResultMessage("请先在 ClawTalk 主程序中授权麦克风与语音识别")
       return
-    case .authorized:
+    case .recordLocally:
       break
     }
     guard isMicHeld else { return }
@@ -970,6 +982,13 @@ public final class ClawPanelOverlayView: UIView {
 
   private func startCall() {
     guard !isCallActive else { return }
+    if isKeyboardExtensionRuntime {
+      actionHandler.handle(
+        .release,
+        on: .url(URL(string: HamsterConstants.appURLForGuruVoice), id: "openClawVoiceCall")
+      )
+      return
+    }
     switch ClawVoiceInputService.shared.authorizationStatus {
     case .denied:
       ClawChatService.shared.postAssistant("麦克风/语音识别权限未开启，请到 ClawTalk 主程序或系统设置中开启")

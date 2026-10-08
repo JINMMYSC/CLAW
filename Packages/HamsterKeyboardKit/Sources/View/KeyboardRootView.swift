@@ -478,7 +478,15 @@ class KeyboardRootView: NibLessView {
       NSLayoutConstraint.activate(toolbarCollapseDynamicConstraints)
     } else {
       // 键盘隐藏
-      let toolbarHeight = primaryKeyboardView.bounds.height + keyboardContext.heightOfToolbar
+      // The state publisher can fire before the keyboard view has completed its
+      // first layout. In that case `primaryKeyboardView.bounds.height` is zero;
+      // derive the keyboard area from the root view so expansion still fills all
+      // available rows instead of leaving the candidate collection one row high.
+      let toolbarHeight = CandidateExpandedLayoutMetrics.toolbarHeight(
+        rootHeight: bounds.height,
+        collapsedToolbarHeight: keyboardContext.heightOfToolbar,
+        keyboardBoundsHeight: primaryKeyboardView.bounds.height
+      )
       primaryKeyboardView.removeFromSuperview()
 
       toolbarHeightConstraint?.constant = toolbarHeight
@@ -522,5 +530,16 @@ class KeyboardRootView: NibLessView {
     // 保存 cache
 //    tempKeyboardViewCache[keyboardType] = tempKeyboardView
     return tempKeyboardView
+  }
+}
+
+enum CandidateExpandedLayoutMetrics {
+  static func toolbarHeight(
+    rootHeight: CGFloat,
+    collapsedToolbarHeight: CGFloat,
+    keyboardBoundsHeight: CGFloat
+  ) -> CGFloat {
+    let availableKeyboardHeight = max(0, rootHeight - collapsedToolbarHeight)
+    return collapsedToolbarHeight + max(keyboardBoundsHeight, availableKeyboardHeight)
   }
 }

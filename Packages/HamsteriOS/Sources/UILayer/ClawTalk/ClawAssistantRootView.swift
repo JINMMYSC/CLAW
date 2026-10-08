@@ -32,7 +32,6 @@ struct ClawAssistantRootView: View {
         .tabItem { Label("数据", systemImage: "tray.full.fill") }
         .tag(ClawAssistantTab.data)
     }
-    .clawKeyboardDismissal()
     .navigationTitle("CLAW")
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
@@ -74,6 +73,24 @@ private enum ClawAssistantTab: Hashable {
   case assistant, today, people, memory, data
 }
 
+enum ClawComposerTrailingAction: Equatable {
+  case more, send
+}
+
+enum ClawComposerPresentation {
+  static func trailingAction(for text: String) -> ClawComposerTrailingAction {
+    text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .more : .send
+  }
+}
+
+private enum ClawComposerMode: Equatable {
+  case text, voice
+}
+
+private enum ClawComposerAccessory: Equatable {
+  case emoji, more
+}
+
 private struct ClawAssistantChatView: View {
   @ObservedObject private var chat = ClawChatService.shared
   @State private var input = ""
@@ -93,6 +110,9 @@ private struct ClawAssistantChatView: View {
   ).prompts
   @State private var voiceGesture = ClawVoiceGestureState()
   @State private var discardVoiceResult = false
+  @State private var composerMode = ClawComposerMode.text
+  @State private var composerAccessory: ClawComposerAccessory?
+  @FocusState private var composerFocused: Bool
 
   private var displayedMessages: [ClawChatMessage] {
     ClawConversationPresentation.search(chat.messages, query: searchText)
@@ -317,22 +337,121 @@ private struct ClawAssistantChatView: View {
   }
 
   private var composer: some View {
-    VStack(spacing: 4) {
+    VStack(spacing: 0) {
       if !voiceHint.isEmpty {
         Text(voiceHint).font(.caption).foregroundColor(.secondary)
           .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 12)
+          .padding(.top, 6)
       }
       if !attachmentStatus.isEmpty {
         Text(attachmentStatus).font(.caption).foregroundColor(.secondary)
           .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 12)
+          .padding(.top, 4)
       }
-      HStack(spacing: 8) {
-        Menu {
-          Button { showingPhotoAttachment = true } label: { Label("照片 / 截图", systemImage: "photo") }
-          Button { showingFileAttachment = true } label: { Label("文件", systemImage: "doc") }
-          Button { attachClipboard() } label: { Label("剪贴板", systemImage: "doc.on.clipboard") }
-        } label: {
-          Image(systemName: "plus.circle.fill").font(.system(size: 28))
+      HStack(alignment: .bottom, spacing: 8) {
+        composerIconButton(composerMode == .voice ? "keyboard" : "waveform.circle") {
+          composerAccessory = nil
+          composerMode = composerMode == .voice ? .text : .voice
+          composerFocused = composerMode == .text
+        }
+
+        if composerMode == .voice {
+          Text(recording ? (voiceGesture.willCancel ? "松开取消" : "松开发送 · 上滑取消") : "按住 说话")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundColor(recording && voiceGesture.willCancel ? .red : .primary)
+            .frame(maxWidth: .infinity, minHeight: 38)
+            .background(Color(.systemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.black.opacity(0.08), lineWidth: 0.5))
+            .contentShape(Rectangle())
+            .gesture(
+              DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                  if !voiceGesture.isRecording { beginHoldVoice() }
+                  voiceGesture.update(verticalTranslation: value.translation.height)
+                  voiceHint = voiceGesture.willCancel ? "松开取消" : "松开发送 · 上滑取消"
+                }
+                .onEnded { _ in finishHoldVoice() }
+            )
+        } else {
+          TextEditor(text: $input)
+            .font(.system(size: 16))
+            .focused($composerFocused)
+            .frame(minHeight: 38, maxHeight: 96)
+            .padding(.horizontal, 4)
+            .background(Color(.systemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.black.opacity(0.08), lineWidth: 0.5))
+        }
+
+        composerIconButton("face.smiling") {
+          composerFocused = false
+          composerMode = .text
+          composerAccessory = composerAccessory == .emoji ? nil : .emoji
+        }
+
+        if ClawComposerPresentation.trailingAction(for: input) == .send {
+          Button("发送") { send(input) }
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundColor(.white)
+            .frame(width: 52, height: 36)
+            .background(Color(red: 0.03, green: 0.72, blue: 0.29))
+            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .disabled(chat.isSending)
+        } else {
+          composerIconButton("plus.circle") {
+            composerFocused = false
+            composerAccessory = composerAccessory == .more ? nil : .more
+          }
+        }
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 7)
+
+      if let composerAccessory {
+        Divider()
+        composerAccessoryView(composerAccessory)
+          .frame(height: 205)
+          .transition(.move(edge: .bottom).combined(with: .opacity))
+      }
+    }
+    .background(Color(red: 0.95, green: 0.95, blue: 0.96))
+    .animation(.easeOut(duration: 0.18), value: composerAccessory)
+  }
+
+  private func composerIconButton(_ systemName: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Image(systemName: systemName)
+        .font(.system(size: 27, weight: .regular))
+        .foregroundColor(.primary)
+        .frame(width: 32, height: 38)
+    }
+    .buttonStyle(.plain)
+  }
+
+  @ViewBuilder
+  private func composerAccessoryView(_ accessory: ClawComposerAccessory) -> some View {
+    switch accessory {
+    case .emoji:
+      ScrollView {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 7), spacing: 14) {
+          ForEach(Array(["😀", "😂", "🥰", "😍", "🤔", "😭", "😡", "👍", "👏", "🙏", "🎉", "❤️", "🔥", "✨", "😅", "😴", "🤝", "👌", "💪", "🙌", "🌹"].enumerated()), id: \.offset) { _, emoji in
+            Button(emoji) { input.append(emoji) }
+              .font(.system(size: 28))
+              .buttonStyle(.plain)
+          }
+        }
+        .padding(16)
+      }
+    case .more:
+      LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: 4), spacing: 20) {
+        composerMoreButton("照片", systemImage: "photo") { showingPhotoAttachment = true }
+        composerMoreButton("文件", systemImage: "folder") { showingFileAttachment = true }
+        composerMoreButton("剪贴板", systemImage: "doc.on.clipboard") { attachClipboard() }
+        composerMoreButton(callActive ? "挂断" : "语音通话", systemImage: callActive ? "phone.down.fill" : "phone.fill") {
+          callActive ? stopHandsFreeCall() : startHandsFreeCall()
         }
         Menu {
           ForEach(ClawVoiceLanguageMode.allCases, id: \.rawValue) { mode in
@@ -340,56 +459,35 @@ private struct ClawAssistantChatView: View {
               voiceMode = mode
               ClawVoiceInputService.shared.languageMode = mode
             } label: {
-              if voiceMode == mode {
-                Label(mode.displayName, systemImage: "checkmark")
-              } else {
-                Text(mode.displayName)
-              }
+              if voiceMode == mode { Label(mode.displayName, systemImage: "checkmark") }
+              else { Text(mode.displayName) }
             }
           }
         } label: {
-          VStack(spacing: 0) {
-            Image(systemName: "waveform.circle")
-              .font(.system(size: 24))
-            Text(voiceMode.displayName)
-              .font(.system(size: 8))
-          }
-          .foregroundColor(.accentColor)
+          composerMoreLabel("语音语言", systemImage: "globe")
         }
-        Image(systemName: recording ? (voiceGesture.willCancel ? "xmark.circle.fill" : "waveform.circle.fill") : "mic.circle.fill")
-          .font(.system(size: 30))
-          .foregroundColor(recording ? (voiceGesture.willCancel ? .orange : .red) : .accentColor)
-          .gesture(
-            DragGesture(minimumDistance: 0)
-              .onChanged { value in
-                if !voiceGesture.isRecording { beginHoldVoice() }
-                voiceGesture.update(verticalTranslation: value.translation.height)
-                voiceHint = voiceGesture.willCancel ? "松开取消" : "松开发送 · 上滑取消"
-              }
-              .onEnded { _ in finishHoldVoice() }
-          )
-        Button {
-          callActive ? stopHandsFreeCall() : startHandsFreeCall()
-        } label: {
-          Image(systemName: callActive ? "phone.down.circle.fill" : "phone.circle.fill")
-            .font(.system(size: 30))
-            .foregroundColor(callActive ? .red : .green)
-        }
-        TextEditor(text: $input)
-          .frame(minHeight: 36, maxHeight: 88)
-          .padding(.horizontal, 5)
-          .background(RoundedRectangle(cornerRadius: 8).fill(Color(.tertiarySystemFill)))
-        Button {
-          send(input)
-        } label: {
-          Image(systemName: "arrow.up.circle.fill").font(.system(size: 30))
-        }
-        .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chat.isSending)
       }
+      .padding(.horizontal, 18)
+      .padding(.top, 18)
+      Spacer(minLength: 0)
     }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
-    .background(Color(.secondarySystemGroupedBackground))
+  }
+
+  private func composerMoreButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) { composerMoreLabel(title, systemImage: systemImage) }
+      .buttonStyle(.plain)
+  }
+
+  private func composerMoreLabel(_ title: String, systemImage: String) -> some View {
+    VStack(spacing: 7) {
+      Image(systemName: systemImage)
+        .font(.system(size: 25))
+        .foregroundColor(.primary)
+        .frame(width: 58, height: 58)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+      Text(title).font(.caption).foregroundColor(.secondary)
+    }
   }
 
   private func send(_ text: String) {

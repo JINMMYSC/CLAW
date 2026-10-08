@@ -19,6 +19,30 @@ public enum ClawVoiceLanguageMode: String, CaseIterable {
   }
 }
 
+enum ClawVoiceLaunchAction: Equatable {
+  case openHostDictation
+  case recordLocally
+  case showPermissionDenied
+  case showPermissionRequired
+}
+
+enum ClawVoiceLaunchPolicy {
+  static func action(
+    isKeyboardExtension: Bool,
+    authorization: ClawVoiceInputService.ClawVoiceAuth
+  ) -> ClawVoiceLaunchAction {
+    // Custom keyboard extensions do not receive microphone access on iOS. Always
+    // hand dictation to the containing app, which owns the Speech and microphone
+    // permission prompts as well as the AVAudioSession.
+    if isKeyboardExtension { return .openHostDictation }
+    switch authorization {
+    case .authorized: return .recordLocally
+    case .denied: return .showPermissionDenied
+    case .undetermined: return .showPermissionRequired
+    }
+  }
+}
+
 /// 语音输入服务：按住说话 / 连续语音 → Speech 转文字。
 public final class ClawVoiceInputService: NSObject {
   public static let shared = ClawVoiceInputService()
@@ -116,6 +140,10 @@ public final class ClawVoiceInputService: NSObject {
   /// 键盘扩展同样走这条路：前提是主程序已经授权麦克风与语音识别，
   /// 并且键盘已开启「允许完全访问」。扩展里不能弹权限框，所以授权必须在主程序完成。
   public func start(completion: @escaping (Result<String, Error>) -> Void) {
+    guard !isKeyboardExtensionRuntime else {
+      completion(.failure(ClawVoiceError.keyboardExtensionUnsupported))
+      return
+    }
     let generation = resetForNewSession()
     guard let recognizer = makeRecognizer(), recognizer.isAvailable else {
       LogService.shared.log(.voiceRecognizerUnavailable)
@@ -180,6 +208,10 @@ public final class ClawVoiceInputService: NSObject {
     onSegment: @escaping (String) -> Void,
     onError: @escaping (Error) -> Void
   ) {
+    guard !isKeyboardExtensionRuntime else {
+      onError(ClawVoiceError.keyboardExtensionUnsupported)
+      return
+    }
     let generation = resetForNewSession()
     streamingPartial = onPartial
     streamingSegment = onSegment
