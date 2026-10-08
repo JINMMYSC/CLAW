@@ -693,9 +693,12 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
           UISelectionFeedbackGenerator().selectionChanged()
         } else {
           UINotificationFeedbackGenerator().notificationOccurred(.error)
+          // Apple doesn't support opening the containing app from a custom
+          // keyboard extension. Full Access does NOT override this restriction.
+          // The App Group dictation request remains pending for manual launch.
           let reason = self.hasFullAccess
-            ? "系统拒绝跳转（完全访问已开）\n\(url.absoluteString)"
-            : "未开启「允许完全访问」\n设置 → 通用 → 键盘 → 键盘 → CLAW"
+            ? "iOS 禁止键盘自动跳转，请手动打开 CLAW 完成录音，返回聊天后点话筒插入"
+            : "请先开启 CLAW 键盘的「允许完全访问」，再手动打开 CLAW 完成录音"
           self.showOpenUrlFailureHint(reason)
         }
       }
@@ -709,7 +712,7 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
     let label = UILabel()
     label.tag = tag
     label.text = reason
-    label.numberOfLines = 2
+    label.numberOfLines = 0
     label.font = .systemFont(ofSize: 12, weight: .medium)
     label.textColor = .white
     label.backgroundColor = UIColor.black.withAlphaComponent(0.85)
@@ -724,7 +727,7 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
       label.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 8),
       label.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -8),
     ])
-    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
       label.removeFromSuperview()
     }
   }
