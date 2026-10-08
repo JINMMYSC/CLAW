@@ -28,9 +28,9 @@ struct ClawAssistantRootView: View {
         .tabItem { Label("记忆", systemImage: "brain.head.profile") }
         .tag(ClawAssistantTab.memory)
 
-      ClawTalkRootView(viewModel: viewModel)
-        .tabItem { Label("数据", systemImage: "tray.full.fill") }
-        .tag(ClawAssistantTab.data)
+      ClawSettingsHubView(viewModel: viewModel)
+        .tabItem { Label("设置", systemImage: "gearshape.fill") }
+        .tag(ClawAssistantTab.settings)
     }
     .navigationTitle("CLAW")
     .navigationBarTitleDisplayMode(.inline)
@@ -41,11 +41,8 @@ struct ClawAssistantRootView: View {
         summary: openTasks.first?.title ?? "打开 CLAW 查看今日",
         openTaskCount: openTasks.count
       ))
-      let spotlightRecords = (try? ClawMemoryStore.shared.memoryV2(limit: 25)) ?? []
-      ClawSpotlightIndexer.index(spotlightRecords.compactMap { record in
-        guard let url = URL(string: "hamster://clawTalk?memory=\(record.id.uuidString)") else { return nil }
-        return ClawSpotlightItem(id: record.id.uuidString, title: record.content, description: record.type.rawValue, deepLink: url)
-      })
+      // Never expose personal memory text to system Spotlight by default.
+      ClawSpotlightIndexer.indexSafeMemoryShortcut()
       // Heavy maintenance belongs in the host app, never in Keyboard Extension.
       Task(priority: .utility) {
         await AutoInsightService.shared.runIfNeeded()
@@ -70,7 +67,59 @@ struct ClawAssistantRootView: View {
 }
 
 private enum ClawAssistantTab: Hashable {
-  case assistant, today, people, memory, data
+  case assistant, today, people, memory, settings
+}
+
+/// A single in-app settings destination; raw input records live below Privacy
+/// rather than competing with Assistant/Today/People/Memory for a tab.
+private struct ClawSettingsHubView: View {
+  @ObservedObject var viewModel: ClawTalkViewModel
+  @State private var cannotOpenKeyboardSettings = false
+
+  var body: some View {
+    NavigationView {
+      List {
+        Section("键盘与输入") {
+          Button {
+            guard let url = URL(string: HamsterConstants.appURLForKeyboardSettings) else {
+              cannotOpenKeyboardSettings = true
+              return
+            }
+            UIApplication.shared.open(url, options: [:]) { success in
+              if !success {
+                DispatchQueue.main.async { cannotOpenKeyboardSettings = true }
+              }
+            }
+          } label: {
+            Label("键盘、输入方案与外观", systemImage: "keyboard")
+          }
+        }
+
+        Section("数据与隐私") {
+          NavigationLink {
+            ClawTalkRootView(viewModel: viewModel)
+          } label: {
+            Label("输入记录、剪贴板与隐私设置", systemImage: "lock.doc")
+          }
+          Text("长期记忆、人物档案与技能分别在「记忆」和「人物」页管理。")
+            .font(.footnote)
+            .foregroundColor(.secondary)
+        }
+
+        Section("使用说明") {
+          Text("语音识别由 CLAW 主程序完成，第三方键盘不直接录音。")
+            .font(.footnote)
+            .foregroundColor(.secondary)
+        }
+      }
+      .navigationTitle("设置")
+      .alert("无法打开键盘设置", isPresented: $cannotOpenKeyboardSettings) {
+        Button("知道了", role: .cancel) {}
+      } message: {
+        Text("请返回 CLAW 主程序的设置页面，检查键盘入口是否可用。")
+      }
+    }
+  }
 }
 
 enum ClawComposerTrailingAction: Equatable {

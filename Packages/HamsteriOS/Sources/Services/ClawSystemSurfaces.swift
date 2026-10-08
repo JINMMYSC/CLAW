@@ -96,6 +96,26 @@ public struct ClawSpotlightItem: Sendable {
 }
 
 public enum ClawSpotlightIndexer {
+  /// Personal messages and remembered facts must not be silently published to
+  /// system-wide Spotlight results. Remove prior raw content, then index only
+  /// a generic shortcut without private names, text or task descriptions.
+  public static func indexSafeMemoryShortcut() {
+    let index = CSSearchableIndex.default()
+    index.deleteSearchableItems(withDomainIdentifiers: ["claw.memory"]) { _ in
+      guard let url = URL(string: "hamster://clawTalk") else { return }
+      let attributes = CSSearchableItemAttributeSet(contentType: .content)
+      attributes.title = "CLAW 记忆中心"
+      attributes.contentDescription = "打开 CLAW 查看和管理记忆"
+      attributes.contentURL = url
+      let item = CSSearchableItem(
+        uniqueIdentifier: "claw.memory.home",
+        domainIdentifier: "claw.memory",
+        attributeSet: attributes
+      )
+      index.indexSearchableItems([item]) { _ in }
+    }
+  }
+
   public static func index(_ items: [ClawSpotlightItem]) {
     CSSearchableIndex.default().indexSearchableItems(items.map { item in
       let attributes = CSSearchableItemAttributeSet(contentType: .content)
