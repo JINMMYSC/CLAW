@@ -774,7 +774,8 @@ public final class ClawMemoryStore {
       contactID: message.contactID,
       speaker: message.speaker,
       content: trimmed,
-      occurredAt: message.occurredAt
+      occurredAt: message.occurredAt,
+      sourceRef: message.sourceRef
     )
     let sql = "INSERT OR IGNORE INTO conversation_messages (id,contact_id,speaker,sender_name,content,occurred_at,source_type,source_ref,confidence,fingerprint) VALUES (?,?,?,?,?,?,?,?,?,?);"
     let statement = try prepare(sql); defer { sqlite3_finalize(statement) }
@@ -1647,8 +1648,20 @@ public final class ClawMemoryStore {
     }
   }
 
-  private static func fingerprint(contactID: UUID?, speaker: ClawConversationSpeaker, content: String, occurredAt: Date) -> String {
-    // 截图往往没有精确时间。以分钟粒度 + 正文去重，避免连续截图重复写入。
+  private static func fingerprint(
+    contactID: UUID?,
+    speaker: ClawConversationSpeaker,
+    content: String,
+    occurredAt: Date,
+    sourceRef: String?
+  ) -> String {
+    // OCR rows carry a stable screenshot hash + row index. Identical imports
+    // have the same fingerprint even when their capture timestamps differ.
+    // Keep the person ID in the key; never deduplicate across people.
+    if let sourceRef, sourceRef.hasPrefix("screenshot-digest:"), sourceRef.contains("#row=") {
+      return "\(contactID?.uuidString ?? "global")|\(sourceRef)"
+    }
+    // Other conversations retain the existing minute-granularity behavior.
     let minute = Int(occurredAt.timeIntervalSince1970 / 60)
     let normalized = content.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
     return "\(contactID?.uuidString ?? "global")|\(speaker.rawValue)|\(minute)|\(normalized)"

@@ -1,3 +1,4 @@
+import CryptoKit
 import HamsterKeyboardKit
 import HamsterKit
 import PhotosUI
@@ -817,6 +818,11 @@ private struct ClawAssistantChatView: View {
 
   private func ingestScreenshot(_ image: UIImage) {
     attachmentStatus = "正在本地识别截图…"
+    // A stable, local-only digest permits idempotent re-import without
+    // persisting the underlying screenshot (or paying for a new framework).
+    let digestSource = image.jpegData(compressionQuality: 0.8).map { data -> String in
+      "screenshot-digest:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
     VisionOCRService.shared.recognizeLines(in: image) { result in
       DispatchQueue.main.async {
         switch result {
@@ -829,7 +835,7 @@ private struct ClawAssistantChatView: View {
             let preview = try ClawScreenshotIngestionService().ingest(
               lines: lines,
               selectedProfile: HeartTargetService.shared.selectedProfile,
-              sourceRef: nil,
+              sourceRef: digestSource,
               requireUserReview: true
             )
             pendingScreenshotReview = preview

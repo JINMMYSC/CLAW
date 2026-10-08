@@ -50,6 +50,30 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     XCTAssertEqual(second, 0, "Reimporting an overlapping screenshot must not re-create derived records")
   }
 
+  func testSameScreenshotReimportAtDifferentTimeIsIdempotent() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("screenshot-repeat-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = ClawMemoryStore(databaseURL: root.appendingPathComponent("memory.sqlite"))
+    let profile = HeartTargetProfile(name: "重复截图")
+    let lines = [
+      VisionOCRService.OCRLine(text: "重复截图", boundingBox: .init(x: 0.4, y: 0.9, width: 0.2, height: 0.04), confidence: 0.99),
+      VisionOCRService.OCRLine(text: "周五提交方案", boundingBox: .init(x: 0.1, y: 0.5, width: 0.25, height: 0.04), confidence: 0.95)
+    ]
+    let service = ClawScreenshotIngestionService(store: store)
+    let source = "screenshot-digest:fixture"
+    let firstPreview = try service.ingest(lines: lines, selectedProfile: profile,
+      capturedAt: Date(timeIntervalSince1970: 1000), sourceRef: source, requireUserReview: true)
+    let secondPreview = try service.ingest(lines: lines, selectedProfile: profile,
+      capturedAt: Date(timeIntervalSince1970: 7000), sourceRef: source, requireUserReview: true)
+    var firstMessages = firstPreview.messages
+    var secondMessages = secondPreview.messages
+    for i in firstMessages.indices { firstMessages[i].speaker = .other }
+    for i in secondMessages.indices { secondMessages[i].speaker = .other }
+    XCTAssertEqual(try service.confirmReviewed(messages: firstMessages, for: profile), firstMessages.count)
+    XCTAssertEqual(try service.confirmReviewed(messages: secondMessages, for: profile), 0)
+    XCTAssertEqual(try store.conversation(contactID: profile.id).count, firstMessages.count)
+  }
+
   func testReviewRejectsUnknownSpeakerWithoutWritingAnything() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("screenshot-review-\(UUID())")
     defer { try? FileManager.default.removeItem(at: root) }

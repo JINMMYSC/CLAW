@@ -94,11 +94,14 @@ public final class ClawScreenshotIngestionService {
       $0.speaker != .unknown
     }) else { throw ClawScreenshotReviewError.unresolvedMessage }
 
-    let approved = messages.map { source -> ClawConversationMessage in
-      var item = source
+    let approved = messages.enumerated().map { entry -> ClawConversationMessage in
+      var item = entry.element
       item.contactID = profile.id
-      item.content = source.content.trimmingCharacters(in: .whitespacesAndNewlines)
+      item.content = item.content.trimmingCharacters(in: .whitespacesAndNewlines)
       item.confidence = 1
+      if let source = item.sourceRef, source.hasPrefix("screenshot-digest:") {
+        item.sourceRef = "\(source)#row=\(entry.offset)"
+      }
       return item
     }
     var inserted: [ClawConversationMessage] = []
