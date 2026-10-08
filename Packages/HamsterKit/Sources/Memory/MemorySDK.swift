@@ -91,23 +91,30 @@ public final class DefaultMemorySDK: MemorySDK {
     )
     let candidates: [MemoryV2Record]
     if scope == "global" {
-      candidates = try recall(MemoryRecallRequest(query: "", scope: .global, limit: count))
-        .filter { $0.scope == .global && $0.personID == nil }
+      // Use the existing SQLite scope index before applying the context limit:
+      // scanning 80 most-recent rows across all users hides old global facts.
+      candidates = try store.memoryV2(scope: .global, limit: count)
+        .filter { $0.personID == nil }
     } else if scope == "contact", let personID {
-      candidates = try recall(MemoryRecallRequest(
-        query: "", personID: personID, scope: .person, limit: count
-      )).filter {
-        $0.personID == personID && ($0.scope == .person || $0.scope == .relationship)
-      }
+      // Restrict each query by person_id in SQL; never sample all persons'
+      // recent memories and filter afterward.
+      let people = try store.memoryV2(scope: .person, personID: personID, limit: count)
+      let relations = try store.memoryV2(scope: .relationship, personID: personID, limit: count)
+      candidates = (people + relations).sorted { $0.updatedAt > $1.updatedAt }
     } else if scope == "contact" {
       return []
     } else {
       return legacy
     }
+    let now = Date()
+    let permitted = candidates.filter {
+      ($0.state == .active || $0.state == .confirmed) &&
+        ($0.expiresAt == nil || $0.expiresAt! > now)
+    }
     let legacyByID = Dictionary(uniqueKeysWithValues: legacy.map { ($0.id, $0) })
     var seen = Set<UUID>()
     var merged: [ClawMemoryItem] = []
-    for record in candidates {
+    for record in permitted {
       var item = legacyProjection(record)
       // Preserve trusted source metadata when a V2 write updated the same
       // legacy row, but never replace newer V2 content or scope with stale data.

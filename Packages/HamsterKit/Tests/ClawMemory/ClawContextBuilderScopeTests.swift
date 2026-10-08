@@ -59,6 +59,27 @@ final class ClawContextBuilderScopeTests: XCTestCase {
     XCTAssertNil(ClawQueryPersonResolver().resolve(query: "最近哪个客户要跟进？", profiles: profiles))
   }
 
+  func testOlderPersonMemoryRemainsVisibleAmongManyOtherPeople() throws {
+    let alice = HeartTargetProfile(name: "艾丽")
+    let bob = HeartTargetProfile(name: "贝贝")
+    let sdk = DefaultMemorySDK(store: store)
+    try sdk.remember(MemoryV2Record(
+      type: .preference, state: .active, scope: .person,
+      content: "艾丽的旧交流偏好", personID: alice.id,
+      provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    ))
+    for i in 0..<125 {
+      try sdk.remember(MemoryV2Record(
+        type: .preference, state: .active, scope: .person,
+        content: "贝贝第\(i)条较新的交流偏好", personID: bob.id,
+        provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+      ))
+    }
+    let pack = builder(profiles: [alice, bob]).build(contactID: alice.id)
+    XCTAssertTrue(pack.contactMemories.contains { $0.content == "艾丽的旧交流偏好" })
+    XCTAssertFalse(pack.contactMemories.contains { $0.subjectID == bob.id })
+  }
+
   func testSDKContextReadsV2AndLegacyWithoutCrossPersonLeak() throws {
     let alice = HeartTargetProfile(name: "艾丽")
     let bob = HeartTargetProfile(name: "贝贝")
