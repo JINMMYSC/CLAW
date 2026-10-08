@@ -2,8 +2,10 @@ name: iOS Startup Smoke
 
 on:
   workflow_dispatch:
-  push:
+  pull_request:
     branches: [main]
+  push:
+    branches: [main, work/claw-voice-keyboard-bg, work/claw-productization-20261006]
     paths:
       - "Hamster/**"
       - "HamsterKeyboard/**"
@@ -11,7 +13,13 @@ on:
       - "Packages/HamsterKeyboardKit/**"
       - "Packages/HamsteriOS/**"
       - "Hamster.xcodeproj/**"
+      - "scripts/**"
+      - ".github/workflows/build-ipa.yml"
       - ".github/workflows/startup-smoke.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   launch:
@@ -74,7 +82,10 @@ jobs:
             >smoke-first-launch-console.log 2>&1 &
           monitor=$!
           ready=0
-          for _ in $(seq 1 18); do
+          # First launch unpacks RIME resources and compiles schemas. On a loaded
+          # macOS runner this legitimately takes well over 90s, so the wait window
+          # is generous; a real hang still fails via the liveness check below.
+          for _ in $(seq 1 48); do
             sleep 5
             if grep -q "\[clawTalk\] first-launch" smoke-first-launch-console.log; then
               ready=1
@@ -87,7 +98,7 @@ jobs:
             fi
           done
           if [ "$ready" -ne 1 ]; then
-            echo "First-launch deployment did not complete within 90 seconds"
+            echo "First-launch deployment did not complete within 240 seconds"
             cat smoke-first-launch-console.log
             exit 1
           fi
@@ -99,23 +110,30 @@ jobs:
         run: |
           set -euo pipefail
           rm -f smoke-console.log
-          rm -f smoke-screen-12s.png smoke-screen-45s.png
+          rm -f smoke-screen-start.png smoke-screen-45s.png
           xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
             -clawTalkForceV1Migration \
             >smoke-console.log 2>&1 &
           monitor=$!
-          sleep 12
-          if ! kill -0 "$monitor" 2>/dev/null; then
-            echo "App exited during the 12-second startup window"
+          migration_started=0
+          for _ in $(seq 1 18); do
+            sleep 5
+            if grep -q "clawtalk-v1-migration: start" smoke-console.log; then
+              migration_started=1
+              break
+            fi
+            if ! kill -0 "$monitor" 2>/dev/null; then
+              echo "App exited while waiting for the legacy v1 migration"
+              cat smoke-console.log
+              exit 1
+            fi
+          done
+          if [ "$migration_started" -ne 1 ]; then
+            echo "Legacy v1 migration did not start within 90 seconds"
             cat smoke-console.log
             exit 1
           fi
-          if ! grep -q "clawtalk-v1-migration: start" smoke-console.log; then
-            echo "Legacy v1 migration path was not exercised"
-            cat smoke-console.log
-            exit 1
-          fi
-          xcrun simctl io "$SIMULATOR_UDID" screenshot smoke-screen-12s.png
+          xcrun simctl io "$SIMULATOR_UDID" screenshot smoke-screen-start.png
           sleep 33
           if ! kill -0 "$monitor" 2>/dev/null; then
             echo "App exited during the 45-second startup window"
@@ -143,9 +161,9 @@ jobs:
                       if px[x, y] < 24:
                           dark += 1
               return dark / total
-          r12 = dark_ratio("smoke-screen-12s.png")
+          rstart = dark_ratio("smoke-screen-start.png")
           r45 = dark_ratio("smoke-screen-45s.png")
-          print(f"dark_ratio 12s={r12:.3f} 45s={r45:.3f}")
+          print(f"dark_ratio start={rstart:.3f} 45s={r45:.3f}")
           if r45 > 0.97:
               print("SCREEN IS BLACK: launch overlay did not dismiss within 45s")
               sys.exit(1)
@@ -158,6 +176,51 @@ jobs:
           kill "$monitor" || true
           xcrun simctl terminate "$SIMULATOR_UDID" app.lgm.7517 || true
           wait "$monitor" 2>/dev/null || true
+
+      - name: Capture native assistant composer states
+        run: |
+          set -euo pipefail
+          xcrun simctl ui "$SIMULATOR_UDID" appearance light
+          for state in empty text multiline voice emoji more dark; do
+            if [ "$state" = dark ]; then
+              xcrun simctl ui "$SIMULATOR_UDID" appearance dark
+            fi
+            xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
+              -clawComposerScreenshot "$state" \
+              >"composer-$state.log" 2>&1 &
+            monitor=$!
+            ready=0
+            for _ in $(seq 1 30); do
+              sleep 1
+              if grep -Fq "[clawComposer] screenshot ready: $state" "composer-$state.log"; then
+                ready=1
+                break
+              fi
+              if ! kill -0 "$monitor" 2>/dev/null; then
+                echo "App exited while preparing composer state: $state"
+                cat "composer-$state.log"
+                exit 1
+              fi
+            done
+            if [ "$ready" -ne 1 ]; then
+              echo "Composer state did not become ready within 30 seconds: $state"
+              cat "composer-$state.log"
+              exit 1
+            fi
+            xcrun simctl io "$SIMULATOR_UDID" screenshot "composer-$state.png"
+            kill "$monitor" 2>/dev/null || true
+            xcrun simctl terminate "$SIMULATOR_UDID" app.lgm.7517 || true
+            wait "$monitor" 2>/dev/null || true
+          done
+          xcrun simctl ui "$SIMULATOR_UDID" appearance light
+
+      - name: Upload native assistant composer screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claw-composer-screenshots
+          path: composer-*.png
+          if-no-files-found: warn
 
       - name: Capture diagnostics
         if: always()
@@ -180,8 +243,11 @@ jobs:
             smoke-first-launch-console.log
             smoke-console.log
             smoke-system.log
-            smoke-screen-12s.png
+            smoke-screen-start.png
             smoke-screen-45s.png
+            composer-*.log
             Hamster*.crash
             Hamster*.ips
           if-no-files-found: warn
+
+

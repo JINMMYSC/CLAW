@@ -165,6 +165,9 @@ private class SymbolsVerticalListView: UICollectionView {
     self.style = style
 
     setupAppearance()
+    // Diffable data source 对内容相同的 snapshot 不会重新配置已有 cell，
+    // 只改 style 而不强制重建的话，屏幕上已显示的符号会保留旧颜色。
+    diffalbeDataSource.applySnapshotUsingReloadData(diffalbeDataSource.snapshot())
   }
 
   // MARK: - Functional

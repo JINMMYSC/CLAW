@@ -12,6 +12,8 @@ public class AutoInsightViewModel: ObservableObject {
   @Published public var results: [AutoInsightResult] = []
   @Published public var unreadCount: Int = 0
   @Published public var isRunning: Bool = false
+  /// 手动触发的最后一次结果说明；用于界面提示，不再静默返回。
+  @Published public var lastRunMessage: String?
 
   // MARK: - Config (live editing)
 
@@ -78,13 +80,26 @@ public class AutoInsightViewModel: ObservableObject {
     aiService.apiKey(for: provider)
   }
 
-  public func triggerNow() {
+  public func triggerNow() async {
     guard !isRunning else { return }
     isRunning = true
-    Task {
-      await service.runNow()
-      reload()
-      isRunning = false
+    lastRunMessage = nil
+    let outcome = await service.runNow()
+    reload()
+    isRunning = false
+    lastRunMessage = Self.message(for: outcome)
+  }
+
+  private static func message(for outcome: AutoInsightService.RunOutcome) -> String {
+    switch outcome {
+    case .success(let entries):
+      return "已生成新的洞察（使用 \(entries) 条记录）"
+    case .noAPIKey(let provider):
+      return "未配置 \(provider) 的 API Key，请先到「每日洞察设置」里填写"
+    case .noData:
+      return "最近没有可分析的输入记录，先在键盘上正常输入一些内容再试"
+    case .failed(let message):
+      return message
     }
   }
 

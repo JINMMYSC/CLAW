@@ -44,6 +44,7 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
     // setupNextKeyboardBehavior()
     // KeyboardUrlOpener.shared.controller = self
     setupCombineRIMEInput()
+    syncKeyboardBackgroundColor()
 
     // ClawTalk: 面板输入桥接（面板输入框聚焦时按键直输进面板，否则直接上屏）
     ClawPanelInputBridge.shared.sendText = { [weak self] text in
@@ -66,16 +67,6 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
       clawTalkBeginSession()
       // 注意：不在键盘内自动读取剪贴板。iOS 16+ 读取剪贴板内容会弹「xx想从微信粘贴」提示，
       // 改为在 ClawTalk 剪贴板页面手动「立即记录」，避免输入时反复弹窗打扰。
-
-      // 每日洞察：满足间隔条件时后台触发 AI 分析
-      Task.detached(priority: .background) {
-        await AutoInsightService.shared.runIfNeeded()
-      }
-
-      // 智能调频：满足间隔条件时后台触发 AI 分析
-      Task.detached(priority: .background) {
-        await SmartFreqService.shared.runIfNeeded()
-      }
     }
 
     // fix: 屏幕边缘按键触摸延迟
@@ -174,6 +165,12 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
   open func viewWillSyncWithContext() {
     keyboardContext.sync(with: self)
     keyboardTextContext.sync(with: self)
+    syncKeyboardBackgroundColor()
+    // 跟随主程序设置的外观（App Group 共享）。只在值不同时赋值，避免 trait 变化回环。
+    let sharedStyle = ClawAppearanceService.style.userInterfaceStyle
+    if overrideUserInterfaceStyle != sharedStyle {
+      overrideUserInterfaceStyle = sharedStyle
+    }
   }
 
   // MARK: - Combine
@@ -652,7 +649,7 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
   }
 
   open func selectNextKeyboard() {
-    // advanceToNextInputMode()
+    advanceToNextInputMode()
   }
 
   open func selectNextLocale() {
@@ -684,29 +681,41 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
 
   open func openUrl(_ url: URL?) {
     guard let url else { return }
-    extensionContext?.open(url, completionHandler: { [weak self] success in
+    // 跳主程序失败时把真实原因显示出来：是没开完全访问、没有扩展上下文，还是系统拒绝了 URL。
+    guard let context = extensionContext else {
+      showOpenUrlFailureHint("键盘没有扩展上下文，无法跳转主程序")
+      return
+    }
+    context.open(url, completionHandler: { [weak self] success in
       DispatchQueue.main.async {
         guard let self = self else { return }
         if success {
           UISelectionFeedbackGenerator().selectionChanged()
         } else {
           UINotificationFeedbackGenerator().notificationOccurred(.error)
-          self.showOpenUrlFailureHint()
+          // Apple doesn't support opening the containing app from a custom
+          // keyboard extension. Full Access does NOT override this restriction.
+          // The App Group dictation request remains pending for manual launch.
+          let reason = self.hasFullAccess
+            ? "iOS 禁止键盘自动跳转，请手动打开 CLAW 完成录音，返回聊天后点话筒插入"
+            : "请先开启 CLAW 键盘的「允许完全访问」，再手动打开 CLAW 完成录音"
+          self.showOpenUrlFailureHint(reason)
         }
       }
     })
   }
 
   /// Inline hint shown when opening the main app fails (keyboard cannot show alerts; use text + haptic).
-  private func showOpenUrlFailureHint() {
+  private func showOpenUrlFailureHint(_ reason: String) {
     let tag = 87231
     view.viewWithTag(tag)?.removeFromSuperview()
     let label = UILabel()
     label.tag = tag
-    label.text = "未找到输入法主程序"
+    label.text = reason
+    label.numberOfLines = 0
     label.font = .systemFont(ofSize: 12, weight: .medium)
     label.textColor = .white
-    label.backgroundColor = UIColor.black.withAlphaComponent(0.75)
+    label.backgroundColor = UIColor.black.withAlphaComponent(0.85)
     label.textAlignment = .center
     label.layer.cornerRadius = 6
     label.layer.masksToBounds = true
@@ -715,8 +724,10 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
     NSLayoutConstraint.activate([
       label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
       label.topAnchor.constraint(equalTo: view.topAnchor, constant: 40),
+      label.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 8),
+      label.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -8),
     ])
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
       label.removeFromSuperview()
     }
   }
@@ -891,6 +902,18 @@ open class KeyboardInputViewController: UIInputViewController, KeyboardControlle
 // MARK: - Private Functions
 
 private extension KeyboardInputViewController {
+  /// 同步系统 input view / safe area 与当前键盘主题背景，避免底部透出系统颜色。
+  func syncKeyboardBackgroundColor() {
+    let backgroundColor: UIColor
+    if keyboardContext.useIOSNativeLayout {
+      backgroundColor = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme).board
+    } else {
+      backgroundColor = keyboardAppearance.backgroundStyle.backgroundColor ?? ClawPanelPalette.keyboardBackground
+    }
+    view.backgroundColor = backgroundColor
+    inputView?.backgroundColor = backgroundColor
+  }
+
   /// 刷新属性
   func refreshProperties() {
     refreshLayoutProvider()
@@ -1030,8 +1053,7 @@ private extension KeyboardInputViewController {
           }
         }
 
-          // ClawTalk: 提交上屏后投喂实时建议引擎
-          ClawSuggestionEngine.shared.feed(commitText)
+          // 键盘主输入链路保持纯本地、低开销。实时 AI 建议只在用户主动打开 CLAW 面板后运行。
 
         // 非嵌入模式在 CandidateWordsView.swift 中处理，直接输入 Label 中
         guard self.keyboardContext.enableEmbeddedInputMode else { return }
@@ -1276,12 +1298,25 @@ extension KeyboardInputViewController {
     // （同一输入框多次唤起键盘时，上次打的内容会出现在下次的 context 末尾）
     let context = clawTalkDeduplicateContext(rawContext, typed: typed)
     let appCtx  = clawTalkAppContext()
-    ClawTalkDataService.shared.saveSession(ClawTalkEntry(
+    let entry = ClawTalkEntry(
       startTime: startTime,
       text: typed,
       context: context,
       appContext: appCtx
-    ))
+    )
+    ClawTalkDataService.shared.saveSession(entry)
+
+    // Extension 不直接写 Memory SQLite / 提取任务 / 做 Evolution。这里只写 App Group
+    // 轻量队列，主 App 激活后再统一处理，避免连续输入时被 jetsam/系统切走。
+    let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmed.isEmpty {
+      ClawKeyboardDeferredEventService.shared.enqueue(ClawDeferredKeyboardSession(
+        contactID: HeartTargetService.shared.selectedProfile?.id,
+        text: trimmed,
+        occurredAt: startTime,
+        sourceRef: "clawtalk:\(entry.id.uuidString)"
+      ))
+    }
   }
 
   /// 去重：若 context 尾部与 typed 前缀有重叠，裁掉重叠部分

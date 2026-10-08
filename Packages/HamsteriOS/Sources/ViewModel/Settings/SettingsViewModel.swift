@@ -36,6 +36,29 @@ public class SettingsViewModel: ObservableObject {
     }
   }
 
+  /// 当前键盘配色名：未启用主题时显示「系统默认」，启用时显示具体主题名。
+  var keyboardColorSchemaName: String {
+    let keyboard = HamsterConfigurationStore.shared.configuration.keyboard
+    guard keyboard?.enableColorSchema ?? false else { return "系统默认" }
+    let light = keyboard?.useColorSchemaForLight ?? ""
+    let dark = keyboard?.useColorSchemaForDark ?? ""
+    let theme = ClawTalkThemePresets.theme(forSchemaName: light)
+      ?? ClawTalkThemePresets.theme(forSchemaName: dark)
+    return theme?.displayName ?? "系统默认"
+  }
+
+  /// 外观偏好（系统 / 浅色 / 深色）。写入后立刻应用到所有窗口。
+  var appearanceStyle: ClawAppearanceStyle {
+    get { ClawAppearanceService.style }
+    set {
+      ClawAppearanceService.style = newValue
+      UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .flatMap { $0.windows }
+        .forEach { $0.overrideUserInterfaceStyle = newValue.userInterfaceStyle }
+    }
+  }
+
   public var enableAppleCloud: Bool {
     get {
       HamsterConfigurationStore.shared.configuration.general?.enableAppleCloud ?? false
@@ -148,10 +171,23 @@ public class SettingsViewModel: ObservableObject {
           }
         ),
         .init(
+          icon: UIImage(systemName: "circle.lefthalf.filled")!,
+          text: "外观",
+          type: .pullDown,
+          textValue: { [unowned self] in self.appearanceStyle.displayName },
+          pullDownMenuActionsBuilder: { [unowned self] in
+            ClawAppearanceStyle.allCases.map { style in
+              UIAction(title: style.displayName, state: style == self.appearanceStyle ? .on : .off) { [unowned self] _ in
+                self.appearanceStyle = style
+              }
+            }
+          }
+        ),
+        .init(
           icon: UIImage(systemName: "paintpalette")!,
           text: "键盘配色",
           accessoryType: .disclosureIndicator,
-          navigationLinkLabel: { [unowned self] in self.enableColorSchema ? "启用" : "禁用" },
+          navigationLinkLabel: { [unowned self] in self.keyboardColorSchemaName },
           navigationAction: { [unowned self] in
             self.navigate(.colorSchema)
           }
@@ -170,14 +206,6 @@ public class SettingsViewModel: ObservableObject {
           accessoryType: .disclosureIndicator,
           navigationAction: { [unowned self] in
             self.navigate(.voice)
-          }
-        ),
-        .init(
-          icon: UIImage(systemName: "heart.fill")!,
-          text: "聊天对象档案",
-          accessoryType: .disclosureIndicator,
-          navigationAction: { [unowned self] in
-            self.navigate(.heartTargets)
           }
         ),
       ]),

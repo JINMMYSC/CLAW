@@ -2,14 +2,14 @@ import HamsterUIKit
 import SwiftUI
 import UIKit
 
-class ClawTalkViewController: NibLessViewController {
+public final class ClawTalkViewController: NibLessViewController {
   private let viewModel = ClawTalkViewModel()
 
-  override func viewDidLoad() {
+  public override func viewDidLoad() {
     super.viewDidLoad()
     title = "Now ClawTalk"
 
-    let hostingController = UIHostingController(rootView: ClawTalkRootView(viewModel: self.viewModel))
+    let hostingController = UIHostingController(rootView: ClawAssistantRootView(viewModel: self.viewModel))
     addChild(hostingController)
     view.addSubview(hostingController.view)
     hostingController.view.translatesAutoresizingMaskIntoConstraints = false

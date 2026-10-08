@@ -27,7 +27,6 @@ protocol SubViewControllerFactory {
   func makeSmartFreqViewController() -> SmartFreqViewController
   func makeLogViewController() -> LogViewController
   func makeInputMethodSettingsViewController() -> InputMethodSettingsViewController
-    func makeHeartTargetSettingsViewController() -> HeartTargetSettingsViewController
 }
 
 open class MainViewController: UISplitViewController {
@@ -80,9 +79,6 @@ open class MainViewController: UISplitViewController {
   private lazy var inputMethodSettingsViewController: InputMethodSettingsViewController
     = subViewControllerFactory.makeInputMethodSettingsViewController()
 
-
-  private lazy var heartTargetSettingsViewController: HeartTargetSettingsViewController
-    = subViewControllerFactory.makeHeartTargetSettingsViewController()
 
   private lazy var aboutViewController: AboutViewController
     = subViewControllerFactory.makeAboutViewController()
@@ -198,8 +194,6 @@ extension MainViewController {
       presentLogViewController()
     case .inputMethodSettings:
       presentInputMethodSettingsViewController()
-    case .heartTargets:
-      presentHeartTargetSettingsViewController()
     case .about:
       presentAboutViewController()
     case .main:
@@ -254,6 +248,10 @@ extension MainViewController {
   }
 
   func presentClawTalkViewController() {
+    if primaryNavigationViewController.topViewController === clawTalkViewController ||
+       secondaryNavigationViewController.topViewController === clawTalkViewController {
+      return
+    }
     presentViewController(clawTalkViewController)
   }
 
@@ -273,10 +271,6 @@ extension MainViewController {
     presentViewController(inputMethodSettingsViewController)
   }
 
-
-  func presentHeartTargetSettingsViewController() {
-    presentViewController(heartTargetSettingsViewController)
-  }
 
   func presentAboutViewController() {
     presentViewController(aboutViewController)

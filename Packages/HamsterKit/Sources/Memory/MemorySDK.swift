@@ -1,0 +1,206 @@
+import Foundation
+
+public protocol MemorySDK {
+  func remember(_ item: MemoryV2Record, evidence: [MemoryEvidence]) throws
+  func recall(_ request: MemoryRecallRequest) throws -> [MemoryV2Record]
+  func context(_ request: MemoryContextRequest) throws -> MemoryContext
+  func correct(id: UUID, replacement: MemoryV2Record) throws
+  func forget(id: UUID, mode: ForgetMode) throws
+  func createTask(_ task: ClawSecretaryTask) throws
+  func createIntent(_ intent: StandingIntent) throws
+  func flush(_ session: MemoryFlushSession) throws
+  func projection(_ kind: MemoryProjectionKind, personID: UUID?, projectID: UUID?, limit: Int) throws -> MemoryProjection
+}
+
+public enum MemorySDKError: LocalizedError {
+  case missingMemory(UUID)
+
+  public var errorDescription: String? {
+    switch self {
+    case .missingMemory(let id): return "Memory not found: \(id.uuidString)"
+    }
+  }
+}
+
+/// The single host-app boundary for V2 writes and scoped retrieval.
+/// It keeps a legacy projection while older screens finish migrating.
+public final class DefaultMemorySDK: MemorySDK {
+  public static let shared = DefaultMemorySDK()
+  private let store: ClawMemoryStore
+
+  public init(store: ClawMemoryStore = .shared) {
+    self.store = store
+  }
+
+  public func remember(_ item: MemoryV2Record, evidence: [MemoryEvidence] = []) throws {
+    var record = item
+    record.evidence = evidence
+    try store.saveMemoryV2(record, legacyProjection: legacyProjection(record))
+  }
+
+  /// Compatibility inlet for features still producing the legacy value type.
+  /// The write still crosses the SDK boundary and creates the V2 source of truth.
+  public func rememberLegacy(_ item: ClawMemoryItem) throws {
+    let type: MemoryType
+    switch item.kind {
+    case .communicationPreference, .globalStyle, .languagePreference, .negativePreference, .reusablePhrase:
+      type = .preference
+    case .contactStyle, .relationship:
+      type = .people
+    case .event:
+      type = .episodic
+    case .project:
+      type = .project
+    case .procedure:
+      type = .task
+    default:
+      type = .semantic
+    }
+    let scope: MemoryScope = item.subjectID == nil ? (MemoryScope(rawValue: item.scope) ?? .global) : .person
+    let state: MemoryState = item.status == .active ? .active : (item.status == .archived ? .archived : .invalidated)
+    let record = MemoryV2Record(
+      id: item.id,
+      type: type,
+      state: state,
+      scope: scope,
+      content: item.content,
+      normalizedKey: item.normalizedKey,
+      personID: item.subjectID,
+      confidence: item.confidence,
+      provenance: MemoryProvenance(originType: .systemObserved, sourceApp: item.sourceType, observedAt: item.lastObservedAt, ingestionMethod: item.sourceType),
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    )
+    try store.saveMemoryV2(record, legacyProjection: item)
+  }
+
+  public func recall(_ request: MemoryRecallRequest) throws -> [MemoryV2Record] {
+    try MemoryRouter(store: store).recall(request)
+  }
+
+  public func context(_ request: MemoryContextRequest) throws -> MemoryContext {
+    let recalled = try recall(request.recall)
+    let records = MemoryGuard().evaluate(
+      recalled,
+      personID: request.recall.personID,
+      projectID: request.recall.projectID,
+      temporaryMode: ClawMemoryPolicyService.shared.temporaryMode
+    ).allowed
+    guard request.includeEvidence else { return MemoryContext(records: records) }
+    let ids = records.flatMap { $0.evidence.map(\.rawEventID) }
+    return MemoryContext(records: records, evidence: try store.rawEvents(ids: Array(Set(ids))))
+  }
+
+  public func correct(id: UUID, replacement: MemoryV2Record) throws {
+    guard let existing = try store.memoryV2(id: id) else { throw MemorySDKError.missingMemory(id) }
+    var corrected = replacement
+    corrected.id = id
+    corrected.version = existing.version + 1
+    corrected.updatedAt = Date()
+    corrected.state = .confirmed
+    corrected.provenance.originType = .userCorrection
+    corrected.provenance.trustLevel = MemoryOriginType.userCorrection.trustLevel
+    try remember(corrected, evidence: corrected.evidence)
+  }
+
+  public func forget(id: UUID, mode: ForgetMode) throws {
+    guard var record = try store.memoryV2(id: id) else { throw MemorySDKError.missingMemory(id) }
+    record.version += 1
+    record.updatedAt = Date()
+    switch mode {
+    case .removeEvidence:
+      record.evidence = []
+      record.lineage.rawEventIDs = []
+    case .archive:
+      record.state = .archived
+    case .invalidateDerivedFacts, .fullDelete:
+      record.state = .invalidated
+      if mode == .fullDelete {
+        record.content = ""
+        record.evidence = []
+        record.lineage = MemoryLineage()
+      }
+    }
+    try store.saveMemoryV2(record)
+    _ = try? store.setMemoryStatus(id: id, status: mode == .archive ? .archived : .superseded)
+  }
+
+  public func createTask(_ task: ClawSecretaryTask) throws {
+    try store.upsertTask(task)
+  }
+
+  public func createIntent(_ intent: StandingIntent) throws {
+    try store.saveStandingIntent(intent)
+    let record = MemoryV2Record(
+      id: intent.id,
+      type: .intent,
+      state: .active,
+      scope: intent.personID == nil ? .global : .person,
+      content: intent.action,
+      personID: intent.personID,
+      projectID: intent.projectID,
+      provenance: intent.provenance,
+      expiresAt: intent.expiresAt
+    )
+    try remember(record)
+  }
+
+  public func flush(_ session: MemoryFlushSession) throws {
+    for record in session.records {
+      var scoped = record
+      scoped.sessionID = scoped.sessionID ?? session.sessionID
+      try store.saveMemoryV2(
+        scoped,
+        rawEvents: session.rawEvents,
+        legacyProjection: legacyProjection(scoped)
+      )
+    }
+  }
+
+  public func projection(_ kind: MemoryProjectionKind, personID: UUID? = nil, projectID: UUID? = nil, limit: Int = 100) throws -> MemoryProjection {
+    let records = try store.memoryV2(limit: max(limit * 4, limit)).filter { record in
+      guard record.state == .active || record.state == .confirmed else { return false }
+      if let personID, record.personID != personID { return false }
+      if let projectID, record.projectID != projectID { return false }
+      switch kind {
+      case .relationship: return record.type == .people || record.scope == .relationship
+      case .project: return record.type == .project || record.scope == .project
+      case .episode: return record.type == .episodic
+      case .knowledge: return record.type == .knowledge || record.type == .semantic
+      case .communication: return record.type == .communication || record.type == .preference
+      }
+    }
+    return MemoryProjection(kind: kind, records: Array(records.prefix(max(1, limit))))
+  }
+
+  private func legacyProjection(_ record: MemoryV2Record) -> ClawMemoryItem {
+    let kind: ClawMemoryKind
+    switch record.type {
+    case .preference: kind = .communicationPreference
+    case .people, .communication: kind = .relationship
+    case .task, .intent: kind = .procedure
+    default: kind = .fact
+    }
+    let status: ClawMemoryStatus
+    switch record.state {
+    case .archived: status = .archived
+    case .invalidated: status = .superseded
+    default: status = .active
+    }
+    return ClawMemoryItem(
+      id: record.id,
+      kind: kind,
+      scope: record.scope == .person ? "contact" : record.scope.rawValue,
+      subjectID: record.personID,
+      content: record.content,
+      normalizedKey: record.normalizedKey,
+      sourceType: record.provenance.ingestionMethod,
+      confidence: record.confidence,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      lastObservedAt: record.provenance.observedAt,
+      status: status
+    )
+  }
+}
+

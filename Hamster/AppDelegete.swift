@@ -7,6 +7,7 @@
 
 import UIKit
 import UserNotifications
+import HamsteriOS
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -14,6 +15,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     UNUserNotificationCenter.current().delegate = self
     // ClawTalk theme: system fonts + red/black/white appearance
     ClawTalkTheme.applyGlobalAppearance()
+    ClawBackgroundWork.register()
+    ClawBackgroundWork.scheduleAll()
     return true
   }
 

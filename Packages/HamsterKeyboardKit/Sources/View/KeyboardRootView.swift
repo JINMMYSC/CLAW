@@ -239,8 +239,34 @@ class KeyboardRootView: NibLessView {
   }
 
   override func setupAppearance() {
-    backgroundColor = appearance.backgroundStyle.backgroundColor
+    if keyboardContext.useIOSNativeLayout {
+      backgroundColor = IOSNativePalette.current(dark: keyboardContext.hasDarkColorScheme).board
+    } else {
+      backgroundColor = appearance.backgroundStyle.backgroundColor
+    }
     contentMode = .redraw
+    updateBottomFade()
+  }
+
+  // MARK: - 底部渐变
+
+  /// 键盘最底部那条由系统绘制、改不了颜色。这里让主题底色在最后一段渐变到接近系统的底色，
+  /// 避免主题色与下巴之间出现一条生硬的分界线。
+  private let bottomFadeLayer = CAGradientLayer()
+
+  private func updateBottomFade() {
+    let top = backgroundColor ?? .clear
+    // 近似系统键盘底色；真实取值受宿主 App 的 keyboardAppearance 影响，这里取常用值。
+    let bottom = keyboardContext.hasDarkColorScheme
+      ? UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
+      : UIColor(red: 0.82, green: 0.83, blue: 0.85, alpha: 1)
+    bottomFadeLayer.colors = [top.cgColor, bottom.cgColor]
+    bottomFadeLayer.startPoint = CGPoint(x: 0.5, y: 0)
+    bottomFadeLayer.endPoint = CGPoint(x: 0.5, y: 1)
+    bottomFadeLayer.zPosition = -1
+    if bottomFadeLayer.superlayer !== layer {
+      layer.addSublayer(bottomFadeLayer)
+    }
   }
 
   // MARK: - Layout
@@ -332,7 +358,7 @@ class KeyboardRootView: NibLessView {
           guard let self = self else { return }
           guard let heightConstraint = self.toolbarHeightConstraint else { return }
           if self.keyboardContext.candidatesViewState.isCollapse() {
-            let panelHeight: CGFloat = tab >= 0 ? ClawPanelOverlayView.panelHeight : 0
+            let panelHeight = ClawPanelOverlayView.preferredHeight(for: tab)
             // IOS 原生布局：面板展开时候选栏固定顶行，工具栏高度多一行
             let extra = (tab >= 0 && self.keyboardContext.useIOSNativeLayout) ? self.keyboardContext.heightOfToolbar : 0
             heightConstraint.constant = self.keyboardContext.heightOfToolbar + extra + panelHeight
@@ -426,6 +452,15 @@ class KeyboardRootView: NibLessView {
     super.layoutSubviews()
     // Logger.statistics.debug("KeyboardRootView: layoutSubviews()")
 
+    // 渐变层要贴在键盘最底部，且必须在下面的候选栏状态判断提前 return 之前更新。
+    let fadeHeight = max(safeAreaInsets.bottom, 10)
+    bottomFadeLayer.frame = CGRect(
+      x: 0,
+      y: bounds.height - fadeHeight,
+      width: bounds.width,
+      height: fadeHeight
+    )
+
     // 检测候选栏状态是否发生变化
     guard candidateViewState != keyboardContext.candidatesViewState else { return }
     candidateViewState = keyboardContext.candidatesViewState
@@ -434,7 +469,7 @@ class KeyboardRootView: NibLessView {
     if candidateViewState.isCollapse() {
       // 键盘显示
       let panelExpanded = keyboardContext.clawPanelTab >= 0
-      let panelHeight: CGFloat = panelExpanded ? ClawPanelOverlayView.panelHeight : 0
+      let panelHeight = panelExpanded ? ClawPanelOverlayView.preferredHeight(for: keyboardContext.clawPanelTab) : 0
       // IOS 原生布局：面板展开时候选栏固定顶行，工具栏高度多一行
       let extra = (panelExpanded && keyboardContext.useIOSNativeLayout) ? keyboardContext.heightOfToolbar : 0
       toolbarHeightConstraint?.constant = keyboardContext.heightOfToolbar + extra + panelHeight
@@ -443,7 +478,15 @@ class KeyboardRootView: NibLessView {
       NSLayoutConstraint.activate(toolbarCollapseDynamicConstraints)
     } else {
       // 键盘隐藏
-      let toolbarHeight = primaryKeyboardView.bounds.height + keyboardContext.heightOfToolbar
+      // The state publisher can fire before the keyboard view has completed its
+      // first layout. In that case `primaryKeyboardView.bounds.height` is zero;
+      // derive the keyboard area from the root view so expansion still fills all
+      // available rows instead of leaving the candidate collection one row high.
+      let toolbarHeight = CandidateExpandedLayoutMetrics.toolbarHeight(
+        rootHeight: bounds.height,
+        collapsedToolbarHeight: keyboardContext.heightOfToolbar,
+        keyboardBoundsHeight: primaryKeyboardView.bounds.height
+      )
       primaryKeyboardView.removeFromSuperview()
 
       toolbarHeightConstraint?.constant = toolbarHeight
@@ -487,5 +530,16 @@ class KeyboardRootView: NibLessView {
     // 保存 cache
 //    tempKeyboardViewCache[keyboardType] = tempKeyboardView
     return tempKeyboardView
+  }
+}
+
+enum CandidateExpandedLayoutMetrics {
+  static func toolbarHeight(
+    rootHeight: CGFloat,
+    collapsedToolbarHeight: CGFloat,
+    keyboardBoundsHeight: CGFloat
+  ) -> CGFloat {
+    let availableKeyboardHeight = max(0, rootHeight - collapsedToolbarHeight)
+    return collapsedToolbarHeight + max(keyboardBoundsHeight, availableKeyboardHeight)
   }
 }

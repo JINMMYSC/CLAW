@@ -17,12 +17,18 @@ public class SmartFreqViewModel: ObservableObject {
   @Published public var totalNewPhrases: Int = 0
   @Published public var currentMonthTokens: Int = 0
   @Published public var lastRunDate: Date?
+  @Published public var validationReport = SmartFreqValidationReport()
+  @Published public var applyStatus: String?
+  @Published public var isApplying = false
+  @Published public var canRollback = false
 
   // MARK: - Config
 
   @Published public var isEnabled: Bool = false
   @Published public var intervalMinutes: Int = 24 * 60
   @Published public var monthlyTokenBudget: Int = 0
+  @Published public var includePersonalSuggestions = false
+  @Published public var phraseBudget = 500
 
   // MARK: - AI Config
 
@@ -46,6 +52,10 @@ public class SmartFreqViewModel: ObservableObject {
     intervalMinutes = cfg.intervalMinutes
     monthlyTokenBudget = cfg.monthlyTokenBudget
     lastRunDate = cfg.lastRunDate
+    includePersonalSuggestions = cfg.includePersonalSuggestions ?? false
+    phraseBudget = cfg.phraseBudget ?? 500
+    validationReport = service.validationReport
+    canRollback = SmartFreqApplyService.shared.canRollback
   }
 
   public func saveConfig() {
@@ -53,6 +63,8 @@ public class SmartFreqViewModel: ObservableObject {
     cfg.isEnabled = isEnabled
     cfg.intervalMinutes = intervalMinutes
     cfg.monthlyTokenBudget = monthlyTokenBudget
+    cfg.includePersonalSuggestions = includePersonalSuggestions
+    cfg.phraseBudget = max(1, phraseBudget)
     service.config = cfg
   }
 
@@ -88,6 +100,38 @@ public class SmartFreqViewModel: ObservableObject {
   public func resetAllRules() {
     service.resetAllRules()
     reload()
+  }
+
+  public func applyValidatedPhrases() {
+    guard !isApplying else { return }
+    isApplying = true
+    applyStatus = "正在创建快照并部署…"
+    Task { @MainActor in
+      defer { isApplying = false }
+      do {
+        let summary = try SmartFreqApplyService.shared.apply()
+        applyStatus = "已向 \(summary.schemaNames.joined(separator: "、")) 部署 \(summary.phraseCount) 个词条"
+      } catch {
+        applyStatus = "应用失败：\(error.localizedDescription)"
+      }
+      reload()
+    }
+  }
+
+  public func rollbackLastApply() {
+    guard !isApplying else { return }
+    isApplying = true
+    applyStatus = "正在恢复上次快照…"
+    Task { @MainActor in
+      defer { isApplying = false }
+      do {
+        let summary = try SmartFreqApplyService.shared.rollback()
+        applyStatus = "已回滚 \(summary.schemaNames.joined(separator: "、")) 并重新部署"
+      } catch {
+        applyStatus = "回滚失败：\(error.localizedDescription)"
+      }
+      reload()
+    }
   }
 
   // MARK: - Formatting Helpers

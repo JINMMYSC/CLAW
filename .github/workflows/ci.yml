@@ -3,47 +3,101 @@ on:
   push:
     branches:
       - main
+      - work/claw-voice-keyboard-bg
+      - work/claw-productization-20261006
   pull_request:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    runs-on: macos-13
+    runs-on: macos-15
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          submodules: true
+        uses: actions/checkout@v4
 
-      - name: Download Frameworks
-        uses: robinraju/release-downloader@v1.7
-        with:
-          repository: "imfuxiao/LibrimeKit"
-          latest: true
-          fileName: "Frameworks.tgz"
-
-      - name: Un-tar Frameworks
+      - name: Download Rime frameworks (zgl v0.1.0)
         run: |
-          tar -xzf Frameworks.tgz -C Frameworks/..
+          set -e
+          mkdir -p Frameworks
+          cd Frameworks
+          BASE="https://github.com/zhanggenlove/LibrimeKit/releases/download/v0.1.0"
+          for f in librime libleveldb libmarisa libopencc libyaml-cpp; do
+            curl -fL -o "$f.xcframework.zip" "$BASE/$f.xcframework.zip"
+            unzip -oq "$f.xcframework.zip"
+            rm -f "$f.xcframework.zip"
+          done
+          ls -la
 
       - name: Build Schemas
         run: |
-          make schema
+          set -e
+          bash InputSchemaBuild.sh
+          ls -la Resources/SharedSupport/
 
-      - name: Select Xcode
-        run: sudo xcode-select -s "/Applications/Xcode_15.0.1.app"
+      - name: Show toolchain
+        run: xcodebuild -version && swift --version
+
+      - name: Run HamsterKit unit tests
+        run: |
+          set -euo pipefail
+          SIMULATOR_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(d["udid"] for runtime in data["devices"].values() for d in runtime if d["name"].startswith("iPhone")))')
+          cd Packages/HamsterKit
+          xcodebuild test \
+            -scheme HamsterKit \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath /tmp/HamsterKitTests
+
+      - name: Run HamsteriOS unit tests
+        run: |
+          set -euo pipefail
+          SIMULATOR_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(d["udid"] for runtime in data["devices"].values() for d in runtime if d["name"].startswith("iPhone")))')
+          cd Packages/HamsteriOS
+          xcodebuild test \
+            -scheme HamsteriOS \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -skip-testing:HamsteriOSTests/CloudKitHelperTest \
+            -derivedDataPath /tmp/HamsteriOSTests \
+            -resultBundlePath /tmp/HamsteriOSTests.xcresult
+
+      - name: Export native composer test screenshots
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -d /tmp/HamsteriOSTests.xcresult ]; then
+            xcrun xcresulttool export attachments \
+              --path /tmp/HamsteriOSTests.xcresult \
+              --output-path composer-test-screenshots
+          fi
+
+      - name: Upload native composer test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claw-composer-native-tests
+          path: |
+            composer-test-screenshots/
+            /tmp/HamsteriOSTests.xcresult/
+          if-no-files-found: warn
 
       - name: Compile
         run: |
           xcodebuild archive -archivePath "Hamster" -scheme "Hamster" -sdk "iphoneos" -arch arm64 -configuration Release CODE_SIGNING_ALLOWED=NO
           BUILT_PATH=$(find Hamster.xcarchive -name '*.app' -type d | head -1)
           find "$BUILT_PATH" -type d -path '*/Frameworks/*.dylib' -exec codesign --force --sign - --timestamp=none \{\} \;
-          codesign --force --sign - --entitlements "Hamster/Hamster.entitlements" --timestamp=none "$BUILT_PATH"
+          cp "Hamster/Hamster.entitlements" /tmp/ci-entitlements.plist
+          /usr/libexec/PlistBuddy -c "Delete :keychain-access-groups" /tmp/ci-entitlements.plist || true
+          plutil -lint /tmp/ci-entitlements.plist
+          codesign --force --sign - --entitlements /tmp/ci-entitlements.plist --timestamp=none "$BUILT_PATH"
           tar -acf Hamster.xcarchive.tgz Hamster.xcarchive
 
       - name: Upload xcarchive
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Hamster-ios-arm64-xcarchive
           path: Hamster.xcarchive.tgz
+

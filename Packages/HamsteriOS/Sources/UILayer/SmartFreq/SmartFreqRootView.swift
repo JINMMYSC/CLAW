@@ -97,6 +97,59 @@ public struct SmartFreqRootView: View {
         .listRowBackground(Color.clear)
       }
 
+      Section("待应用变更") {
+        HStack {
+          validationCount("已通过", count: viewModel.validationReport.accepted.count, color: .green)
+          Spacer()
+          validationCount("待确认", count: viewModel.validationReport.pending.count, color: .orange)
+          Spacer()
+          validationCount("已拒绝", count: viewModel.validationReport.rejected.count, color: .red)
+        }
+
+        ForEach(Array(viewModel.validationReport.accepted.prefix(5).enumerated()), id: \.offset) { _, phrase in
+          VStack(alignment: .leading, spacing: 3) {
+            Text(phrase.word).font(.body.bold())
+            Text("\(phrase.code) · 权重 \(phrase.weight)")
+              .font(.caption)
+              .foregroundColor(.secondary)
+          }
+        }
+
+        if !viewModel.validationReport.pending.isEmpty {
+          DisclosureGroup("待确认详情") {
+            ForEach(Array(viewModel.validationReport.pending.prefix(5).enumerated()), id: \.offset) { _, item in
+              validationDetail(item, color: .orange)
+            }
+          }
+        }
+
+        if !viewModel.validationReport.rejected.isEmpty {
+          DisclosureGroup("拒绝详情") {
+            ForEach(Array(viewModel.validationReport.rejected.prefix(5).enumerated()), id: \.offset) { _, item in
+              validationDetail(item, color: .red)
+            }
+          }
+        }
+
+        if let status = viewModel.applyStatus {
+          Text(status).font(.footnote).foregroundColor(.secondary)
+        }
+
+        Button {
+          viewModel.applyValidatedPhrases()
+        } label: {
+          Label("快照并应用到当前方案", systemImage: "arrow.triangle.2.circlepath.circle.fill")
+        }
+        .disabled(viewModel.validationReport.accepted.isEmpty || viewModel.isApplying)
+
+        Button(role: .destructive) {
+          viewModel.rollbackLastApply()
+        } label: {
+          Label("一键回滚上次应用", systemImage: "arrow.uturn.backward.circle")
+        }
+        .disabled(!viewModel.canRollback || viewModel.isApplying)
+      }
+
       // History
       Section("分析记录") {
         ForEach(viewModel.results) { result in
@@ -108,6 +161,36 @@ public struct SmartFreqRootView: View {
       }
     }
     .listStyle(.insetGrouped)
+  }
+
+  private func validationCount(_ title: String, count: Int, color: Color) -> some View {
+    VStack(spacing: 2) {
+      Text("\(count)").font(.headline.monospacedDigit()).foregroundColor(color)
+      Text(title).font(.caption2).foregroundColor(.secondary)
+    }
+  }
+
+  private func validationDetail(_ item: SmartFreqReviewedDraft, color: Color) -> some View {
+    HStack {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(item.draft.word)
+        Text(item.draft.code).font(.caption2).foregroundColor(.secondary)
+      }
+      Spacer()
+      Text(validationReason(item.reason)).font(.caption).foregroundColor(color)
+    }
+  }
+
+  private func validationReason(_ reason: SmartFreqValidationReason) -> String {
+    switch reason {
+    case .illegalTerm: return "格式非法"
+    case .notObserved: return "未观察到"
+    case .insufficientEvidence: return "证据不足"
+    case .pinyinMismatch: return "拼音不一致"
+    case .duplicate: return "重复"
+    case .conflict: return "存在冲突"
+    case .budgetExceeded: return "超出预算"
+    }
   }
 }
 
@@ -198,6 +281,29 @@ public struct SmartFreqSettingsView: View {
             .tint(.cyan)
         } footer: {
           Text("开启后，输入法每隔设定时间自动分析输入记录，优化候选词排序并添加新词。全程后台静默执行。")
+        }
+
+        Section {
+          Toggle("允许人名与上下文建议", isOn: $viewModel.includePersonalSuggestions)
+            .tint(.cyan)
+          HStack {
+            Text("词条上限")
+            Spacer()
+            TextField(
+              "500",
+              text: Binding(
+                get: { String(viewModel.phraseBudget) },
+                set: { viewModel.phraseBudget = Int($0) ?? 0 }
+              )
+            )
+              .multilineTextAlignment(.trailing)
+              .keyboardType(.numberPad)
+              .frame(width: 90)
+          }
+        } header: {
+          Text("词条治理")
+        } footer: {
+          Text("人名与上下文建议默认关闭。词条上限会在每次应用前清理超出预算的旧条目；所有 AI 输出仍需通过本地校验。")
         }
 
         Section("分析频次") {
@@ -325,3 +431,4 @@ private struct SmartFreqSecureKeyField: View {
     .onAppear { text = key }
   }
 }
+

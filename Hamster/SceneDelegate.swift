@@ -7,10 +7,12 @@
 
 import HamsteriOS
 import HamsterKit
+import CoreSpotlight
 import UIKit
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
   var window: UIWindow?
+  private var openedVoiceDeepLinkInCurrentActivation = false
 
   func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
     guard let windowScene = (scene as? UIWindowScene) else { return }
@@ -18,15 +20,33 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
     if window == nil {
 #if DEBUG
       // Startup smoke regression hook: exercise the legacy v1 migration path.
-      if ProcessInfo.processInfo.arguments.contains("-clawTalkForceV1Migration") {
+      let launchArguments = ProcessInfo.processInfo.arguments
+      if launchArguments.contains("-clawTalkForceV1Migration") {
         UserDefaults.hamster._setFirstRunningForV1(false)
       }
 #endif
       let window = UIWindow(windowScene: windowScene)
+#if DEBUG
+      if let index = launchArguments.firstIndex(of: "-clawComposerScreenshot"), index + 1 < launchArguments.count {
+        // Mount the production CLAW screen directly so screenshot readiness does
+        // not depend on the asynchronous root-navigation observer being installed.
+        window.rootViewController = UINavigationController(rootViewController: ClawTalkViewController())
+      } else {
+        window.rootViewController = HamsterAppDependencyContainer.shared.makeRootController()
+      }
+#else
       window.rootViewController = HamsterAppDependencyContainer.shared.makeRootController()
+#endif
       window.tintColor = ClawTalkTheme.accent
+      // 主程序外观偏好（系统 / 浅色 / 深色），与键盘扩展共用同一份 App Group 值。
+      window.overrideUserInterfaceStyle = ClawAppearanceService.style.userInterfaceStyle
       self.window = window
       window.makeKeyAndVisible()
+#if DEBUG
+      if let index = launchArguments.firstIndex(of: "-clawComposerScreenshot"), index + 1 < launchArguments.count {
+        if launchArguments[index + 1] == "dark" { window.overrideUserInterfaceStyle = .dark }
+      }
+#endif
       // ClawTalk 品牌启动层：与 LaunchScreen 视觉一致，1.5s 淡出
       SplashOverlayView().presentAndDismiss(in: window)
     }
@@ -43,6 +63,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
 
       // url.query(): 获取 `URL` 查询参数
       // url.lastPathComponent 获取 `URL` 中 `/a/b` 中最后一个 b
+      if url.query?.contains("voiceInput=1") == true {
+        openedVoiceDeepLinkInCurrentActivation = true
+        UserDefaults(suiteName: HamsterConstants.appGroupName)?
+          .set(true, forKey: HamsterConstants.clawVoiceInputLaunchKey)
+        NotificationCenter.default.post(name: .clawVoiceInputRequested, object: nil)
+      }
+      if url.query?.contains("voiceCall=1") == true {
+        UserDefaults(suiteName: HamsterConstants.appGroupName)?
+          .set(true, forKey: HamsterConstants.clawVoiceCallLaunchKey)
+        NotificationCenter.default.post(name: .clawVoiceCallRequested, object: nil)
+      }
       let components = url.lastPathComponent
       if let subView = SettingsSubView(rawValue: components) {
         HamsterAppDependencyContainer.shared.mainViewModel.navigation(subView)
@@ -83,11 +114,28 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
 
       // url.query(): 获取 `URL` 查询参数
       // url.lastPathComponent 获取 `URL` 中 `/a/b` 中最后一个 b
+      if url.query?.contains("voiceInput=1") == true {
+        openedVoiceDeepLinkInCurrentActivation = true
+        UserDefaults(suiteName: HamsterConstants.appGroupName)?
+          .set(true, forKey: HamsterConstants.clawVoiceInputLaunchKey)
+        NotificationCenter.default.post(name: .clawVoiceInputRequested, object: nil)
+      }
+      if url.query?.contains("voiceCall=1") == true {
+        UserDefaults(suiteName: HamsterConstants.appGroupName)?
+          .set(true, forKey: HamsterConstants.clawVoiceCallLaunchKey)
+        NotificationCenter.default.post(name: .clawVoiceCallRequested, object: nil)
+      }
       let components = url.lastPathComponent
       if let subView = SettingsSubView(rawValue: components) {
         HamsterAppDependencyContainer.shared.mainViewModel.navigation(subView)
       }
     }
+  }
+
+  func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+    guard userActivity.activityType == CSSearchableItemActionType,
+          userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String != nil else { return }
+    HamsterAppDependencyContainer.shared.mainViewModel.navigation(.clawTalk)
   }
 
   /// 程序已启动下，通过 quick action 打开
@@ -115,10 +163,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
   func sceneDidBecomeActive(_ scene: UIScene) {
     // Called when the scene has moved from an inactive state to an active state.
     // Use this method to restart any tasks that were paused (or not yet started) when the scene was inactive.
+    if !openedVoiceDeepLinkInCurrentActivation,
+       ClawVoiceDictationHandoff.shared.snapshot.state == .pending {
+      DispatchQueue.main.async {
+        NotificationCenter.default.post(name: .clawVoiceInputRequested, object: nil)
+        HamsterAppDependencyContainer.shared.mainViewModel.navigation(.clawTalk)
+      }
+    }
   }
 
   /// 应用注册 quick action
   func sceneWillResignActive(_ scene: UIScene) {
+    openedVoiceDeepLinkInCurrentActivation = false
     let application = UIApplication.shared
     let rimeDeploy = UIApplicationShortcutItem(type: "RIME", localizedTitle: ShortcutItemType.rimeDeploy.rawValue)
     let rimeSync = UIApplicationShortcutItem(type: "RIME", localizedTitle: ShortcutItemType.rimeSync.rawValue)
@@ -133,7 +189,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate, UISceneDelegate {
 
   func sceneDidEnterBackground(_ scene: UIScene) {
     // Called as the scene transitions from the foreground to the background.
-    // Use this method to save data, release shared resources, and store enough scene-specific state information
-    // to restore the scene back to its current state.
+    ClawBackgroundWork.scheduleAll()
   }
 }

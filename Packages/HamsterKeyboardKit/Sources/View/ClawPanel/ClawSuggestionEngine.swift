@@ -16,6 +16,8 @@ public final class ClawSuggestionEngine {
   private var debounceWorkItem: DispatchWorkItem?
   private var lastRequestedText = ""
   private var requestInFlight = false
+  /// 请求进行中又收到的新输入时保留“最新一份”，避免旧请求把新输入直接丢掉。
+  private var pendingText: String?
 
   private init() {}
 
@@ -39,20 +41,26 @@ public final class ClawSuggestionEngine {
   /// 清空建议（面板关闭/键盘收起时）
   public func clear() {
     debounceWorkItem?.cancel()
+    pendingText = nil
     suggestions = []
   }
 
   private func requestSuggestions(for text: String) {
-    guard !requestInFlight else { return }
+    guard !requestInFlight else {
+      pendingText = text
+      return
+    }
     lastRequestedText = text
     requestInFlight = true
 
     let systemPrompt = "你是轻量输入助手。请根据用户最近输入的内容，生成 2 条简短、自然、可直接发送的接话建议。每条不超过 12 个字，不要序号，不要引号，用换行符分隔，只输出建议本身。"
+    let requestConfiguration = AIService.shared.currentRequestConfiguration
     AIService.shared.chat(
       messages: [
         AIMessage(role: "system", content: systemPrompt),
         AIMessage(role: "user", content: text),
-      ]
+      ],
+      configuration: requestConfiguration
     ) { [weak self] result in
       DispatchQueue.main.async {
         guard let self else { return }
@@ -66,6 +74,12 @@ public final class ClawSuggestionEngine {
           self.suggestions = Array(lines.prefix(3))
         case .failure:
           self.suggestions = []
+        }
+        if let pending = self.pendingText, pending != self.lastRequestedText {
+          self.pendingText = nil
+          self.requestSuggestions(for: pending)
+        } else {
+          self.pendingText = nil
         }
       }
     }

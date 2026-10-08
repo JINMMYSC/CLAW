@@ -54,39 +54,49 @@ public extension URL {
 
 // MARK: iCloud 相关地址
 
+/// iCloud 不可用：未登录 iCloud、关闭了 iCloud Drive，或该 App 的 iCloud 开关未打开。
+public enum ICloudPathError: LocalizedError {
+  case unavailable
+
+  public var errorDescription: String? {
+    "iCloud 不可用，请先在系统设置中登录 iCloud 并打开 iCloud Drive"
+  }
+}
+
 public extension URL {
   // 应用iCloud文件夹
   // 注意：appendingPathComponent("Documents")是非常重要的一点，如果没有它，你的文件夹将不会显示在iCloud Drive里面。
-  static var iCloudDocumentURL: URL? = {
-    if let icloudURL = FileManager.default.url(forUbiquityContainerIdentifier: nil) {
-      return icloudURL.appendingPathComponent("Documents")
-    }
-    return nil
-  }()
+  /// 每次求值、不做缓存：用户中途登录 iCloud 后无需重启 App 即可生效。
+  static var iCloudDocumentURL: URL? {
+    guard let icloudURL = FileManager.default.url(forUbiquityContainerIdentifier: nil) else { return nil }
+    return icloudURL.appendingPathComponent("Documents")
+  }
 
-  // TODO: 这里需要重写
   // iCloud中RIME使用文件路径
-  static var iCloudRimeURL: URL {
-    iCloudDocumentURL!.appendingPathComponent("RIME")
+  // iCloud 不可用时抛错，避免强制解包导致闪退。
+  static func iCloudRimeURL() throws -> URL {
+    guard let base = iCloudDocumentURL else { throw ICloudPathError.unavailable }
+    return base.appendingPathComponent("RIME")
   }
 
   // iCloud中 RIME sharedSupport 路径
-  static var iCloudSharedSupportURL: URL {
-    iCloudRimeURL.appendingPathComponent(HamsterConstants.rimeSharedSupportPathName)
+  static func iCloudSharedSupportURL() throws -> URL {
+    try iCloudRimeURL().appendingPathComponent(HamsterConstants.rimeSharedSupportPathName)
   }
 
   // iCloud中 RIME 方案 userData 路径
-  static var iCloudUserDataURL: URL {
-    iCloudRimeURL.appendingPathComponent(HamsterConstants.rimeUserPathName)
+  static func iCloudUserDataURL() throws -> URL {
+    try iCloudRimeURL().appendingPathComponent(HamsterConstants.rimeUserPathName)
   }
 
   // iCloud 中 RIME 方案同步路径
-  static var iCloudRimeSyncURL: URL {
-    iCloudRimeURL.appendingPathComponent("sync")
+  static func iCloudRimeSyncURL() throws -> URL {
+    try iCloudRimeURL().appendingPathComponent("sync")
   }
 
   // iCloud 中 软件备份路径
-  static var iCloudBackupsURL: URL {
-    iCloudDocumentURL!.appendingPathComponent("backups")
+  static func iCloudBackupsURL() throws -> URL {
+    guard let base = iCloudDocumentURL else { throw ICloudPathError.unavailable }
+    return base.appendingPathComponent("backups")
   }
 }

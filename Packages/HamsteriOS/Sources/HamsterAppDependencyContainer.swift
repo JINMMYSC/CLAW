@@ -261,7 +261,7 @@ extension HamsterAppDependencyContainer: AppleCloudViewModelFactory {
 
 extension HamsterAppDependencyContainer: AboutViewModelFactory {
   func makeAboutViewModel() -> AboutViewModel {
-    return AboutViewModel()
+    return AboutViewModel(rimeContext: rimeContext)
   }
 }
 
@@ -378,7 +378,4 @@ extension HamsterAppDependencyContainer: SubViewControllerFactory {
   }
 
 
-  func makeHeartTargetSettingsViewController() -> HeartTargetSettingsViewController {
-    HeartTargetSettingsViewController()
-  }
 }

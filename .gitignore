@@ -31,3 +31,5 @@ package/
 push.err
 build-dd/
 *.log
+__pycache__/
+*.pyc

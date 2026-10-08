@@ -18,17 +18,78 @@ struct ClawTalkRootView: View {
 
   var body: some View {
     List {
-      // 统计概览
       Section {
-        statsRow
-      } header: {
-        Text("数据概览")
+        VStack(alignment: .leading, spacing: 12) {
+          HStack {
+            VStack(alignment: .leading, spacing: 3) {
+              Text("NOW CLAW TALK")
+                .font(.headline)
+              Text(HeartTargetService.shared.selectedProfile.map { "当前人物：\($0.displayName)" } ?? "当前：全局助手模式")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: ClawTalkPrivacyService.shared.isCollectionEnabled ? "waveform.and.mic" : "pause.circle")
+              .font(.title2)
+              .foregroundColor(ClawTalkPrivacyService.shared.isCollectionEnabled ? .accentColor : .orange)
+          }
+          HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("今日采集")
+                .font(.caption)
+                .foregroundColor(.secondary)
+              Text("\(viewModel.todaySummary.todayInputCount) 条")
+                .font(.title2.weight(.semibold))
+            }
+            Spacer()
+            Text(viewModel.latestCollectionTimeText)
+              .font(.caption)
+              .foregroundColor(.secondary)
+          }
+          Button { viewModel.recordClipboardNow() } label: {
+            Label("记录当前剪贴板", systemImage: "arrow.down.doc.fill")
+              .frame(maxWidth: .infinity)
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(!viewModel.clipboardEnabled)
+        }
+        .padding(.vertical, 4)
+      } footer: {
+        Text(viewModel.clipboardEnabled ? "今日采集汇总包含键盘输入和剪贴板记录。" : "开启下方剪贴板监听后，可手动记录当前剪贴板。")
       }
 
-      // 日期列表
+      // 先展示当前状态：这个页面只负责数据、隐私和维护，不再与“助手”页抢职责。
+      Section {
+        statsRow
+        Toggle(isOn: Binding(
+          get: { ClawTalkPrivacyService.shared.isCollectionEnabled },
+          set: { value in
+            if ClawTalkPrivacyService.shared.isCollectionEnabled != value {
+              ClawTalkPrivacyService.shared.toggle()
+            }
+          }
+        )) {
+          Label("键盘输入记录", systemImage: "keyboard")
+        }
+      } header: {
+        Text("当前状态")
+      } footer: {
+        Text("关闭后键盘仍可正常输入，但不会把新的输入写入 CLAW 长期数据。")
+      }
+
+      // 隐私优先放在历史数据之前，用户先决定“收不收”，再管理“收了什么”。
+      sensitiveFilterSection
+
+      // 剪贴板属于明确手动采集的数据源。
+      clipboardSection
+      if viewModel.clipboardEnabled && !viewModel.clipboardPreviewEntries.isEmpty {
+        clipboardPreviewSection
+      }
+
+      // 历史记录
       Section {
         if viewModel.availableDates.isEmpty {
-          Text("暂无采集数据\n使用ClawTalk输入法打字后将在此显示")
+          Text("暂无输入历史\n使用 CLAW TALK 输入法后将在这里按日期显示")
             .font(.subheadline)
             .foregroundColor(.secondary)
             .multilineTextAlignment(.center)
@@ -41,7 +102,7 @@ struct ClawTalkRootView: View {
         }
       } header: {
         HStack {
-          Text("采集记录")
+          Text("输入历史")
           Spacer()
           Button(viewModel.selectedDates.count == viewModel.availableDates.count ? "全不选" : "全选") {
             if viewModel.selectedDates.count == viewModel.availableDates.count { viewModel.deselectAll() }
@@ -58,23 +119,14 @@ struct ClawTalkRootView: View {
           exportButton
           deleteSelectedButton
         } header: {
-          Text("iCloud 操作")
+          Text("备份与导出")
+        } footer: {
+          Text("这里只处理原始输入记录。结构化 Memory / 人物 / Skill 的完整迁移请到“记忆”页使用 .clawmemory。")
         }
       }
 
-      // 敏感词过滤
-      sensitiveFilterSection
-
-      // AI 分析
+      // 旧的原始记录 AI 分析保留为高级工具，不再作为本页主流程。
       aiSection
-
-      // 剪贴板监听
-      clipboardSection
-
-      // 最近剪贴板记录
-      if viewModel.clipboardEnabled && !viewModel.clipboardPreviewEntries.isEmpty {
-        clipboardPreviewSection
-      }
 
       // 状态消息
       if !viewModel.statusMessage.isEmpty {
@@ -92,7 +144,7 @@ struct ClawTalkRootView: View {
         Text("说明")
       }
     }
-    .navigationTitle("Now ClawTalk")
+    .navigationTitle("NOW CLAW TALK")
     .sheet(isPresented: $showingPreview) { previewSheet }
     .sheet(isPresented: $showingAIChat) { aiChatSheet }
     .sheet(isPresented: $showingAISettings) { aiSettingsSheet }
@@ -120,6 +172,7 @@ struct ClawTalkRootView: View {
       Text("删除所有剪贴板记录？此操作不可恢复。")
     }
     .onAppear { viewModel.reload() }
+    .clawKeyboardDismissal()
   }
 
   // MARK: - Stats
@@ -286,13 +339,13 @@ struct ClawTalkRootView: View {
       }
     } header: {
       HStack {
-        Text("AI 分析")
+        Text("高级分析")
         Spacer()
         Button("管理 Prompt") { showingAISettings = true }
           .font(.caption)
       }
     } footer: {
-      Text("选择 Prompt 后可将采集记录一键发送给 AI 分析。支持 OpenAI / OpenRouter / Claude。")
+      Text("这里只分析原始输入/剪贴板记录；日常对话、人物和任务请使用“助手 / 人物 / 今日”页面。")
         .font(.caption)
     }
   }
@@ -305,9 +358,6 @@ struct ClawTalkRootView: View {
         Label("剪贴板监听", systemImage: "clipboard")
       }
       if viewModel.clipboardEnabled {
-        Button { viewModel.recordClipboardNow() } label: {
-          Label("立即记录剪贴板", systemImage: "arrow.down.doc")
-        }
         HStack {
           Label("已记录", systemImage: "doc.on.clipboard")
           Spacer()
@@ -537,6 +587,7 @@ private struct AIChatView: View {
       }
       .padding()
     }
+    .clawKeyboardDismissal()
   }
 }
 
@@ -642,6 +693,7 @@ private struct AISettingsView: View {
         Text("Prompt 管理")
       }
     }
+    .clawKeyboardDismissal()
     .onAppear {
       openAIKey = viewModel.apiKey(for: .openai)
       openRouterKey = viewModel.apiKey(for: .openrouter)
@@ -727,6 +779,7 @@ struct PromptEditorView: View {
             .font(.caption).foregroundColor(.secondary)
         }
       }
+      .clawKeyboardDismissal()
       .navigationTitle(prompt.name.isEmpty ? "新建 Prompt" : "编辑 Prompt")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

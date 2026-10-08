@@ -2,8 +2,14 @@ name: Build & Sign GuruIM IPA
 
 on:
   push:
+    branches: [main, work/claw-voice-keyboard-bg, work/claw-productization-20261006]
+  pull_request:
     branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -75,7 +81,14 @@ jobs:
 
   sign:
     needs: build
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.ref == 'refs/heads/main' ||
+      github.ref == 'refs/heads/work/claw-voice-keyboard-bg' ||
+      github.ref == 'refs/heads/work/claw-productization-20261006' ||
+      (github.event_name == 'pull_request' &&
+       github.head_ref == 'work/claw-productization-20261006' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -86,13 +99,22 @@ jobs:
         id: check
         env:
           P12_B64: ${{ secrets.P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          MAIN_PROFILE_B64: ${{ secrets.PROFILE_MAIN_B64 }}
+          EXT_PROFILE_B64: ${{ secrets.PROFILE_EXT_B64 }}
         run: |
-          if [ -z "$P12_B64" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Signing secrets not configured - skipping sign job"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+          set -e
+          missing=()
+          [ -n "$P12_B64" ] || missing+=(P12_BASE64)
+          [ -n "$P12_PASSWORD" ] || missing+=(P12_PASSWORD)
+          [ -n "$MAIN_PROFILE_B64" ] || missing+=(PROFILE_MAIN_B64)
+          [ -n "$EXT_PROFILE_B64" ] || missing+=(PROFILE_EXT_B64)
+
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "::error::Missing required signing secrets: ${missing[*]}"
+            exit 1
           fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Download unsigned ipa
         if: steps.check.outputs.skip != 'true'
@@ -101,19 +123,81 @@ jobs:
           name: guru-unsigned-ipa
           path: unsigned-art
 
+      - name: Omit widget only when its signing profile is unavailable
+        if: steps.check.outputs.skip != 'true'
+        env:
+          WIDGET_PROFILE_B64: ${{ secrets.PROFILE_WIDGET_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "$WIDGET_PROFILE_B64" ]; then exit 0; fi
+          python3 - <<'PY'
+          import os, tempfile, zipfile
+          src = "unsigned-art/GuruIM-unsigned.ipa"
+          fd, dst = tempfile.mkstemp(suffix=".ipa")
+          os.close(fd)
+          removed = 0
+          with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+              for item in zin.infolist():
+                  if "/PlugIns/ClawWidgets.appex" in item.filename:
+                      removed += 1
+                      continue
+                  zout.writestr(item, zin.read(item.filename))
+          os.replace(dst, src)
+          print(f"PROFILE_WIDGET_B64 is absent; omitted ClawWidgets from signed IPA ({removed} entries).")
+          PY
+
+      - name: Inspect extension bundle identifiers
+        id: extensions
+        env:
+          WIDGET_PROFILE_B64: ${{ secrets.PROFILE_WIDGET_B64 }}
+          WIDGET_BUNDLE_ID: app.lgm.7517.widget
+        run: |
+          set -euo pipefail
+          extension_ids=$(python3 scripts/sign_ipa.py \
+            --ipa unsigned-art/GuruIM-unsigned.ipa \
+            --list-extension-bundle-identifiers)
+          printf '%s\n' "$extension_ids"
+
+          keyboard_found=false
+          has_widget=false
+          while IFS= read -r bundle_id; do
+            [ -n "$bundle_id" ] || continue
+            case "$bundle_id" in
+              app.lgm.7517.123) keyboard_found=true ;;
+              "$WIDGET_BUNDLE_ID") has_widget=true ;;
+              *)
+                echo "::error::No signing-profile mapping is configured for extension $bundle_id"
+                exit 1
+                ;;
+            esac
+          done <<< "$extension_ids"
+
+          if [ "$keyboard_found" != "true" ]; then
+            echo "::error::Expected keyboard extension app.lgm.7517.123 is missing from the IPA"
+            exit 1
+          fi
+          if [ "$has_widget" = "true" ] && [ -z "$WIDGET_PROFILE_B64" ]; then
+            echo "::error::Widget remained in the IPA without PROFILE_WIDGET_B64"
+            exit 1
+          fi
+          echo "has_widget=$has_widget" >> "$GITHUB_OUTPUT"
+
       - name: Install signing assets
         if: steps.check.outputs.skip != 'true'
         env:
           P12_B64: ${{ secrets.P12_BASE64 }}
           MAIN_PROFILE_B64: ${{ secrets.PROFILE_MAIN_B64 }}
           EXT_PROFILE_B64: ${{ secrets.PROFILE_EXT_B64 }}
+          WIDGET_PROFILE_B64: ${{ secrets.PROFILE_WIDGET_B64 }}
         run: |
           set -e
           mkdir -p profiles
           echo "$P12_B64" | base64 --decode > sign.p12
           echo "$MAIN_PROFILE_B64" | base64 --decode > profiles/main.mobileprovision
           echo "$EXT_PROFILE_B64" | base64 --decode > profiles/ext.mobileprovision
-          ls -la sign.p12 profiles/
+          if [ "${{ steps.extensions.outputs.has_widget }}" = "true" ]; then
+            echo "$WIDGET_PROFILE_B64" | base64 --decode > profiles/widget.mobileprovision
+          fi
 
       - name: Sign ipa (app + keyboard extension)
         if: steps.check.outputs.skip != 'true'
@@ -122,14 +206,25 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build
-          python3 scripts/sign_ipa.py \
-            --ipa unsigned-art/GuruIM-unsigned.ipa \
-            --p12 sign.p12 \
-            --password "$P12_PASSWORD" \
-            --main-profile profiles/main.mobileprovision \
-            --ext-profile profiles/ext.mobileprovision \
-            --out build/GuruIM-signed.ipa | tee sign.log
+          sign_args=(
+            --ipa unsigned-art/GuruIM-unsigned.ipa
+            --p12 sign.p12
+            --password-env P12_PASSWORD
+            --main-profile profiles/main.mobileprovision
+            --allow-missing-icloud
+            --bundle-profile app.lgm.7517.123=profiles/ext.mobileprovision
+            --out build/GuruIM-signed.ipa
+          )
+          if [ "${{ steps.extensions.outputs.has_widget }}" = "true" ]; then
+            WIDGET_BUNDLE_ID=app.lgm.7517.widget
+            sign_args+=(--bundle-profile "$WIDGET_BUNDLE_ID=profiles/widget.mobileprovision")
+          fi
+          python3 scripts/sign_ipa.py "${sign_args[@]}" | tee sign.log
           ls -lh build/GuruIM-signed.ipa
+
+      - name: Verify signed ipa bundles and entitlements
+        if: steps.check.outputs.skip != 'true'
+        run: python3 scripts/verify_signed_ipa.py --allow-missing-icloud build/GuruIM-signed.ipa
 
       - name: Upload signed .ipa artifact
         if: steps.check.outputs.skip != 'true'
@@ -146,3 +241,4 @@ jobs:
           name: guru-signing-logs
           path: sign.log
           if-no-files-found: ignore
+

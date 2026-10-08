@@ -28,6 +28,10 @@ public class ChineseNineGridKeyboard: KeyboardTouchView, UICollectionViewDelegat
 
   private var userInterfaceStyle: UIUserInterfaceStyle
 
+  /// 首次布局时强制刷新一次样式：初始 style 可能在配置就绪前就算好了，
+  /// 只靠 colorScheme 变化判断会漏掉这种情况，导致左侧符号首屏是浅灰。
+  private var hasAppliedInitialStyle = false
+
   // 键盘是否浮动
   private var isKeyboardFloating: Bool
 
@@ -293,7 +297,8 @@ public class ChineseNineGridKeyboard: KeyboardTouchView, UICollectionViewDelegat
     super.layoutSubviews()
 
     // 样式调整
-    if userInterfaceStyle != keyboardContext.colorScheme {
+    if !hasAppliedInitialStyle || userInterfaceStyle != keyboardContext.colorScheme {
+      hasAppliedInitialStyle = true
       userInterfaceStyle = keyboardContext.colorScheme
       nonStanderStyle = appearance.nonStandardKeyboardStyle
       symbolsListView.setStyle(nonStanderStyle)

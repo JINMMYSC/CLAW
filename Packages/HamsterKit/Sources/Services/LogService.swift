@@ -3,6 +3,30 @@ import Foundation
 public class LogService {
   public static let shared = LogService()
 
+  public enum ClawFailure: CaseIterable {
+    case voiceAuthorizationFailed
+    case voiceRecognizerUnavailable
+    case voiceAudioUnavailable
+    case voiceRecognitionFailed
+    case voiceSessionStartFailed
+    case iCloudCopyFailed
+    case iCloudRestoreFailed
+    case smartFreqRequestFailed
+
+    fileprivate var message: String {
+      switch self {
+      case .voiceAuthorizationFailed: return "Voice authorization failed"
+      case .voiceRecognizerUnavailable: return "Voice recognizer unavailable"
+      case .voiceAudioUnavailable: return "Voice audio input unavailable"
+      case .voiceRecognitionFailed: return "Voice recognition failed"
+      case .voiceSessionStartFailed: return "Voice audio session start failed"
+      case .iCloudCopyFailed: return "iCloud copy failed"
+      case .iCloudRestoreFailed: return "iCloud restore failed"
+      case .smartFreqRequestFailed: return "SmartFreq AI request failed"
+      }
+    }
+  }
+
   public enum Level: String {
     case info  = "INFO"
     case warn  = "WARN"
@@ -12,9 +36,19 @@ public class LogService {
   private let maxLines = 500
   private let trimTarget = 400   // 超上限后保留的行数
   private let writeQueue = DispatchQueue(label: "com.desgemini.log", qos: .utility)
+  private let injectedFileURL: URL?
+
+  private init() {
+    injectedFileURL = nil
+  }
+
+  init(fileURL: URL) {
+    injectedFileURL = fileURL
+  }
 
   private var fileURL: URL? {
-    FileManager.default
+    if let injectedFileURL { return injectedFileURL }
+    return FileManager.default
       .containerURL(forSecurityApplicationGroupIdentifier: HamsterConstants.appGroupName)?
       .appendingPathComponent("debug_log.txt")
   }
@@ -26,6 +60,11 @@ public class LogService {
     writeQueue.async { [weak self] in
       self?.appendLine(line)
     }
+  }
+
+  /// Records a predefined, privacy-safe failure without accepting user or API content.
+  public func log(_ failure: ClawFailure) {
+    log(failure.message, level: .error, tag: "CLAW")
   }
 
   private func format(_ message: String, level: Level, tag: String) -> String {
@@ -68,6 +107,10 @@ public class LogService {
 
   /// 返回日志行（新→旧）
   public func entries() -> [String] {
+    writeQueue.sync { readEntries() }
+  }
+
+  private func readEntries() -> [String] {
     guard let url = fileURL,
           let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
     return content.components(separatedBy: "\n")

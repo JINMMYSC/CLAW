@@ -12,12 +12,68 @@ public struct HeartTargetProfile: Codable, Identifiable, Equatable {
   public var name: String
   public var bio: String
   public var avatarData: Data?
+  /// 用户明确设置的关系，例如朋友/客户/家人。
+  public var relationship: String
+  /// AI 从可追溯互动里提炼的画像；与手工 bio 分开，便于纠错和重建。
+  public var learnedSummary: String
+  /// 备注名/昵称，用于截图顶部标题匹配。
+  public var aliases: [String]
+  /// 是否由截图/聊天上下文自动创建，用户可后续确认和编辑。
+  public var autoCreated: Bool
+  /// 群聊与单聊分开建档，避免把群组上下文当成一个自然人。
+  public var isGroup: Bool
+  /// 可选头像指纹，为未来头像匹配/同名消歧保留稳定入口。
+  public var avatarFingerprint: String?
+  public var lastSeenAt: Date?
+  public var updatedAt: Date
 
-  public init(id: UUID = UUID(), name: String = "", bio: String = "", avatarData: Data? = nil) {
+  public init(
+    id: UUID = UUID(),
+    name: String = "",
+    bio: String = "",
+    avatarData: Data? = nil,
+    relationship: String = "",
+    learnedSummary: String = "",
+    aliases: [String] = [],
+    autoCreated: Bool = false,
+    isGroup: Bool = false,
+    avatarFingerprint: String? = nil,
+    lastSeenAt: Date? = nil,
+    updatedAt: Date = Date()
+  ) {
     self.id = id
     self.name = name
     self.bio = bio
     self.avatarData = avatarData
+    self.relationship = relationship
+    self.learnedSummary = learnedSummary
+    self.aliases = aliases
+    self.autoCreated = autoCreated
+    self.isGroup = isGroup
+    self.avatarFingerprint = avatarFingerprint
+    self.lastSeenAt = lastSeenAt
+    self.updatedAt = updatedAt
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id, name, bio, avatarData, relationship, learnedSummary, aliases, autoCreated, isGroup, avatarFingerprint, lastSeenAt, updatedAt
+  }
+
+  /// Backward-compatible decoding for profiles saved by older builds.
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+    name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+    bio = try c.decodeIfPresent(String.self, forKey: .bio) ?? ""
+    avatarData = try c.decodeIfPresent(Data.self, forKey: .avatarData)
+    relationship = try c.decodeIfPresent(String.self, forKey: .relationship) ?? ""
+    learnedSummary = try c.decodeIfPresent(String.self, forKey: .learnedSummary) ?? ""
+    aliases = try c.decodeIfPresent([String].self, forKey: .aliases) ?? []
+    autoCreated = try c.decodeIfPresent(Bool.self, forKey: .autoCreated) ?? false
+    isGroup = try c.decodeIfPresent(Bool.self, forKey: .isGroup) ?? false
+    avatarFingerprint = try c.decodeIfPresent(String.self, forKey: .avatarFingerprint)
+    lastSeenAt = try c.decodeIfPresent(Date.self, forKey: .lastSeenAt)
+    updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
   }
 
   /// 头像 UIImage（用于设置页与键盘面板展示）
@@ -28,6 +84,20 @@ public struct HeartTargetProfile: Codable, Identifiable, Equatable {
 
   public var displayName: String {
     name.isEmpty ? "未命名档案" : name
+  }
+
+  public var memoryContext: String {
+    var parts: [String] = []
+    if !relationship.isEmpty { parts.append("关系：\(relationship)") }
+    if !bio.isEmpty { parts.append("用户备注：\(bio)") }
+    if !learnedSummary.isEmpty { parts.append("互动画像：\(learnedSummary)") }
+    return parts.joined(separator: "\n")
+  }
+
+  public func matches(displayTitle: String) -> Bool {
+    let normalized = displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if normalized == name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() { return true }
+    return aliases.contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized }
   }
 }
 
@@ -70,6 +140,8 @@ public class HeartTargetService {
 
   @discardableResult
   public func upsert(_ profile: HeartTargetProfile) -> HeartTargetProfile {
+    var profile = profile
+    profile.updatedAt = Date()
     if let idx = profiles.firstIndex(where: { $0.id == profile.id }) {
       profiles[idx] = profile
     } else {
@@ -86,6 +158,16 @@ public class HeartTargetService {
     persist()
   }
 
+  public func deleteAllProfiles() {
+    profiles = []
+    selectedIndex = -1
+    persist()
+  }
+
+  public func profile(id: UUID) -> HeartTargetProfile? {
+    profiles.first(where: { $0.id == id })
+  }
+
   public func select(at index: Int) {
     guard index >= 0, index < profiles.count else { return }
     selectedIndex = index
@@ -96,5 +178,11 @@ public class HeartTargetService {
     if let idx = profiles.firstIndex(where: { $0.id == id }) {
       select(at: idx)
     }
+  }
+
+  /// 全局模式：只使用用户全局记忆，不混合任何联系人档案。
+  public func clearSelection() {
+    selectedIndex = -1
+    persist()
   }
 }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// 支持的 AI 提供商
-public enum AIProvider: String, Codable, CaseIterable {
+public enum AIProvider: String, Codable, CaseIterable, Equatable {
   case openai      = "OpenAI"
   case openrouter  = "OpenRouter"
   case claude      = "Claude"
@@ -74,11 +74,27 @@ public struct AIUsage: Codable {
   }
 }
 
+/// Immutable routing parameters for one AI request. Capturing this value before
+/// starting async work prevents one feature's settings change from affecting
+/// another request already in flight.
+public struct AIRequestConfiguration: Equatable {
+  public let provider: AIProvider
+  public let model: String
+  public let maxTokens: Int
+
+  public init(provider: AIProvider, model: String? = nil, maxTokens: Int = 4096) {
+    self.provider = provider
+    self.model = model ?? provider.defaultModel
+    self.maxTokens = max(256, maxTokens)
+  }
+}
+
 /// AI 服务 - 统一封装 OpenAI / OpenRouter / Claude API
 public class AIService {
   public static let shared = AIService()
 
   private let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
+  private let secureStore = ClawSecureStore.shared
 
   // MARK: - Config Storage
 
@@ -95,12 +111,102 @@ public class AIService {
     set { defaults?.set(newValue, forKey: "ai_model") }
   }
 
+  public var currentRequestConfiguration: AIRequestConfiguration {
+    let provider = selectedProvider
+    return AIRequestConfiguration(provider: provider, model: selectedModel)
+  }
+
   public func apiKey(for provider: AIProvider) -> String {
-    defaults?.string(forKey: "ai_key_\(provider.rawValue)") ?? ""
+    let account = secureAccount(for: provider)
+    let marker = migrationMarkerKey(for: provider, role: processRole)
+    let legacyKey = legacyDefaultsKey(for: provider)
+    let roleIsCurrent = defaults?.bool(forKey: marker) ?? false
+
+    if !roleIsCurrent,
+       let handoff = defaults?.string(forKey: legacyKey),
+       !handoff.isEmpty {
+      do {
+        try secureStore.setString(handoff, for: account)
+        defaults?.set(true, forKey: marker)
+        cleanupLegacyKeyIfMigratedEverywhere(provider)
+      } catch {
+        LogService.shared.log("Keychain migration unavailable for \(provider.rawValue)", level: .warn, tag: "AI")
+      }
+      return handoff
+    }
+
+    do {
+      if let secure = try secureStore.string(for: account), !secure.isEmpty {
+        if !roleIsCurrent {
+          defaults?.set(true, forKey: marker)
+          cleanupLegacyKeyIfMigratedEverywhere(provider)
+        }
+        return secure
+      }
+    } catch {
+      LogService.shared.log("Keychain read unavailable for \(provider.rawValue)", level: .warn, tag: "AI")
+    }
+
+    guard let legacy = defaults?.string(forKey: legacyKey), !legacy.isEmpty else { return "" }
+    do {
+      try secureStore.setString(legacy, for: account)
+      defaults?.set(true, forKey: marker)
+      cleanupLegacyKeyIfMigratedEverywhere(provider)
+    } catch {
+      LogService.shared.log("Keychain migration unavailable for \(provider.rawValue)", level: .warn, tag: "AI")
+    }
+    return legacy
   }
 
   public func setApiKey(_ key: String, for provider: AIProvider) {
-    defaults?.set(key, forKey: "ai_key_\(provider.rawValue)")
+    let cleaned = key.trimmingCharacters(in: .whitespacesAndNewlines)
+    let account = secureAccount(for: provider)
+    let legacyKey = legacyDefaultsKey(for: provider)
+    if cleaned.isEmpty {
+      try? secureStore.remove(account)
+      defaults?.removeObject(forKey: legacyKey)
+      defaults?.removeObject(forKey: migrationMarkerKey(for: provider, role: "host"))
+      defaults?.removeObject(forKey: migrationMarkerKey(for: provider, role: "keyboard"))
+      return
+    }
+
+    defaults?.set(cleaned, forKey: legacyKey)
+    defaults?.set(false, forKey: migrationMarkerKey(for: provider, role: otherProcessRole))
+    do {
+      try secureStore.setString(cleaned, for: account)
+      defaults?.set(true, forKey: migrationMarkerKey(for: provider, role: processRole))
+      cleanupLegacyKeyIfMigratedEverywhere(provider)
+    } catch {
+      LogService.shared.log("Keychain write unavailable for \(provider.rawValue); using compatibility storage", level: .warn, tag: "AI")
+    }
+  }
+
+  private func secureAccount(for provider: AIProvider) -> String {
+    "ai-key-\(provider.rawValue.lowercased())"
+  }
+
+  private func legacyDefaultsKey(for provider: AIProvider) -> String {
+    "ai_key_\(provider.rawValue)"
+  }
+
+  private var processRole: String {
+    Bundle.main.bundleURL.pathExtension.lowercased() == "appex" ? "keyboard" : "host"
+  }
+
+  private var otherProcessRole: String {
+    processRole == "host" ? "keyboard" : "host"
+  }
+
+  private func migrationMarkerKey(for provider: AIProvider, role: String) -> String {
+    "ai_keychain_migrated_\(provider.rawValue)_\(role)_v1"
+  }
+
+  private func cleanupLegacyKeyIfMigratedEverywhere(_ provider: AIProvider) {
+    let host = defaults?.bool(forKey: migrationMarkerKey(for: provider, role: "host")) ?? false
+    let keyboard = defaults?.bool(forKey: migrationMarkerKey(for: provider, role: "keyboard")) ?? false
+    if host && keyboard {
+      defaults?.removeObject(forKey: legacyDefaultsKey(for: provider))
+    }
   }
 
   // MARK: - Prompt Management
@@ -149,31 +255,94 @@ public class AIService {
   // MARK: - Chat
 
   /// 发送消息到当前选定的 AI 提供商
+  @discardableResult
   public func chat(
     messages: [AIMessage],
     completion: @escaping (Result<String, Error>) -> Void
-  ) {
+  ) -> URLSessionDataTask? {
     chatWithUsage(messages: messages) { result in
       completion(result.map { $0.0 })
     }
   }
 
   /// 发送消息并返回 token 用量
+  @discardableResult
   public func chatWithUsage(
     messages: [AIMessage],
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
-  ) {
-    let provider = selectedProvider
+  ) -> URLSessionDataTask? {
+    chatWithUsage(messages: messages, configuration: currentRequestConfiguration, completion: completion)
+  }
+
+  /// Request-scoped routing. This avoids mutating the process-wide selected provider/model when
+  /// keyboard, AutoInsight and the assistant are active at the same time.
+  @discardableResult
+  public func chat(
+    messages: [AIMessage],
+    provider: AIProvider,
+    model: String? = nil,
+    completion: @escaping (Result<String, Error>) -> Void
+  ) -> URLSessionDataTask? {
+    chatWithUsage(messages: messages, configuration: AIRequestConfiguration(provider: provider, model: model)) { result in
+      completion(result.map { $0.0 })
+    }
+  }
+
+  @discardableResult
+  public func chatWithUsage(
+    messages: [AIMessage],
+    provider: AIProvider,
+    model: String,
+    completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
+  ) -> URLSessionDataTask? {
+    chatWithUsage(
+      messages: messages,
+      configuration: AIRequestConfiguration(provider: provider, model: model),
+      completion: completion
+    )
+  }
+
+  @discardableResult
+  public func chat(
+    messages: [AIMessage],
+    configuration: AIRequestConfiguration,
+    completion: @escaping (Result<String, Error>) -> Void
+  ) -> URLSessionDataTask? {
+    chatWithUsage(messages: messages, configuration: configuration) { result in
+      completion(result.map { $0.0 })
+    }
+  }
+
+  @discardableResult
+  public func chatWithUsage(
+    messages: [AIMessage],
+    configuration: AIRequestConfiguration,
+    completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
+  ) -> URLSessionDataTask? {
+    let provider = configuration.provider
     let key = apiKey(for: provider)
     guard !key.isEmpty else {
       completion(.failure(AIError.noAPIKey(provider)))
-      return
+      return nil
     }
     switch provider {
     case .claude:
-      chatClaudeWithUsage(messages: messages, apiKey: key, completion: completion)
+      return chatClaudeWithUsage(
+        messages: messages,
+        apiKey: key,
+        model: configuration.model,
+        maxTokens: configuration.maxTokens,
+        completion: completion
+      )
     default:
-      chatOpenAICompatWithUsage(messages: messages, provider: provider, apiKey: key, completion: completion)
+      return chatOpenAICompatWithUsage(
+        messages: messages,
+        provider: provider,
+        apiKey: key,
+        model: configuration.model,
+        maxTokens: configuration.maxTokens,
+        completion: completion
+      )
     }
   }
 
@@ -183,8 +352,10 @@ public class AIService {
     messages: [AIMessage],
     provider: AIProvider,
     apiKey: String,
+    model: String,
+    maxTokens: Int,
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
-  ) {
+  ) -> URLSessionDataTask {
     let urlString = "\(provider.baseURL)/chat/completions"
     let url = URL(string: urlString)!
     var req = URLRequest(url: url)
@@ -194,18 +365,17 @@ public class AIService {
     if provider == .openrouter {
       req.setValue("ClawTalk iOS", forHTTPHeaderField: "X-Title")
     }
-    let model = selectedModel
     let body: [String: Any] = [
       "model": model,
       "messages": messages.map { ["role": $0.role, "content": $0.content] },
-      "max_tokens": 4096,
+      "max_tokens": maxTokens,
     ]
     req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
     let log = LogService.shared
     log.log("→ \(provider.rawValue) \(model) \(urlString) msgs=\(messages.count)", tag: "AI")
 
-    URLSession.shared.dataTask(with: req) { data, response, error in
+    let task = URLSession.shared.dataTask(with: req) { data, response, error in
       let status = (response as? HTTPURLResponse)?.statusCode ?? 0
       if let error = error {
         log.log("✗ network error: \(error.localizedDescription)", level: .error, tag: "AI")
@@ -241,7 +411,9 @@ public class AIService {
         log.log("✓ OK HTTP \(status) (no usage info)", tag: "AI")
       }
       DispatchQueue.main.async { completion(.success((content, usage))) }
-    }.resume()
+    }
+    task.resume()
+    return task
   }
 
   // MARK: - Claude (Anthropic Messages API)
@@ -249,8 +421,10 @@ public class AIService {
   private func chatClaudeWithUsage(
     messages: [AIMessage],
     apiKey: String,
+    model: String,
+    maxTokens: Int,
     completion: @escaping (Result<(String, AIUsage?), Error>) -> Void
-  ) {
+  ) -> URLSessionDataTask {
     let urlString = "https://api.anthropic.com/v1/messages"
     let url = URL(string: urlString)!
     var req = URLRequest(url: url)
@@ -261,11 +435,9 @@ public class AIService {
 
     let systemMsg = messages.first(where: { $0.role == "system" })?.content
     let chatMsgs = messages.filter { $0.role != "system" }
-    let model = selectedModel
-
     var body: [String: Any] = [
       "model": model,
-      "max_tokens": 4096,
+      "max_tokens": maxTokens,
       "messages": chatMsgs.map { ["role": $0.role, "content": $0.content] },
     ]
     if let sys = systemMsg, !sys.isEmpty { body["system"] = sys }
@@ -274,7 +446,7 @@ public class AIService {
     let log = LogService.shared
     log.log("→ Claude \(model) \(urlString) msgs=\(messages.count)", tag: "AI")
 
-    URLSession.shared.dataTask(with: req) { data, response, error in
+    let task = URLSession.shared.dataTask(with: req) { data, response, error in
       let status = (response as? HTTPURLResponse)?.statusCode ?? 0
       if let error = error {
         log.log("✗ network error: \(error.localizedDescription)", level: .error, tag: "AI")
@@ -309,7 +481,9 @@ public class AIService {
         log.log("✓ OK HTTP \(status) (no usage info)", tag: "AI")
       }
       DispatchQueue.main.async { completion(.success((text, usage))) }
-    }.resume()
+    }
+    task.resume()
+    return task
   }
 
   // MARK: - Errors

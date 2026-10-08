@@ -38,6 +38,11 @@ public class CandidateWordsCollectionView: UICollectionView {
   /// 当前用户输入，用来判断滚动候选栏是否滚动到首个首选字
   var currentUserInputKey: String = ""
 
+  /// Collection layout can switch before Auto Layout grows the toolbar. Track
+  /// the later bounds change and invalidate again so the vertical flow layout
+  /// calculates every visible row using the expanded height.
+  private var lastLaidOutSize: CGSize = .zero
+
   init(
     style: CandidateBarStyle,
     keyboardContext: KeyboardContext,
@@ -89,6 +94,21 @@ public class CandidateWordsCollectionView: UICollectionView {
   @objc func downSwipeGesture(_ sender: CandidateWordsCollectionView) {
     if candidatesViewState.isCollapse() {
       keyboardContext.candidatesViewState = .expand
+    }
+  }
+
+  /// 兜底：尺寸或状态变化后，确保布局与当前展开状态一致。
+  /// 订阅若因为时序问题没触发，展开时会出现"上面一大片空白、候选词仍是一行"。
+  public override func layoutSubviews() {
+    super.layoutSubviews()
+    let expected = keyboardContext.candidatesViewState
+    if candidatesViewState != expected {
+      candidatesViewState = expected
+      changeLayout(expected)
+    }
+    if bounds.size != lastLaidOutSize {
+      lastLaidOutSize = bounds.size
+      collectionViewLayout.invalidateLayout()
     }
   }
 
@@ -146,6 +166,8 @@ public class CandidateWordsCollectionView: UICollectionView {
         self.alwaysBounceHorizontal = false
         self.alwaysBounceVertical = true
         self.contentOffset = .zero
+        self.verticalLayout.invalidateLayout()
+        self.reloadData()
       }
     }
   }

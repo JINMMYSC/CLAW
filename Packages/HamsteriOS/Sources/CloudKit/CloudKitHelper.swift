@@ -61,6 +61,12 @@ class CloudKitHelper {
     }
   }
 
+  /// Backward-compatible spelling used by the original test and callers.
+  /// The callback-based API remains the source of the query result.
+  public func inputSchemeList() async throws {
+    try await inputSchemaList { _ in }
+  }
+
   public func getRecord(id: CKRecord.ID) async throws -> CKRecord {
     return try await database.record(for: id)
   }
@@ -75,3 +81,4 @@ extension CloudKitHelper {
   private static let inputSchemaRecordDesiredKeys = ["title", "author", "descriptions"]
   private static let resultLimit = 20
 }
+
