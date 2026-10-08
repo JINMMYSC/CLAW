@@ -143,6 +143,27 @@ enum ClawComposerPresentation {
 }
 
 
+/// Ephemeral, per-conversation draft isolation. Never store unsent messages
+/// in cross-process UserDefaults or mix them between the global and person tabs.
+enum ClawDraftContext {
+  static func key(_ personID: UUID?) -> String {
+    personID?.uuidString ?? "global"
+  }
+
+  static func switching(
+    currentText: String,
+    from previousPerson: UUID?,
+    to nextPerson: UUID?,
+    cache: inout [String: String]
+  ) -> String {
+    let oldKey = key(previousPerson)
+    let newKey = key(nextPerson)
+    guard oldKey != newKey else { return currentText }
+    cache[oldKey] = currentText
+    return cache[newKey] ?? ""
+  }
+}
+
 private struct ClawScreenshotReviewSheet: View {
   @Environment(\.dismiss) private var dismiss
   let preview: ClawScreenshotIngestionResult
@@ -266,6 +287,8 @@ private struct ClawScreenshotReviewSheet: View {
 private struct ClawAssistantChatView: View {
   @ObservedObject private var chat = ClawChatService.shared
   @State private var input = ""
+  @State private var draftsByPerson: [String: String] = [:]
+  @State private var draftPersonID = HeartTargetService.shared.selectedProfile?.id
   @State private var recording = false
   @State private var callActive = false
   @State private var callListening = false
@@ -396,6 +419,7 @@ private struct ClawAssistantChatView: View {
     .background(Color(.systemGroupedBackground))
     .onAppear {
       let profile = HeartTargetService.shared.selectedProfile
+      switchDraft(to: profile?.id)
       selectedProfileName = profile?.displayName
       chat.switchContext(contactID: profile?.id)
 #if DEBUG
@@ -492,6 +516,7 @@ private struct ClawAssistantChatView: View {
     }
     .onReceive(NotificationCenter.default.publisher(for: .heartTargetProfilesDidChange)) { _ in
       let profile = HeartTargetService.shared.selectedProfile
+      switchDraft(to: profile?.id)
       selectedProfileName = profile?.displayName
       chat.switchContext(contactID: profile?.id)
     }
@@ -664,10 +689,19 @@ private struct ClawAssistantChatView: View {
     .frame(height: composerHeight)
   }
 
+  private func switchDraft(to personID: UUID?) {
+    input = ClawDraftContext.switching(
+      currentText: input, from: draftPersonID, to: personID, cache: &draftsByPerson
+    )
+    draftPersonID = personID
+  }
+
   private func send(_ text: String) {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
     input = ""
+    // A sent draft must not be restored when switching back to this person.
+    draftsByPerson[ClawDraftContext.key(draftPersonID)] = ""
     chat.send(trimmed)
   }
 
