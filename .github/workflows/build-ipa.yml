@@ -3,6 +3,8 @@ name: Build & Sign GuruIM IPA
 on:
   push:
     branches: [main, work/claw-voice-keyboard-bg, work/claw-productization-20261006]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
