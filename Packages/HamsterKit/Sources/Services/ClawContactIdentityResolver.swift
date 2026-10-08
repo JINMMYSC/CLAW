@@ -41,11 +41,15 @@ public final class ClawContactIdentityResolver {
 
     if let fingerprint = avatarFingerprint,
        let profile = service.profiles.first(where: { $0.avatarFingerprint == fingerprint }) {
-      touch(profile)
+      // Preview-only resolution must not update lastSeenAt or persist the
+      // profile before the user explicitly approves the OCR import.
+      if allowCreate { touch(profile) }
       return ClawContactResolution(profile: profile, confidence: 0.995, created: false, reason: "avatar")
     }
     if let profile = service.profiles.first(where: { $0.matches(displayTitle: title) }) {
-      touch(profile)
+      // Preview-only resolution must not update lastSeenAt or persist the
+      // profile before the user explicitly approves the OCR import.
+      if allowCreate { touch(profile) }
       return ClawContactResolution(profile: profile, confidence: 0.98, created: false, reason: "name-or-alias")
     }
 
@@ -55,7 +59,9 @@ public final class ClawContactIdentityResolver {
       return name.contains(title) || title.contains(name)
     }
     if fuzzy.count == 1, let profile = fuzzy.first {
-      touch(profile)
+      // Preview-only resolution must not update lastSeenAt or persist the
+      // profile before the user explicitly approves the OCR import.
+      if allowCreate { touch(profile) }
       return ClawContactResolution(profile: profile, confidence: 0.82, created: false, reason: "unique-fuzzy-title")
     }
 
