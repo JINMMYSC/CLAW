@@ -107,6 +107,7 @@ private struct ClawAssistantChatView: View {
   @State private var holdVoiceRequestID = UUID()
   @State private var activeHoldRecognitionID: UUID?
   @State private var oneShotRequestID = UUID()
+  @State private var oneShotFinalizing = false
   @State private var voiceAuthorizationRequestID = UUID()
   @State private var keyboardDictationID: UUID?
   @State private var keyboardDictationFinalizing = false
@@ -438,12 +439,26 @@ private struct ClawAssistantChatView: View {
 
   private func toggleVoice() {
     if callActive { stopHandsFreeCall() }
+    guard !oneShotFinalizing else { return }
     if recording {
-      oneShotRequestID = UUID()
+      if let id = keyboardDictationID {
+        finishKeyboardDictation(id: id)
+        return
+      }
+      // Do not invalidate the request here: Speech delivers the transcript
+      // asynchronously *after* stop/endAudio, not while the mic is running.
+      oneShotFinalizing = true
+      let requestID = oneShotRequestID
       ClawVoiceInputService.shared.stop()
       recording = false
       endLiveActivity("语音识别完成")
       voiceHint = "正在完成识别…"
+      DispatchQueue.main.asyncAfter(deadline: .now() + 7) {
+        guard oneShotRequestID == requestID, oneShotFinalizing else { return }
+        oneShotRequestID = UUID()
+        oneShotFinalizing = false
+        voiceHint = "语音识别超时，请重试"
+      }
       return
     }
     let requestID = UUID()
@@ -457,6 +472,7 @@ private struct ClawAssistantChatView: View {
         DispatchQueue.main.async {
           guard oneShotRequestID == requestID else { return }
           oneShotRequestID = UUID()
+          oneShotFinalizing = false
           recording = false
           endLiveActivity("语音识别完成")
           if let keyboardID = keyboardDictationID {
@@ -538,6 +554,7 @@ private struct ClawAssistantChatView: View {
       keyboardDictationID = nil
     }
     keyboardDictationFinalizing = false
+    oneShotFinalizing = false
     voiceAuthorizationRequestID = UUID()
     holdVoiceRequestID = UUID()
     oneShotRequestID = UUID()
@@ -586,7 +603,7 @@ private struct ClawAssistantChatView: View {
   /// 从键盘话筒按钮跳转进来时只做一次听写，不进入连续通话。
   private func startOneShotVoiceInput() {
     if callActive { stopHandsFreeCall() }
-    guard !recording else { return }
+    guard !recording, !oneShotFinalizing else { return }
     let handoff = ClawVoiceDictationHandoff.shared
     if handoff.snapshot.state == .pending {
       keyboardDictationID = handoff.snapshot.id
@@ -599,6 +616,7 @@ private struct ClawAssistantChatView: View {
   private func finishKeyboardDictation(id: UUID) {
     guard keyboardDictationID == id, recording, !keyboardDictationFinalizing else { return }
     keyboardDictationFinalizing = true
+    oneShotFinalizing = true
     ClawVoiceInputService.shared.stop()
     recording = false
     voiceHint = "正在完成语音识别…"
@@ -606,6 +624,7 @@ private struct ClawAssistantChatView: View {
     DispatchQueue.main.asyncAfter(deadline: .now() + 7) {
       guard keyboardDictationID == id, keyboardDictationFinalizing else { return }
       oneShotRequestID = UUID()
+      oneShotFinalizing = false
       _ = ClawVoiceDictationHandoff.shared.fail(id: id, reason: "语音识别未返回结果，请重试")
       keyboardDictationID = nil
       keyboardDictationFinalizing = false
@@ -620,6 +639,7 @@ private struct ClawAssistantChatView: View {
     ClawVoiceDictationHandoff.shared.cancel(id: id)
     keyboardDictationID = nil
     keyboardDictationFinalizing = false
+    oneShotFinalizing = false
     if recording { ClawVoiceInputService.shared.stop() }
     recording = false
     voiceHint = "已取消键盘语音输入"
