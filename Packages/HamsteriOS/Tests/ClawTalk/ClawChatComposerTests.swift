@@ -73,7 +73,11 @@ final class ClawChatComposerTests: XCTestCase {
       .compactMap { $0 as? UIButton }
       .first(where: { $0.accessibilityIdentifier == "claw.composer.attachments" })
     XCTAssertNotNil(attachments, "Attachment action must remain visible when send is active")
-    attachments?.sendActions(for: .touchUpInside)
+    XCTAssertTrue(attachments?.isEnabled == true)
+    XCTAssertFalse(attachments?.isHidden ?? true)
+    // No UIApplicationMain runs in this unit-test target. Invoke the real
+    // control action directly; sendActions would never reach its target.
+    bar.toggleAttachments()
     XCTAssertEqual(bar.mode, .more)
     XCTAssertEqual(bar.textView.text, "仍未发送的文字")
     XCTAssertTrue(bar.isSendVisible)

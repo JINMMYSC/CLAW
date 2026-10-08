@@ -257,7 +257,9 @@ final class ClawChatComposerBar: UIView, UITextViewDelegate {
     if mode == .emoji || mode == .more { setMode(.text) }
   }
 
-  @objc private func toggleAttachments() {
+  // Internal for unit tests: exercise the actual action without UIKit's
+  // control event dispatcher, which is unavailable in hostless XCTest.
+  @objc func toggleAttachments() {
     setMode(mode == .more ? .text : .more)
     if mode == .text { textView.becomeFirstResponder() }
   }

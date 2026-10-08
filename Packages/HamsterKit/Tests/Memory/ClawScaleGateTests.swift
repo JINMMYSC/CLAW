@@ -24,4 +24,52 @@ final class ClawScaleGateTests: XCTestCase {
     XCTAssertLessThan(writeDuration, 30, "2k V2 writes exceeded the release gate")
     XCTAssertLessThan(recallDuration, 3, "2k hybrid recall exceeded the release gate")
   }
+
+  /// Release-only stress gate. Keep regular CI light: explicitly run with
+  /// TEST_RUNNER_CLAW_STRESS_TEST=1 on a simulator to exercise the full scale.
+  func testOptInHundredThousandMemoriesAndPersonIsolation() throws {
+    let env = ProcessInfo.processInfo.environment
+    guard env["CLAW_STRESS_TEST"] == "1" || env["TEST_RUNNER_CLAW_STRESS_TEST"] == "1" else {
+      throw XCTSkip("100k memory stress is opt-in; run the CI workflow_dispatch stress_100k input")
+    }
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("claw-100k-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = ClawMemoryStore(databaseURL: root.appendingPathComponent("memory.sqlite"))
+    let alice = UUID()
+    let bob = UUID()
+    let historical = MemoryV2Record(
+      type: .semantic, state: .active, scope: .person,
+      content: "唯一的历史方案需要星期五验收",
+      normalizedKey: "historical-unique",
+      personID: alice,
+      provenance: .init(originType: .systemObserved, ingestionMethod: "scale-fixture")
+    )
+
+    let writeStart = Date()
+    try store.saveMemoryV2(historical)
+    for index in 1..<100_000 {
+      let scope: MemoryScope = index.isMultiple(of: 20) ? .global : .person
+      let personID: UUID? = scope == .person ? bob : nil
+      try store.saveMemoryV2(MemoryV2Record(
+        type: .semantic, state: .active, scope: scope,
+        content: "规模测试记录 \(index) 的变化",
+        normalizedKey: "scale-\(index)", personID: personID,
+        provenance: .init(originType: .systemObserved, ingestionMethod: "scale-fixture")
+      ))
+    }
+    let writeDuration = Date().timeIntervalSince(writeStart)
+    let scopedStart = Date()
+    let aliceRows = try store.memoryV2(scope: .person, personID: alice, limit: 80)
+    let scopedDuration = Date().timeIntervalSince(scopedStart)
+    let searchStart = Date()
+    let recalled = try store.searchMemoryV2(query: "唯一的历史方案", limit: 30)
+    let searchDuration = Date().timeIntervalSince(searchStart)
+    XCTAssertEqual(try store.memoryV2Count(), 100_000)
+    XCTAssertEqual(aliceRows.map(\.id), [historical.id])
+    XCTAssertTrue(recalled.contains { $0.id == historical.id },
+                  "Old Chinese facts must remain discoverable at 100k records")
+    print("CLAW_SCALE_100K: writes=\(writeDuration)s, indexed_person_recall=\(scopedDuration)s, keyword_recall=\(searchDuration)s")
+  }
 }
