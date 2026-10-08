@@ -130,6 +130,15 @@ enum ClawComposerPresentation {
   static func trailingAction(for text: String) -> ClawComposerTrailingAction {
     text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .more : .send
   }
+
+  /// One-shot dictation is a draft, not an instruction to send a message.
+  /// Preserve unsent text and keep a user review step before submission.
+  static func appendDictation(_ recognized: String, to currentDraft: String) -> String {
+    let text = recognized.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return currentDraft }
+    guard !currentDraft.isEmpty else { return text }
+    return currentDraft + "\n" + text
+  }
 }
 
 private struct ClawAssistantChatView: View {
@@ -566,8 +575,13 @@ private struct ClawAssistantChatView: View {
           }
           switch result {
           case .success(let text):
-            voiceHint = ""
-            send(text)
+            let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleaned.isEmpty {
+              voiceHint = "没有识别到文字，请重试"
+            } else {
+              input = ClawComposerPresentation.appendDictation(cleaned, to: input)
+              voiceHint = "已转成文字，可检查或编辑后发送"
+            }
           case .failure(let error):
             voiceHint = "语音识别失败：\(error.localizedDescription)"
           }

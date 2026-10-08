@@ -55,3 +55,12 @@
 
 - Phase A: source changes started on `work/claw-ux-lightweight-20261009`; Swift/Xcode and iPhone verification pending.
 - Phases B–D: tracked work, **not implemented by this document**. Re-evaluate against latest source before coding to avoid duplicating prior fixes.
+
+## Implementation batch 2 (same branch)
+- Keyboard: adapt fixed action widths for 320pt devices and expose emoji in the overflow menu without adding a framework.
+- Host composer: persistent attachment entry even with nonempty text; emoji available from the existing attachment panel; send action independent.
+- Host navigation: fifth tab now opens a Settings hub, with raw input records nested under Data & Privacy; legacy keyboard settings remain accessible via their existing URL.
+- Memory recall: FTS5 miss uses a bounded full-table substring fallback rather than scanning only recent records, with an old-Chinese-memory regression fixture.
+- Privacy: replace raw private-memory Spotlight entries with a generic CLAW shortcut and clear previously indexed raw memory content.
+- Voice: one-shot dictation appends text to the draft; explicit press-and-hold voice send behavior remains unchanged.
+- Verification: Swift XCTest, UI smoke, signed IPA, and real-device keyboard/voice QA remain required on the final commit. No performance gain is claimed without device measurements.
