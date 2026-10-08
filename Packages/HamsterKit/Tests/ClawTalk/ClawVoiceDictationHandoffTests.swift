@@ -56,4 +56,19 @@ final class ClawVoiceDictationHandoffTests: XCTestCase {
     XCTAssertNil(host.consume())
   }
 
+  func testRepeatedKeyboardMicTapDoesNotOverwriteRecordingRequest() {
+    let (keyboard, defaults, suite) = makeStore()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let host = ClawVoiceDictationHandoff(defaults: UserDefaults(suiteName: suite)!)
+    guard let first = keyboard.beginIfIdle() else {
+      return XCTFail("An idle keyboard must be able to create a recording request")
+    }
+    XCTAssertNil(keyboard.beginIfIdle())
+    XCTAssertEqual(host.snapshot.id, first)
+    XCTAssertTrue(host.complete(id: first, text: "语音文字"))
+    XCTAssertNil(keyboard.beginIfIdle())
+    XCTAssertEqual(keyboard.consume(), "语音文字")
+    XCTAssertNotNil(keyboard.beginIfIdle())
+  }
+
 }
