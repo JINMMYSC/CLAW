@@ -304,6 +304,22 @@ class KeyboardToolbarView: NibLessView {
     }
 
     updateSuggestionBarHeight()
+    updateCompactToolbarWidths()
+  }
+
+  /// Keep all three AI entry points on 320pt iPhones without compressing the
+  /// candidate bar or allowing required Auto Layout constraints to collide.
+  private func updateCompactToolbarWidths() {
+    guard bounds.width > 0 else { return }
+    let compact = bounds.width < 380
+    let contact = compact ? CGFloat(54) : CGFloat(64)
+    guard contactWidthConstraint?.constant != contact else { return }
+    contactWidthConstraint?.constant = contact
+    helpReplyWidthConstraint?.constant = compact ? 52 : 60
+    superTalkWidthConstraint?.constant = compact ? 52 : 60
+    aiWidthConstraint?.constant = compact ? 28 : 32
+    eyeWidthConstraint?.constant = compact ? 24 : 26
+    emojiWidthConstraint?.constant = compact ? 24 : 26
   }
 
   // MARK: - 视图层次
@@ -331,6 +347,12 @@ class KeyboardToolbarView: NibLessView {
   /// 候选栏收起时贴在功能行那一条；展开时改为吃掉功能行上方的全部高度。
   private var candidateTopToFunctionBar: NSLayoutConstraint!
   private var candidateTopToPanel: NSLayoutConstraint!
+  private var contactWidthConstraint: NSLayoutConstraint!
+  private var helpReplyWidthConstraint: NSLayoutConstraint!
+  private var superTalkWidthConstraint: NSLayoutConstraint!
+  private var aiWidthConstraint: NSLayoutConstraint!
+  private var eyeWidthConstraint: NSLayoutConstraint!
+  private var emojiWidthConstraint: NSLayoutConstraint!
 
   override func activateViewConstraints() {
     // 面板覆盖层：固定在工具栏顶部，高度随展开/收起变化
@@ -340,6 +362,13 @@ class KeyboardToolbarView: NibLessView {
     commonBarTopConstraint = commonFunctionBar.topAnchor.constraint(equalTo: panelOverlayView.bottomAnchor)
 
     suggestionBarHeightConstraint = suggestionBarView.heightAnchor.constraint(equalToConstant: 0)
+    contactWidthConstraint = contactButton.widthAnchor.constraint(equalToConstant: 64)
+    helpReplyWidthConstraint = helpReplyButton.widthAnchor.constraint(equalToConstant: 60)
+    superTalkWidthConstraint = superTalkButton.widthAnchor.constraint(equalToConstant: 60)
+    aiWidthConstraint = aiButton.widthAnchor.constraint(equalToConstant: 32)
+    eyeWidthConstraint = eyeButton.widthAnchor.constraint(equalToConstant: 26)
+    emojiWidthConstraint = emojiButton.widthAnchor.constraint(equalToConstant: 26)
+    contactButton.titleLabel?.lineBreakMode = .byTruncatingTail
 
     // 候选栏展开时，KeyboardRootView 会把整条工具栏加高（键区高度 + 工具栏高度）。
     // 之前候选栏被钉死在功能行那一条 50pt 内，多出来的高度变成空白，所以只能看到一行。
@@ -376,32 +405,32 @@ class KeyboardToolbarView: NibLessView {
 
       contactButton.leadingAnchor.constraint(equalTo: commonFunctionBar.leadingAnchor, constant: 6),
       contactButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      contactButton.widthAnchor.constraint(equalToConstant: 64),
+      contactWidthConstraint,
       contactButton.heightAnchor.constraint(equalToConstant: 30),
 
       helpReplyButton.leadingAnchor.constraint(equalTo: contactButton.trailingAnchor, constant: 3),
       helpReplyButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      helpReplyButton.widthAnchor.constraint(equalToConstant: 60),
+      helpReplyWidthConstraint,
       helpReplyButton.heightAnchor.constraint(equalToConstant: 30),
 
       superTalkButton.leadingAnchor.constraint(equalTo: helpReplyButton.trailingAnchor, constant: 3),
       superTalkButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      superTalkButton.widthAnchor.constraint(equalToConstant: 60),
+      superTalkWidthConstraint,
       superTalkButton.heightAnchor.constraint(equalToConstant: 30),
 
       aiButton.leadingAnchor.constraint(equalTo: superTalkButton.trailingAnchor, constant: 3),
       aiButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      aiButton.widthAnchor.constraint(equalToConstant: 32),
+      aiWidthConstraint,
       aiButton.heightAnchor.constraint(equalToConstant: 32),
 
       eyeButton.leadingAnchor.constraint(equalTo: aiButton.trailingAnchor, constant: 3),
       eyeButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      eyeButton.widthAnchor.constraint(equalToConstant: 26),
+      eyeWidthConstraint,
       eyeButton.heightAnchor.constraint(equalToConstant: 30),
 
       emojiButton.leadingAnchor.constraint(equalTo: eyeButton.trailingAnchor, constant: 3),
       emojiButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      emojiButton.widthAnchor.constraint(equalToConstant: 26),
+      emojiWidthConstraint,
       emojiButton.heightAnchor.constraint(equalToConstant: 30),
 
       moreButton.leadingAnchor.constraint(equalTo: emojiButton.trailingAnchor, constant: 3),
@@ -716,7 +745,10 @@ class KeyboardToolbarView: NibLessView {
         on: .url(URL(string: HamsterConstants.appURLForKeyboardSettings), id: "openKeyboardSettings")
       )
     }
-    button.menu = UIMenu(children: [openAssistant, voiceInput, voiceCall, privacy, settings])
+    let emoji = UIAction(title: "表情键盘", image: UIImage(systemName: "face.smiling")) { [weak self] _ in
+      self?.emojiButtonTouchUpAction()
+    }
+    button.menu = UIMenu(children: [openAssistant, emoji, voiceInput, voiceCall, privacy, settings])
   }
 
   @objc private func refreshVoiceMenusOnTouch() {

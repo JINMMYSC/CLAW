@@ -119,7 +119,11 @@ public final class ClawContextBuilder {
       return items.sorted { $0.lastObservedAt > $1.lastObservedAt }
     }
     let queryTokens = tokens(query)
-    let semantic = semanticQuery(query)
+    // Avoid allocating on-device sentence embeddings inside a keyboard
+    // extension: all per-keystroke context ranking stays lexical and bounded.
+    // The host app may still use semantic ranking on demand.
+    let isKeyboardExtension = Bundle.main.bundleURL.pathExtension.lowercased() == "appex"
+    let semantic = isKeyboardExtension ? nil : semanticQuery(query)
     let now = Date()
     return items.sorted { lhs, rhs in
       score(lhs, queryTokens: queryTokens, semantic: semantic, now: now)

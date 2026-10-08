@@ -1222,7 +1222,26 @@ public final class ClawMemoryStore {
       if let record = try? JSONDecoder().decode(MemoryV2Record.self, from: data) { result.append(record) }
     }
     if result.isEmpty {
-      result = try memoryV2(limit: limit).filter { $0.content.localizedCaseInsensitiveContains(trimmed) || ($0.normalizedKey?.localizedCaseInsensitiveContains(trimmed) ?? false) }
+      // FTS5's default tokenizer does not reliably match a substring inside
+      // an unspaced Chinese phrase. Search the full V2 table rather than only
+      // the newest records; otherwise old but relevant facts disappear.
+      // This bounded fallback runs only on an FTS miss.
+      let fallback = try prepare("""
+        SELECT payload FROM memory_v2
+        WHERE instr(lower(content), lower(?)) > 0
+           OR instr(lower(COALESCE(normalized_key, '')), lower(?)) > 0
+        ORDER BY updated_at DESC LIMIT ?;
+        """)
+      defer { sqlite3_finalize(fallback) }
+      bindText(trimmed, at: 1, in: fallback)
+      bindText(trimmed, at: 2, in: fallback)
+      sqlite3_bind_int(fallback, 3, Int32(max(1, limit)))
+      while sqlite3_step(fallback) == SQLITE_ROW, let blob = sqlite3_column_blob(fallback, 0) {
+        let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(fallback, 0)))
+        if let record = try? JSONDecoder().decode(MemoryV2Record.self, from: data) {
+          result.append(record)
+        }
+      }
     }
     // Include recent non-matches for global defaults; ranking will put matches first.
     let recent = try memoryV2(limit: limit)
