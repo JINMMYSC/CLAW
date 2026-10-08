@@ -35,7 +35,10 @@ public final class ClawScreenshotIngestionService {
   ) throws -> ClawScreenshotIngestionResult {
     let preview = parser.parse(lines: lines, contactID: selectedProfile?.id, contactName: selectedProfile?.displayName, capturedAt: capturedAt, sourceRef: sourceRef)
     let resolution = selectedProfile.map { ClawContactResolution(profile: $0, confidence: 1, created: false, reason: "selected") }
-      ?? ClawContactIdentityResolver.shared.resolve(displayTitle: preview.detectedTitle, allowCreate: true)
+      // Screenshot OCR is not an authorization to create a person. Unknown or
+      // ambiguously matched titles must remain in review until the user chooses
+      // a person explicitly. Avoid changing the current person as a side effect.
+      ?? ClawContactIdentityResolver.shared.resolve(displayTitle: preview.detectedTitle, allowCreate: false)
     let parsed = parser.parse(lines: lines, contactID: resolution.profile?.id, contactName: resolution.profile?.displayName, capturedAt: capturedAt, sourceRef: sourceRef)
     let hasUnknownSpeaker = parsed.messages.contains { $0.speaker == .unknown }
     let weakOCR = parsed.messages.contains { $0.confidence < 0.70 }
@@ -46,7 +49,8 @@ public final class ClawScreenshotIngestionService {
       // directly as long as at least one bubble was recognized.
       requiresReview = parsed.messages.isEmpty
     } else {
-      requiresReview = resolution.confidence < 0.75 || hasUnknownSpeaker || weakOCR || parsed.messages.isEmpty
+      // Fuzzy title matches (0.82) are suggestions, not verified identities.
+      requiresReview = resolution.profile == nil || resolution.confidence < 0.90 || hasUnknownSpeaker || weakOCR || parsed.messages.isEmpty
     }
     let result = ClawScreenshotIngestionResult(profile: resolution.profile, messages: parsed.messages, requiresReview: requiresReview, rawText: parsed.rawText)
     guard !requiresReview else { return result }

@@ -94,6 +94,7 @@ private struct ClawAssistantChatView: View {
   @State private var selectedProfileName = HeartTargetService.shared.selectedProfile?.displayName
   @State private var searchText = ""
   @State private var showingSearch = false
+  @State private var showingNewConversationConfirmation = false
   @State private var showingPhotoAttachment = false
   @State private var showingFileAttachment = false
   @State private var attachmentStatus = ""
@@ -339,17 +340,38 @@ private struct ClawAssistantChatView: View {
       Button { showingSearch.toggle(); if !showingSearch { searchText = "" } } label: {
         Image(systemName: showingSearch ? "xmark.circle.fill" : "magnifyingglass")
       }
+      .accessibilityLabel(showingSearch ? "关闭对话搜索" : "搜索当前对话")
       if chat.isSending {
         Button("停止") { chat.stopGenerating() }.font(.caption.weight(.semibold)).foregroundColor(.red)
-      } else if chat.messages.contains(where: { $0.role == "assistant" && !$0.excludeFromContext }) {
-        Button("重生成") { chat.regenerateLastResponse() }.font(.caption.weight(.semibold))
       }
-      Button("新对话") { chat.clearHistory() }
-        .font(.caption.weight(.semibold))
+      Menu {
+        if !chat.isSending && chat.messages.contains(where: { $0.role == "assistant" && !$0.excludeFromContext }) {
+          Button { chat.regenerateLastResponse() } label: {
+            Label("重新生成回复", systemImage: "arrow.clockwise")
+          }
+        }
+        Button {
+          if chat.messages.isEmpty { chat.clearHistory() }
+          else { showingNewConversationConfirmation = true }
+        } label: {
+          Label("新对话", systemImage: "square.and.pencil")
+        }
+      } label: {
+        Image(systemName: "ellipsis.circle")
+          .frame(minWidth: 40, minHeight: 40)
+          .contentShape(Rectangle())
+      }
+      .accessibilityLabel("对话选项")
     }
     .padding(.horizontal, 14)
     .padding(.vertical, 9)
     .background(Color(.secondarySystemGroupedBackground))
+    .confirmationDialog("开启新对话？", isPresented: $showingNewConversationConfirmation, titleVisibility: .visible) {
+      Button("清空当前对话", role: .destructive) { chat.clearHistory() }
+      Button("取消", role: .cancel) {}
+    } message: {
+      Text("当前会话的聊天历史会被清空，人物档案和长期记忆不会删除。")
+    }
   }
 
   private var emptyAssistant: some View {

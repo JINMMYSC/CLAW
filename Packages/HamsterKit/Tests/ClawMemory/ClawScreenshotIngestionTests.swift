@@ -2,6 +2,28 @@ import XCTest
 @testable import HamsterKit
 
 final class ClawScreenshotIngestionTests: XCTestCase {
+  func testUnknownScreenshotTitleRequiresReviewWithoutCreatingOrSelectingPerson() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("screenshot-ingest-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = ClawMemoryStore(databaseURL: root.appendingPathComponent("memory.sqlite"))
+    let title = "待确认联系人\(UUID().uuidString.prefix(8))"
+    let beforeIDs = Set(HeartTargetService.shared.profiles.map(\.id))
+    let beforeSelection = HeartTargetService.shared.selectedProfile?.id
+    let lines = [
+      VisionOCRService.OCRLine(text: title, boundingBox: .init(x: 0.35, y: 0.9, width: 0.3, height: 0.04), confidence: 0.99),
+      VisionOCRService.OCRLine(text: "明天下午提交设计", boundingBox: .init(x: 0.1, y: 0.5, width: 0.3, height: 0.04), confidence: 0.99),
+    ]
+
+    let result = try ClawScreenshotIngestionService(store: store).ingest(lines: lines, selectedProfile: nil, sourceRef: "test")
+
+    XCTAssertTrue(result.requiresReview)
+    XCTAssertNil(result.profile, "An unknown title must not be silently converted to a new person")
+    XCTAssertEqual(Set(HeartTargetService.shared.profiles.map(\.id)), beforeIDs)
+    XCTAssertEqual(HeartTargetService.shared.selectedProfile?.id, beforeSelection)
+    XCTAssertTrue(try store.conversation(contactID: nil, limit: 10).isEmpty)
+    XCTAssertTrue(try store.tasks(status: .open, limit: 10).isEmpty)
+  }
+
   func testLowConfidenceOrUnknownSpeakerRequiresReview() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("screenshot-ingest-\(UUID())")
     defer { try? FileManager.default.removeItem(at: root) }
