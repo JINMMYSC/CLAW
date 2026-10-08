@@ -32,6 +32,15 @@ class KeyboardToolbarView: NibLessView {
   /// 最近一次输入状态（空/非空），用于面板收起后恢复候选栏显隐
   private var lastInputEmpty = true
 
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil {
+      // The keyboard process may have been suspended while CLAW was recording.
+      // Refresh titles when it reappears, not only when the toolbar is created.
+      refreshVoiceMenusOnTouch()
+    }
+  }
+
   // MARK: - ClawTalk 入口按钮
 
   /// 当前聊天对象。全局模式只使用用户全局记忆，不混合多个联系人。
@@ -158,6 +167,7 @@ class KeyboardToolbarView: NibLessView {
     button.tintColor = ClawPanelPalette.deepBlue
     button.showsMenuAsPrimaryAction = true
     button.accessibilityLabel = "更多工具"
+    button.addTarget(self, action: #selector(refreshVoiceMenusOnTouch), for: .touchDown)
     refreshMoreMenu(on: button)
     return button
   }()
@@ -198,6 +208,7 @@ class KeyboardToolbarView: NibLessView {
     button.tintColor = ClawPanelPalette.deepBlue
     button.showsMenuAsPrimaryAction = true
     button.accessibilityLabel = "更多工具"
+    button.addTarget(self, action: #selector(refreshVoiceMenusOnTouch), for: .touchDown)
     refreshMoreMenu(on: button)
     return button
   }()
@@ -651,23 +662,41 @@ class KeyboardToolbarView: NibLessView {
       )
     }
     let handoff = ClawVoiceDictationHandoff.shared
-    let dictationTitle = handoff.snapshot.state == .ready ? "插入语音文字" : "语音输入（打开 CLAW）"
+    let dictationTitle: String
+    switch handoff.snapshot.state {
+    case .ready: dictationTitle = "插入已识别语音文字"
+    case .pending: dictationTitle = "待录音：请手动打开 CLAW"
+    case .failed: dictationTitle = "语音失败：点此重试"
+    case .idle: dictationTitle = "语音输入（在 CLAW 录音）"
+    }
     let voiceInput = UIAction(title: dictationTitle, image: UIImage(systemName: "mic.fill")) { [weak self] _ in
       guard let self else { return }
       let handoff = ClawVoiceDictationHandoff.shared
-      if handoff.snapshot.state == .ready, let text = handoff.consume() {
+      switch handoff.snapshot.state {
+      case .ready:
+        guard let text = handoff.consume() else { return }
         // Insert only after an explicit action, and into the originating host field.
         self.keyboardContext.clawPanelInputActive = false
         ClawPanelInputBridge.shared.send(text)
+        self.refreshVoiceMenusOnTouch()
         return
+      case .pending:
+        // Do not replace an in-flight request: the host app would otherwise
+        // discard its result due to a mismatched request UUID.
+        return
+      case .failed:
+        handoff.dismissFailure()
+      case .idle:
+        break
       }
       guard handoff.isSharedAvailable else { return }
-      let requestID = handoff.begin()
+      guard let requestID = handoff.beginIfIdle() else { return }
       guard handoff.snapshot.id == requestID else { return }
       self.actionHandler.handle(
         .release,
         on: .url(URL(string: HamsterConstants.appURLForGuruVoiceInput), id: "openClawVoiceInput")
       )
+      self.refreshVoiceMenusOnTouch()
     }
     let privacy = UIAction(
       title: collecting ? "暂停输入记录" : "恢复输入记录",
@@ -688,6 +717,11 @@ class KeyboardToolbarView: NibLessView {
       )
     }
     button.menu = UIMenu(children: [openAssistant, voiceInput, voiceCall, privacy, settings])
+  }
+
+  @objc private func refreshVoiceMenusOnTouch() {
+    refreshMoreMenu(on: moreButton)
+    refreshMoreMenu(on: candidateMoreButton)
   }
 
   // MARK: - 按钮动作
