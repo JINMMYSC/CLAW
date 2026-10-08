@@ -107,6 +107,25 @@ private struct ClawSettingsHubView: View {
             .foregroundColor(.secondary)
         }
 
+        Section("同步、备份与高级设置") {
+          Button {
+            guard let url = URL(string: HamsterConstants.appURLForMain) else {
+              cannotOpenKeyboardSettings = true
+              return
+            }
+            UIApplication.shared.open(url, options: [:]) { success in
+              if !success {
+                DispatchQueue.main.async { cannotOpenKeyboardSettings = true }
+              }
+            }
+          } label: {
+            Label("查看原有完整设置", systemImage: "slider.horizontal.3")
+          }
+          Text("iCloud、词库、RIME 部署、外观与诊断功能保留在原有设置中，迁移期间不会丢失入口。")
+            .font(.footnote)
+            .foregroundColor(.secondary)
+        }
+
         Section("使用说明") {
           Text("语音识别由 CLAW 主程序完成，第三方键盘不直接录音。")
             .font(.footnote)

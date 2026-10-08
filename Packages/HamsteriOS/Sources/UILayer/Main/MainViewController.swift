@@ -89,7 +89,9 @@ open class MainViewController: UISplitViewController {
   }()
 
   private lazy var secondaryNavigationViewController: UINavigationController = {
-    let vc = UINavigationController(rootViewController: aboutViewController)
+    // CLAW is the app's main surface, not an extra page inside legacy settings.
+    // The primary column retains all existing RIME and advanced-settings routes.
+    let vc = UINavigationController(rootViewController: clawTalkViewController)
     return vc
   }()
 
@@ -154,8 +156,9 @@ extension MainViewController {
 
 extension MainViewController: UISplitViewControllerDelegate {
   public func splitViewController(_ svc: UISplitViewController, topColumnForCollapsingToProposedTopColumn proposedTopColumn: UISplitViewController.Column) -> UISplitViewController.Column {
-    /// 首选显示 primary 列
-    return .primary
+    // On iPhone, show the same assistant-first home as the iPad detail column.
+    // All preexisting primary-column settings remain accessible through URLs.
+    return .secondary
   }
 }
 
