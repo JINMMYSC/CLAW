@@ -86,13 +86,14 @@ public final class ClawContextBuilder {
     let profiles = profilesProvider()
     let effectiveContactID = contactID ?? personResolver.resolve(query: query, profiles: profiles)
     let resolvedProfile = effectiveContactID.flatMap { id in profiles.first(where: { $0.id == id }) }
-    let rawGlobals = ((try? store.memories(scope: "global", limit: 80)) ?? [])
+    let sdk = DefaultMemorySDK(store: store)
+    let rawGlobals = ((try? sdk.contextualMemories(scope: "global", limit: 80)) ?? [])
       .filter { policy.isSourceEnabled($0.sourceType) && vault.isVisibleToAI($0) }
     let globals = rank(rawGlobals, query: query).prefix(40).map { $0 }
     let contactMemories: [ClawMemoryItem]
     let timeline: [ClawConversationMessage]
     if let effectiveContactID {
-      let rawContact = ((try? store.memories(scope: "contact", subjectID: effectiveContactID, limit: 80)) ?? [])
+      let rawContact = ((try? sdk.contextualMemories(scope: "contact", personID: effectiveContactID, limit: 80)) ?? [])
         .filter { policy.isSourceEnabled($0.sourceType) && vault.isVisibleToAI($0) }
       contactMemories = rank(rawContact, query: query).prefix(40).map { $0 }
       timeline = (try? store.conversation(contactID: effectiveContactID, limit: 32)) ?? []

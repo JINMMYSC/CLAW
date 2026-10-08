@@ -59,6 +59,30 @@ final class ClawContextBuilderScopeTests: XCTestCase {
     XCTAssertNil(ClawQueryPersonResolver().resolve(query: "最近哪个客户要跟进？", profiles: profiles))
   }
 
+  func testSDKContextReadsV2AndLegacyWithoutCrossPersonLeak() throws {
+    let alice = HeartTargetProfile(name: "艾丽")
+    let bob = HeartTargetProfile(name: "贝贝")
+    let sdk = DefaultMemorySDK(store: store)
+    try sdk.remember(MemoryV2Record(
+      type: .preference, state: .confirmed, scope: .person,
+      content: "艾丽喜欢简短回复", personID: alice.id,
+      provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    ))
+    try sdk.remember(MemoryV2Record(
+      type: .preference, state: .active, scope: .person,
+      content: "贝贝习惯电话沟通", personID: bob.id,
+      provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    ))
+    try seedPerson(alice, memory: "艾丽的旧版记忆")
+    let alicePack = builder(profiles: [alice, bob]).build(contactID: alice.id)
+    XCTAssertTrue(alicePack.contactMemories.contains { $0.content == "艾丽喜欢简短回复" })
+    XCTAssertTrue(alicePack.contactMemories.contains { $0.content == "艾丽的旧版记忆" })
+    XCTAssertFalse(alicePack.contactMemories.contains { $0.content == "贝贝习惯电话沟通" })
+    let globalPack = builder(profiles: [alice, bob]).build(contactID: nil, query: "今天做什么")
+    XCTAssertTrue(globalPack.contactMemories.isEmpty)
+    XCTAssertFalse(globalPack.globalMemories.contains { $0.content == "艾丽喜欢简短回复" })
+  }
+
   func testExplicitContactOverridesANameInTheQuery() throws {
     let selected = HeartTargetProfile(name: "当前对象")
     let mentioned = HeartTargetProfile(name: "另一个人")

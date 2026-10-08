@@ -74,6 +74,57 @@ public final class DefaultMemorySDK: MemorySDK {
     try store.saveMemoryV2(record, legacyProjection: item)
   }
 
+  /// Transitional, scope-safe projection for older views while their models
+  /// still render ClawMemoryItem. New and corrected V2 entries take precedence;
+  /// legacy-only rows remain visible until all writers are migrated.
+  /// No caller outside the SDK should combine legacy and V2 reads.
+  public func contextualMemories(
+    scope: String,
+    personID: UUID? = nil,
+    limit: Int = 80
+  ) throws -> [ClawMemoryItem] {
+    let count = max(1, limit)
+    let legacy = try store.memories(
+      scope: scope,
+      subjectID: scope == "contact" ? personID : nil,
+      limit: count
+    )
+    let candidates: [MemoryV2Record]
+    if scope == "global" {
+      candidates = try recall(MemoryRecallRequest(query: "", scope: .global, limit: count))
+        .filter { $0.scope == .global && $0.personID == nil }
+    } else if scope == "contact", let personID {
+      candidates = try recall(MemoryRecallRequest(
+        query: "", personID: personID, scope: .person, limit: count
+      )).filter {
+        $0.personID == personID && ($0.scope == .person || $0.scope == .relationship)
+      }
+    } else if scope == "contact" {
+      return []
+    } else {
+      return legacy
+    }
+    let legacyByID = Dictionary(uniqueKeysWithValues: legacy.map { ($0.id, $0) })
+    var seen = Set<UUID>()
+    var merged: [ClawMemoryItem] = []
+    for record in candidates {
+      var item = legacyProjection(record)
+      // Preserve trusted source metadata when a V2 write updated the same
+      // legacy row, but never replace newer V2 content or scope with stale data.
+      if let old = legacyByID[record.id] {
+        item.kind = old.kind
+        item.sourceType = old.sourceType
+        item.sourceRef = old.sourceRef
+      }
+      if scope == "contact" { item.scope = "contact" }
+      if seen.insert(item.id).inserted { merged.append(item) }
+    }
+    for item in legacy where seen.insert(item.id).inserted {
+      merged.append(item)
+    }
+    return Array(merged.sorted { $0.lastObservedAt > $1.lastObservedAt }.prefix(count))
+  }
+
   public func recall(_ request: MemoryRecallRequest) throws -> [MemoryV2Record] {
     try MemoryRouter(store: store).recall(request)
   }
