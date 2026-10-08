@@ -42,7 +42,7 @@ final class ClawPeopleWorkflowTests: XCTestCase {
     XCTAssertEqual(try store.tasks().compactMap(\.contactID), [destination])
   }
 
-  func testDeletingProfileDetachesRecordsWithoutDeletingThem() throws {
+  func testDeletingProfileCannotSilentlyPromotePrivateRecordsToGlobal() throws {
     let source = UUID()
     try store.upsertMemory(ClawMemoryItem(
       kind: .fact,
@@ -53,10 +53,10 @@ final class ClawPeopleWorkflowTests: XCTestCase {
     ))
     _ = try store.upsertTask(ClawSecretaryTask(title: "preserved task", contactID: source, sourceType: "test"))
 
-    try store.reassignContactReferences(from: source, to: nil)
-
-    XCTAssertEqual(try store.memories(scope: "global").map(\.content), ["preserved"])
-    XCTAssertNil(try store.tasks().first?.contactID)
+    XCTAssertThrowsError(try store.reassignContactReferences(from: source, to: nil))
+    XCTAssertTrue(try store.memories(scope: "global").isEmpty)
+    XCTAssertEqual(try store.memories(scope: "contact", subjectID: source).map(\.content), ["preserved"])
+    XCTAssertEqual(try store.tasks().first?.contactID, source)
   }
 
   func testContactDeletionGateRetainsPersonScopedData() throws {

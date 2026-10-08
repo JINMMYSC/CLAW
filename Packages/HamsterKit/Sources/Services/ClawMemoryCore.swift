@@ -289,11 +289,13 @@ public struct ClawEvolutionFeedback: Codable, Identifiable, Equatable {
 
 public enum ClawMemoryStoreError: Error, LocalizedError {
   case databaseUnavailable
+  case scopePromotionForbidden
   case sqlite(message: String)
 
   public var errorDescription: String? {
     switch self {
     case .databaseUnavailable: return "CLAW Memory database is unavailable"
+    case .scopePromotionForbidden: return "不能将人物私密记录直接转换为全局记忆"
     case .sqlite(let message): return message
     }
   }
@@ -963,6 +965,9 @@ public final class ClawMemoryStore {
   /// destinations for explicitly confirmed merges. Never promote person
   /// memories to global when removing a profile.
   public func reassignContactReferences(from sourceID: UUID, to destinationID: UUID?) throws {
+    // A non-nil destination is mandatory: public API callers must not bypass
+    // the safe profile deletion gate by promoting records to global scope.
+    guard let destinationID else { throw ClawMemoryStoreError.scopePromotionForbidden }
     guard sourceID != destinationID else { return }
     lock.lock(); defer { lock.unlock() }
     try executeUnlocked("BEGIN IMMEDIATE;")
