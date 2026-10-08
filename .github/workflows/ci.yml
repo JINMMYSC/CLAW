@@ -5,6 +5,7 @@ on:
       - main
       - work/claw-voice-keyboard-bg
       - work/claw-productization-20261006
+      - 'work/claw-ux-*'
   pull_request:
     branches:
       - main
