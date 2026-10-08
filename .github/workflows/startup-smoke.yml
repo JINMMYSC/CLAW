@@ -17,6 +17,10 @@ on:
       - ".github/workflows/build-ipa.yml"
       - ".github/workflows/startup-smoke.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   launch:
     runs-on: macos-15
