@@ -903,14 +903,10 @@ public final class ClawPanelOverlayView: UIView {
     let handoff = ClawVoiceDictationHandoff.shared
     switch handoff.snapshot.state {
     case .ready:
-      guard let controller = clawParentViewController as? UIInputViewController else {
-        showResultMessage("无法定位当前输入框，语音结果已保留")
-        return
-      }
       guard let text = handoff.consume() else { return }
       inputTextView.resignFirstResponder()
       keyboardContext.clawPanelInputActive = false
-      controller.textDocumentProxy.insertText(text)
+      ClawPanelInputBridge.shared.send(text)
       keyboardContext.clawPanelTab = -1
       return
     case .failed:
@@ -919,9 +915,9 @@ public final class ClawPanelOverlayView: UIView {
       showResultMessage(reason + "，再点话筒重试")
       return
     case .pending:
-      // Some iOS versions reject extensionContext.open(...); allow a retry
-      // instead of trapping the user in a ten-minute pending state.
-      startVoiceInput()
+      // Keep the UUID stable while the containing app is recording. Reissuing
+      // begin() here would invalidate the result before the user returns.
+      showResultMessage("语音任务已创建：请手动打开 CLAW 完成录音，再回到聊天点话筒插入")
       return
     case .idle:
       break
@@ -975,7 +971,10 @@ public final class ClawPanelOverlayView: UIView {
         showResultMessage("CLAW App Group 未就绪，无法跨 App 传递语音文字")
         return
       }
-      let requestID = ClawVoiceDictationHandoff.shared.begin()
+      guard let requestID = ClawVoiceDictationHandoff.shared.beginIfIdle() else {
+        showResultMessage("语音任务已创建，请打开 CLAW 录音或返回聊天插入结果")
+        return
+      }
       guard ClawVoiceDictationHandoff.shared.snapshot.id == requestID else {
         showResultMessage("无法保存语音请求。请在 iOS 键盘设置中开启 CLAW 的「允许完全访问」")
         return
