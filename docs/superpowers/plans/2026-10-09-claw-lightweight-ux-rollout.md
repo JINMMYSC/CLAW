@@ -64,3 +64,15 @@
 - Privacy: replace raw private-memory Spotlight entries with a generic CLAW shortcut and clear previously indexed raw memory content.
 - Voice: one-shot dictation appends text to the draft; explicit press-and-hold voice send behavior remains unchanged.
 - Verification: Swift XCTest, UI smoke, signed IPA, and real-device keyboard/voice QA remain required on the final commit. No performance gain is claimed without device measurements.
+
+## Phase 1–5 incremental delivery (2026-10-09 continuation)
+
+| Workstream | Implemented in feature branch | Still required |
+|---|---|---|
+| Input method | Compact 320pt toolbar, candidate viewport calculation, reduced duplicate layout refresh | Full 9-key/landscape/device matrix; theme refresh on-device; composition retention |
+| Host | Assistant/Today/People/Memory/Settings tabs, simplified action menu, attachment + and editable one-shot voice drafts | Full settings migration, keyboard installation guidance, all screen flows |
+| Memory | Chinese substring fallback, screenshot person/speaker/wording review before write, person-to-global scope promotion blocked | Memory V2 legacy read consolidation, scalable dedup, transactional record deletion, import undo |
+| Voice and privacy | Host one-shot draft, voice request IDs preserved, Spotlight private memory cleanup, iCloud entitlement guidance | 30-minute real-device mic/keyboard switching, connectivity interruptions |
+| Verification | Screenshot review tests, person scope tests, Chinese recall and composer tests | Same SHA Build Test + Startup Smoke + signed IPA, 100k memory stress, real iPhone QA |
+
+All user-facing success claims must be gated on matching SHA CI; earlier intermediate pushes are expected to be cancelled by workflow concurrency. No third-party frameworks have been imported.

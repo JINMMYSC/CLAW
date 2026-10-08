@@ -59,7 +59,7 @@ public enum ICloudPathError: LocalizedError {
   case unavailable
 
   public var errorDescription: String? {
-    "iCloud 不可用，请先在系统设置中登录 iCloud 并打开 iCloud Drive"
+    "iCloud 容器不可用。请检查 Apple ID、iCloud Drive 和 CLAW 的 iCloud 权限；如使用自行签名 IPA，还需检查签名描述文件是否包含正确的 iCloud 容器权限。"
   }
 }
 

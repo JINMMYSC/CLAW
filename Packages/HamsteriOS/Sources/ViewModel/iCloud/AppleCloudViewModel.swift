@@ -88,6 +88,7 @@ public class AppleCloudViewModel: ObservableObject {
     await MainActor.run { syncState = .syncing }
     await ProgressHUD.animate("拷贝中……", interaction: false)
     do {
+      guard URL.iCloudDocumentURL != nil else { throw ICloudPathError.unavailable }
       let regexList = regexOnCopyFile.split(separator: ",").map { String($0) }
       try FileManager.copySandboxSharedSupportDirectoryToAppleCloud(regexList)
       try FileManager.copySandboxUserDataDirectoryToAppleCloud(regexList)
@@ -110,7 +111,7 @@ public class AppleCloudViewModel: ObservableObject {
     await MainActor.run { syncState = .syncing }
     await ProgressHUD.animate("从 iCloud 恢复中……", interaction: false)
     do {
-      _ = URL.iCloudDocumentURL
+      guard URL.iCloudDocumentURL != nil else { throw ICloudPathError.unavailable }
       try FileManager.copyAppleCloudSharedSupportDirectoryToSandbox()
       try FileManager.copyAppleCloudUserDataDirectoryToSandbox()
       UserDefaults.standard.set(Date(), forKey: lastSyncTimeKey)
