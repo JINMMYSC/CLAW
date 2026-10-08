@@ -1277,6 +1277,35 @@ public final class ClawPanelOverlayView: UIView {
 
   /// 结果区提示消息
   private func showResultMessage(_ message: String) {
+    if isAITab {
+      // The AI panel pins resultTextView to zero height. Status messages placed
+      // there were invisible, making a rejected host-app jump look like a dead mic.
+      let statusTag = 88941
+      viewWithTag(statusTag)?.removeFromSuperview()
+      let label = UILabel()
+      label.tag = statusTag
+      label.text = message
+      label.numberOfLines = 3
+      label.textAlignment = .center
+      label.font = .systemFont(ofSize: 12, weight: .medium)
+      label.textColor = ClawPanelPalette.candidateText
+      label.backgroundColor = ClawPanelPalette.inputBackground
+      label.layer.cornerRadius = 8
+      label.clipsToBounds = true
+      label.isUserInteractionEnabled = false
+      label.translatesAutoresizingMaskIntoConstraints = false
+      addSubview(label)
+      NSLayoutConstraint.activate([
+        label.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
+        label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+        label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+        label.heightAnchor.constraint(greaterThanOrEqualToConstant: 48)
+      ])
+      DispatchQueue.main.asyncAfter(deadline: .now() + 9) { [weak label] in
+        label?.removeFromSuperview()
+      }
+      return
+    }
     resultTextView.isHidden = false
     resultTextView.text = message
     copyButton.isHidden = true
