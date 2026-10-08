@@ -56,6 +56,14 @@ public final class ClawVoiceDictationHandoff {
     return id
   }
 
+  /// A second keyboard tap must not replace the UUID held by the host recorder.
+  /// Only an idle handoff may be created. A failure must be explicitly dismissed.
+  @discardableResult
+  public func beginIfIdle(at now: Date = Date()) -> UUID? {
+    guard snapshot(at: now).state == .idle else { return nil }
+    return begin(at: now)
+  }
+
   @discardableResult
   public func complete(id: UUID, text: String) -> Bool {
     guard var record = validRecord(at: Date()), record.id == id, record.state == .pending else { return false }
