@@ -19,7 +19,9 @@ public protocol ClawWeChatLocalTransport {
   /// Implementations must bound downloads WHILE streaming; never allocate
   /// untrusted image/voice payloads in full before checking maximumBytes.
   func downloadMedia(reference: String, maximumBytes: Int) async throws -> Data
-  func sendText(_ text: String, conversationID: String) async throws
+  /// Implementations must deduplicate retries, including accepted sends with
+  /// lost acknowledgements. Fail closed if the provider cannot do so.
+  func sendText(_ text: String, conversationID: String, idempotencyKey: String) async throws
 }
 
 /// A separate image/OCR or voice/transcription processor is injected by the
@@ -116,11 +118,17 @@ public actor ClawWeChatLocalPump {
           }
           media = data
         }
+        // The connection may have been revoked during media download.
+        guard connection == .active else { throw ClawWeChatLocalPumpError.notRunning }
+        try Task.checkCancellation()
         let response = try await processor.makeReply(to: message, media: media)
         try Task.checkCancellation()
         if let reply = response?.trimmingCharacters(in: .whitespacesAndNewlines), !reply.isEmpty {
           guard connection == .active else { throw ClawWeChatLocalPumpError.notRunning }
-          try await transport.sendText(reply, conversationID: message.conversationID)
+          try await transport.sendText(
+            reply, conversationID: message.conversationID,
+            idempotencyKey: ClawWeChatLocalDeliveryKey.make(for: message)
+          )
         }
         handled += 1
       } catch {

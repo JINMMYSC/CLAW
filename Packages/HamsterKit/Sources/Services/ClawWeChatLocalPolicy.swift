@@ -109,3 +109,12 @@ public struct ClawWeChatLocalInboxGuard {
     order.removeAll { $0 == key }
   }
 }
+
+/// Stable, length-prefixed identity for retrying the same outgoing reply.
+/// Not a credential; the transport must not write it into logs.
+public enum ClawWeChatLocalDeliveryKey {
+  public static func make(for message: ClawWeChatLocalMessage) -> String {
+    let components = [message.senderID, message.conversationID, message.messageID]
+    return "claw-reply-v1:" + components.map { "\($0.utf8.count):\($0)" }.joined()
+  }
+}

@@ -5,18 +5,25 @@ import XCTest
 private actor FakeWeChatTransport: ClawWeChatLocalTransport {
   var messages: [ClawWeChatLocalMessage] = []
   var sendFailures = 0
+  var ackLostFailures = 0
+  var deliveredKeys: Set<String> = []
+  var attemptedKeys: [String] = []
   var downloaded: [String] = []
   var sent: [String] = []
   var cursors: [String?] = []
   var mediaSize = 8
   var fetchHook: (() async -> Void)?
+  var downloadHook: (() async -> Void)?
   var maxDownloadBytes: [Int] = []
 
   func setMessages(_ value: [ClawWeChatLocalMessage]) { messages = value }
   func setFetchHook(_ hook: (() async -> Void)?) { fetchHook = hook }
+  func setDownloadHook(_ hook: (() async -> Void)?) { downloadHook = hook }
   func setMediaSize(_ size: Int) { mediaSize = size }
   func downloadLimits() -> [Int] { maxDownloadBytes }
   func failNextSend() { sendFailures += 1 }
+  func acceptThenLoseAcknowledgement() { ackLostFailures += 1 }
+  func sendAttempts() -> [String] { attemptedKeys }
   func fetch(after cursor: String?) async throws -> ClawWeChatLocalBatch {
     cursors.append(cursor)
     if let fetchHook { await fetchHook() }
@@ -25,15 +32,23 @@ private actor FakeWeChatTransport: ClawWeChatLocalTransport {
   func downloadMedia(reference: String, maximumBytes: Int) async throws -> Data {
     downloaded.append(reference)
     maxDownloadBytes.append(maximumBytes)
+    if let downloadHook { await downloadHook() }
     guard mediaSize <= maximumBytes else { throw ClawWeChatLocalPumpError.mediaTooLarge }
     return Data(repeating: 1, count: mediaSize)
   }
-  func sendText(_ text: String, conversationID: String) async throws {
+  func sendText(_ text: String, conversationID: String, idempotencyKey: String) async throws {
+    attemptedKeys.append(idempotencyKey)
     if sendFailures > 0 {
       sendFailures -= 1
       throw URLError(.timedOut)
     }
-    sent.append(conversationID + ":" + text)
+    if deliveredKeys.insert(idempotencyKey).inserted {
+      sent.append(conversationID + ":" + text)
+    }
+    if ackLostFailures > 0 {
+      ackLostFailures -= 1
+      throw URLError(.timedOut)
+    }
   }
   func sentMessages() -> [String] { sent }
   func downloadedMedia() -> [String] { downloaded }
@@ -167,6 +182,64 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
     let processed = await processor.processedKinds()
     XCTAssertNil(cursor)
     XCTAssertTrue(processed.isEmpty)
+  }
+
+  func testAcknowledgedSendWithLostResponseIsNotDuplicatedOnRetryOrRestart() async throws {
+    let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
+    await transport.setMessages([message("lost-ack", kind: .voice)])
+    await transport.acceptThenLoseAcknowledgement()
+    let pump = ClawWeChatLocalPump(
+      transport: transport, processor: processor, allowedSenderID: "owner"
+    )
+    await pump.setConnection(.active)
+    do {
+      _ = try await pump.pollOnce(
+        hostForeground: true, keyboardVisible: false, keyboardFullAccess: false
+      )
+      XCTFail("Expected simulated lost acknowledgement")
+    } catch { }
+    let cursor = await pump.lastCursor()
+    XCTAssertNil(cursor)
+    let count = try await pump.pollOnce(
+      hostForeground: true, keyboardVisible: false, keyboardFullAccess: false
+    )
+    XCTAssertEqual(count, 1)
+    let restarted = ClawWeChatLocalPump(
+      transport: transport, processor: processor, allowedSenderID: "owner"
+    )
+    await restarted.setConnection(.active)
+    _ = try await restarted.pollOnce(
+      hostForeground: true, keyboardVisible: false, keyboardFullAccess: false
+    )
+    let sent = await transport.sentMessages()
+    let attempts = await transport.sendAttempts()
+    XCTAssertEqual(sent.count, 1)
+    XCTAssertEqual(attempts.count, 3)
+    XCTAssertEqual(Set(attempts).count, 1)
+  }
+
+  func testRevokedConnectionDuringMediaDownloadDoesNotInvokeAIOrSend() async throws {
+    let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
+    await transport.setMessages([message("revoked", kind: .image)])
+    let pump = ClawWeChatLocalPump(
+      transport: transport, processor: processor, allowedSenderID: "owner"
+    )
+    await transport.setDownloadHook {
+      await pump.setConnection(.expired)
+    }
+    await pump.setConnection(.active)
+    do {
+      _ = try await pump.pollOnce(
+        hostForeground: true, keyboardVisible: false, keyboardFullAccess: false
+      )
+      XCTFail("A revoked connection must not process downloaded media")
+    } catch ClawWeChatLocalPumpError.notRunning { }
+    let processed = await processor.processedKinds()
+    let sent = await transport.sentMessages()
+    let cursor = await pump.lastCursor()
+    XCTAssertTrue(processed.isEmpty)
+    XCTAssertTrue(sent.isEmpty)
+    XCTAssertNil(cursor)
   }
 
 }

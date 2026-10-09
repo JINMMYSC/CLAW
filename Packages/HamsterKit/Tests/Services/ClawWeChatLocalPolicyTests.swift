@@ -54,4 +54,31 @@ final class ClawWeChatLocalPolicyTests: XCTestCase {
     XCTAssertEqual(guardStore.admit(message("2"), bridgeActive: true), .duplicate)
     XCTAssertEqual(guardStore.admit(message("1"), bridgeActive: true), .accepted)
   }
+  func testDeliveryKeyIsStableAndCollisionResistantForComponentBoundaries() {
+    let a = ClawWeChatLocalMessage(
+      messageID: "c", conversationID: "ab", senderID: "owner",
+      kind: .text, text: "hello"
+    )
+    let b = ClawWeChatLocalMessage(
+      messageID: "bc", conversationID: "a", senderID: "owner",
+      kind: .text, text: "hello"
+    )
+    let other = ClawWeChatLocalMessage(
+      messageID: "c", conversationID: "ab", senderID: "other",
+      kind: .text, text: "hello"
+    )
+    XCTAssertEqual(
+      ClawWeChatLocalDeliveryKey.make(for: a),
+      ClawWeChatLocalDeliveryKey.make(for: a)
+    )
+    XCTAssertNotEqual(
+      ClawWeChatLocalDeliveryKey.make(for: a),
+      ClawWeChatLocalDeliveryKey.make(for: b)
+    )
+    XCTAssertNotEqual(
+      ClawWeChatLocalDeliveryKey.make(for: a),
+      ClawWeChatLocalDeliveryKey.make(for: other)
+    )
+  }
+
 }
