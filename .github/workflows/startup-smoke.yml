@@ -87,13 +87,7 @@ jobs:
           # is generous; a real hang still fails via the liveness check below.
           for _ in $(seq 1 48); do
             sleep 5
-            if grep -Fq "[clawTalk] first-launch failed" smoke-first-launch-console.log; then
-              echo "::error::RIME first-launch deployment failed; inspect saved diagnostics"
-              grep -F "[clawTalk] first-launch phase:" smoke-first-launch-console.log || true
-              exit 1
-            fi
-            if grep -Fq "[clawTalk] first-launch ready" smoke-first-launch-console.log ||
-               grep -Fq "[clawTalk] first-launch deployment completed" smoke-first-launch-console.log; then
+            if grep -Eq "\[clawTalk\] first-launch (ready|deployment completed)$" smoke-first-launch-console.log; then
               ready=1
               break
             fi
@@ -105,8 +99,8 @@ jobs:
           done
           if [ "$ready" -ne 1 ]; then
             echo "First-launch deployment did not complete within 240 seconds"
-            echo "Last observed deployment phases (no personal input):"
-            grep -F "[clawTalk] first-launch phase:" smoke-first-launch-console.log || true
+            echo "Most recent initialization stages:"
+            grep "claw-bootstrap:" smoke-first-launch-console.log | tail -n 12 || true
             cat smoke-first-launch-console.log
             exit 1
           fi

@@ -288,6 +288,9 @@ extension SettingsViewModel {
 
   /// 启动加载数据
   func loadAppData() async throws {
+#if DEBUG
+    writeStartupSmokeMarker("claw-bootstrap: entered")
+#endif
     // PATCH: 仓1.0版本处理
     if let v1FirstRunning = UserDefaults.hamster._firstRunningForV1, v1FirstRunning == false {
       await ProgressHUD.animate("迁移 1.0 配置中……", interaction: false)
@@ -371,6 +374,9 @@ extension SettingsViewModel {
     // FIX-HMSTR-029：主程序每次启动都做 Rime 健康检查（覆盖安装也会跑，不依赖首启标记）。
     // 检查 AppGroup 用户数据 prism 是否健康：缺失则置 clawTalk_rime_needs_app_redeploy 并写 rime-diag.log。
     rimeViewModel.rimeContext.runStartupRimeHealthCheck()
+#if DEBUG
+    writeStartupSmokeMarker("claw-bootstrap: health-checked")
+#endif
 
     // FIX-HMSTR-029：扩展/健康检查请求强制重部署（AppGroup 用户数据损坏/方案缺失）→ 复用首启部署路径，强制重解压 + 全量重编译。
     // 部署成功后 deployment() 会清除 clawTalk_rime_needs_app_redeploy；失败保留标记下次启动重试。
@@ -380,7 +386,15 @@ extension SettingsViewModel {
     }
 
     // 判断应用是否首次运行
-    guard UserDefaults.standard.isFirstRunning else { return }
+    guard UserDefaults.standard.isFirstRunning else {
+#if DEBUG
+      writeStartupSmokeMarker("claw-bootstrap: existing-install-ready")
+#endif
+      return
+    }
+#if DEBUG
+    writeStartupSmokeMarker("claw-bootstrap: preparing-first-install")
+#endif
 
     // 已部署标记：上次部署成功过就直接快速启动，不再全量编译（避免主程序黑屏）
     // 迁移旧 key（guru_rime_deployed → clawTalk_rime_deployed）
@@ -399,11 +413,6 @@ extension SettingsViewModel {
 
     // 标记部署中
     UserDefaults.hamster.set(true, forKey: "clawTalk_rime_deploy_in_progress")
-    let startupTrace = UUID()
-    ClawDiagnosticsCore.shared.record(module: "startup", action: "first_launch_started", traceID: startupTrace)
-#if DEBUG
-    writeStartupSmokeMarker("[clawTalk] first-launch phase: preparing")
-#endif
 
     do {
       // 首次启动初始化输入方案目录 + 部署 RIME（全部放到后台线程，避免阻塞主界面导致黑屏）
@@ -412,7 +421,7 @@ extension SettingsViewModel {
           do {
             var config = HamsterConfigurationStore.shared.configuration
 #if DEBUG
-            self.writeStartupSmokeMarker("[clawTalk] first-launch phase: unpacking")
+            self.writeStartupSmokeMarker("claw-bootstrap: worker-started")
 #endif
             if !alreadyDeployed {
               // FIX-HMSTR-034: 首次启动的 SharedSupport 解压也放到后台线程，
@@ -420,20 +429,26 @@ extension SettingsViewModel {
               try FileManager.initSandboxSharedSupportDirectory(override: true)
               try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
               try FileManager.initSandboxBackupDirectory(override: true)
+#if DEBUG
+              self.writeStartupSmokeMarker("claw-bootstrap: resource-extraction-completed")
+#endif
             }
 #if DEBUG
-            self.writeStartupSmokeMarker("[clawTalk] first-launch phase: deploying")
+            self.writeStartupSmokeMarker("claw-bootstrap: rime-deploy-started")
 #endif
             try self.rimeViewModel.rimeContext.deployment(configuration: &config, forceFullCheck: !alreadyDeployed)
+#if DEBUG
+            self.writeStartupSmokeMarker("claw-bootstrap: rime-deploy-returned")
+#endif
             // 自检（FIX-HMSTR-026）：标记已部署但方案仍为空 = App Group 残留标记/方案缺失，强制重新解压 + 全量重部署
             if self.rimeViewModel.rimeContext.schemas.isEmpty {
-#if DEBUG
-              self.writeStartupSmokeMarker("[clawTalk] first-launch phase: redeploying")
-#endif
               try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
               try FileManager.initSandboxBackupDirectory(override: true)
               try self.rimeViewModel.rimeContext.deployment(configuration: &config, forceFullCheck: true)
             }
+#if DEBUG
+            self.writeStartupSmokeMarker("claw-bootstrap: ready-to-commit")
+#endif
             UserDefaults.hamster.set(true, forKey: "clawTalk_rime_deployed")
             UserDefaults.hamster.set(false, forKey: "clawTalk_rime_deploy_in_progress")
             continuation.resume(returning: config)
@@ -467,14 +482,10 @@ extension SettingsViewModel {
     } catch {
       // 失败也要清除部署中标记，避免卡死，下次启动重试
       UserDefaults.hamster.set(false, forKey: "clawTalk_rime_deploy_in_progress")
-      ClawDiagnosticsCore.shared.record(
-        module: "startup", action: "first_launch_failed",
-        severity: "error", traceID: startupTrace, error: error
-      )
 #if DEBUG
-      writeStartupSmokeMarker("[clawTalk] first-launch failed")
+      writeStartupSmokeMarker("claw-bootstrap: failed")
 #endif
-      Logger.statistics.error("rime first-launch deployment failed")
+      Logger.statistics.error("rime init file directory error: \(error.localizedDescription)")
       await ProgressHUD.failed("导入数据异常", interaction: false, delay: 2)
       throw error
     }
