@@ -437,6 +437,9 @@ private struct ClawAssistantChatView: View {
     }
     .background(Color(.systemGroupedBackground))
     .onAppear {
+      if ClawVoiceDictationHandoff.shared.failStalePending() {
+        voiceHint = "上一次语音录音中断，请从键盘重试"
+      }
       let profile = HeartTargetService.shared.selectedProfile
       switchDraft(to: profile?.id)
       selectedProfileName = profile?.displayName
@@ -466,6 +469,15 @@ private struct ClawAssistantChatView: View {
         defaults?.set(false, forKey: HamsterConstants.clawVoiceCallLaunchKey)
         startHandsFreeCall()
       }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+      // iOS can suspend microphone work without a final Speech callback.
+      // Leave an explicit failure for the keyboard instead of a stuck
+      // "pending" request that prevents the user from retrying.
+      if recording || keyboardDictationID != nil {
+        cancelPendingVoice(preserveKeyboardFailure: true)
+      }
+      if callActive { stopHandsFreeCall() }
     }
     .onDisappear {
       cancelPendingVoice()
@@ -840,9 +852,13 @@ private struct ClawAssistantChatView: View {
     voiceHint = discardVoiceResult ? "已取消" : "正在完成识别…"
   }
 
-  private func cancelPendingVoice() {
+  private func cancelPendingVoice(preserveKeyboardFailure: Bool = false) {
     if let keyboardID = keyboardDictationID {
-      ClawVoiceDictationHandoff.shared.cancel(id: keyboardID)
+      if preserveKeyboardFailure {
+        _ = ClawVoiceDictationHandoff.shared.fail(id: keyboardID, reason: "语音因应用切换而中断，请重试")
+      } else {
+        ClawVoiceDictationHandoff.shared.cancel(id: keyboardID)
+      }
       keyboardDictationID = nil
     }
     keyboardDictationFinalizing = false
@@ -907,6 +923,10 @@ private struct ClawAssistantChatView: View {
     if callActive { stopHandsFreeCall() }
     guard !recording, !oneShotFinalizing else { return }
     let handoff = ClawVoiceDictationHandoff.shared
+    if handoff.snapshot.state == .failed {
+      voiceHint = handoff.snapshot.error ?? "语音输入未完成，请重试"
+      return
+    }
     if handoff.snapshot.state == .pending {
       keyboardDictationID = handoff.snapshot.id
       completedKeyboardDictationText = nil

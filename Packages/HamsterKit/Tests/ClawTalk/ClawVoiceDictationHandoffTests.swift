@@ -56,6 +56,23 @@ final class ClawVoiceDictationHandoffTests: XCTestCase {
     XCTAssertNil(host.consume())
   }
 
+  func testInterruptedHostRequestCanRecoverWithoutReplacingActiveRecording() {
+    let (handoff, defaults, suite) = makeStore()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let started = Date(timeIntervalSince1970: 1000)
+    let id = handoff.begin(at: started)
+    XCTAssertFalse(handoff.failStalePending(olderThan: 180, at: started.addingTimeInterval(179)))
+    XCTAssertEqual(handoff.snapshot(at: started.addingTimeInterval(179)).state, .pending)
+    XCTAssertTrue(handoff.failStalePending(olderThan: 180, at: started.addingTimeInterval(181)))
+    let state = handoff.snapshot(at: started.addingTimeInterval(181))
+    XCTAssertEqual(state.state, .failed)
+    XCTAssertEqual(state.id, id)
+    XCTAssertFalse(handoff.complete(id: id, text: "迟到的结果"))
+    XCTAssertNil(handoff.beginIfIdle(at: started.addingTimeInterval(182)))
+    handoff.dismissFailure()
+    XCTAssertEqual(handoff.snapshot.state, .idle)
+  }
+
   func testRepeatedKeyboardMicTapDoesNotOverwriteRecordingRequest() {
     let (keyboard, defaults, suite) = makeStore()
     defer { defaults.removePersistentDomain(forName: suite) }

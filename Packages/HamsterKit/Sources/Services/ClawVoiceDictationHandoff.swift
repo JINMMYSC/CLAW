@@ -64,6 +64,24 @@ public final class ClawVoiceDictationHandoff {
     return begin(at: now)
   }
 
+  /// Recover an orphaned keyboard request after the host was suspended or
+  /// force-quit. Never replace a recent request: an active recorder may still
+  /// be producing its final speech-recognition callback.
+  @discardableResult
+  public func failStalePending(
+    olderThan seconds: TimeInterval = 180,
+    at now: Date = Date()
+  ) -> Bool {
+    guard var record = validRecord(at: now),
+          record.state == .pending,
+          now.timeIntervalSince(record.createdAt) >= max(0, seconds)
+    else { return false }
+    record.state = .failed
+    record.error = "上一次录音未完成，请重新开始"
+    write(record)
+    return true
+  }
+
   @discardableResult
   public func complete(id: UUID, text: String) -> Bool {
     guard var record = validRecord(at: Date()), record.id == id, record.state == .pending else { return false }

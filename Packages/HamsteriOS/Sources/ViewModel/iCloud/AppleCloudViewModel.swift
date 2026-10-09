@@ -85,7 +85,12 @@ public class AppleCloudViewModel: ObservableObject {
   }
 
   func copyFileToiCloud() async {
-    await MainActor.run { syncState = .syncing }
+    let canStart = await MainActor.run { () -> Bool in
+      if case .syncing = syncState { return false }
+      syncState = .syncing
+      return true
+    }
+    guard canStart else { return }
     await ProgressHUD.animate("拷贝中……", interaction: false)
     do {
       guard URL.iCloudDocumentURL != nil else { throw ICloudPathError.unavailable }
@@ -108,7 +113,12 @@ public class AppleCloudViewModel: ObservableObject {
 
   /// 从 iCloud 恢复文件至本地（SharedSupport + UserData）
   func restoreFromiCloud() async {
-    await MainActor.run { syncState = .syncing }
+    let canStart = await MainActor.run { () -> Bool in
+      if case .syncing = syncState { return false }
+      syncState = .syncing
+      return true
+    }
+    guard canStart else { return }
     await ProgressHUD.animate("从 iCloud 恢复中……", interaction: false)
     do {
       guard URL.iCloudDocumentURL != nil else { throw ICloudPathError.unavailable }

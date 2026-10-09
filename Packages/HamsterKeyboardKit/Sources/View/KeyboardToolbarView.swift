@@ -311,15 +311,18 @@ class KeyboardToolbarView: NibLessView {
   /// candidate bar or allowing required Auto Layout constraints to collide.
   private func updateCompactToolbarWidths() {
     guard bounds.width > 0 else { return }
+    // iPad floating keyboards can be < 320pt. Shrink fixed action widths
+    // by tier to prevent required constraints from pushing dismiss offscreen.
+    let floating = bounds.width < 300
     let compact = bounds.width < 380
-    let contact = compact ? CGFloat(54) : CGFloat(64)
+    let contact: CGFloat = floating ? 38 : (compact ? 54 : 64)
     guard contactWidthConstraint?.constant != contact else { return }
     contactWidthConstraint?.constant = contact
-    helpReplyWidthConstraint?.constant = compact ? 52 : 60
-    superTalkWidthConstraint?.constant = compact ? 52 : 60
-    aiWidthConstraint?.constant = compact ? 28 : 32
-    eyeWidthConstraint?.constant = compact ? 24 : 26
-    emojiWidthConstraint?.constant = compact ? 24 : 26
+    helpReplyWidthConstraint?.constant = floating ? 40 : (compact ? 52 : 60)
+    superTalkWidthConstraint?.constant = floating ? 40 : (compact ? 52 : 60)
+    aiWidthConstraint?.constant = floating ? 22 : (compact ? 28 : 32)
+    eyeWidthConstraint?.constant = floating ? 18 : (compact ? 24 : 26)
+    emojiWidthConstraint?.constant = floating ? 18 : (compact ? 24 : 26)
   }
 
   // MARK: - 视图层次
