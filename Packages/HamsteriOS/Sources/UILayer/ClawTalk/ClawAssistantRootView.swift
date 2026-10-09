@@ -258,6 +258,7 @@ enum ClawImportedAttachmentReader {
 private struct ClawScreenshotReviewSheet: View {
   @Environment(\.dismiss) private var dismiss
   let preview: ClawScreenshotIngestionResult
+  let screenshot: UIImage?
   let profiles: [HeartTargetProfile]
   @State private var availableProfiles: [HeartTargetProfile]
   let onConfirm: (UUID, [ClawConversationMessage]) throws -> Int
@@ -271,11 +272,13 @@ private struct ClawScreenshotReviewSheet: View {
 
   init(
     preview: ClawScreenshotIngestionResult,
+    screenshot: UIImage?,
     profiles: [HeartTargetProfile],
     onConfirm: @escaping (UUID, [ClawConversationMessage]) throws -> Int,
     onUseText: @escaping (String) -> Void
   ) {
     self.preview = preview
+    self.screenshot = screenshot
     self.profiles = profiles
     _availableProfiles = State(initialValue: profiles)
     self.onConfirm = onConfirm
@@ -295,6 +298,19 @@ private struct ClawScreenshotReviewSheet: View {
   var body: some View {
     NavigationView {
       Form {
+        if let screenshot {
+          Section {
+            Image(uiImage: screenshot)
+              .resizable()
+              .scaledToFit()
+              .frame(maxWidth: .infinity, maxHeight: 250)
+              .accessibilityLabel("原始聊天截图预览")
+          } header: {
+            Text("原始截图（仅供本次核对）")
+          } footer: {
+            Text("请对照原图确认聊天气泡。退出审核后不保留这张临时预览；不会自动将原图保存为人物记忆。")
+          }
+        }
         Section {
           Menu {
             ForEach(availableProfiles) { profile in
@@ -338,6 +354,9 @@ private struct ClawScreenshotReviewSheet: View {
                 .accessibilityLabel("校对消息文字")
             }
             .padding(.vertical, 4)
+          }
+          .onDelete { offsets in
+            reviewedMessages.remove(atOffsets: offsets)
           }
         }
 
@@ -430,6 +449,7 @@ private struct ClawAssistantChatView: View {
   @State private var attachmentStatus = ""
   @State private var lastScreenshotReceipt: ClawScreenshotImportReceipt?
   @State private var pendingScreenshotReview: ClawScreenshotIngestionResult?
+  @State private var pendingScreenshotImage: UIImage?
   @State private var showingScreenshotReview = false
   @State private var quickPrompts = ClawQuickPromptStore(
     defaults: UserDefaults(suiteName: HamsterConstants.appGroupName) ?? .standard
@@ -627,10 +647,12 @@ private struct ClawAssistantChatView: View {
     }
     .sheet(isPresented: $showingScreenshotReview, onDismiss: {
       pendingScreenshotReview = nil
+      pendingScreenshotImage = nil
     }) {
       if let preview = pendingScreenshotReview {
         ClawScreenshotReviewSheet(
           preview: preview,
+          screenshot: pendingScreenshotImage,
           profiles: HeartTargetService.shared.profiles,
           onConfirm: { id, reviewed in
             guard let profile = HeartTargetService.shared.profile(id: id) else {
@@ -1053,6 +1075,7 @@ private struct ClawAssistantChatView: View {
               requireUserReview: true
             )
             pendingScreenshotReview = preview
+            pendingScreenshotImage = image
             showingScreenshotReview = true
             attachmentStatus = "请核对人物、发言者与文字，再决定是否归档"
           } catch {
