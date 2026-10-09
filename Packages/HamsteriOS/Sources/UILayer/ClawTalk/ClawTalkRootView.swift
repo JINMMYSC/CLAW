@@ -438,7 +438,7 @@ struct ClawTalkRootView: View {
       .navigationTitle("预览")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .topBarTrailing) { Button("关闭") { showingPreview = false } }
+        ToolbarItem(placement: .navigationBarTrailing) { Button("关闭") { showingPreview = false } }
       }
     }
   }
@@ -451,8 +451,8 @@ struct ClawTalkRootView: View {
         .navigationTitle(selectedPrompt?.name ?? "AI 分析")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-          ToolbarItem(placement: .topBarLeading) { Button("关闭") { showingAIChat = false } }
-          ToolbarItem(placement: .topBarTrailing) {
+          ToolbarItem(placement: .navigationBarLeading) { Button("关闭") { showingAIChat = false } }
+          ToolbarItem(placement: .navigationBarTrailing) {
             Button("清空") { viewModel.clearAIConversation() }
           }
         }
@@ -467,7 +467,7 @@ struct ClawTalkRootView: View {
         .navigationTitle("AI 设置")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-          ToolbarItem(placement: .topBarTrailing) { Button("完成") { showingAISettings = false } }
+          ToolbarItem(placement: .navigationBarTrailing) { Button("完成") { showingAISettings = false } }
         }
     }
   }
@@ -783,8 +783,8 @@ struct PromptEditorView: View {
       .navigationTitle(prompt.name.isEmpty ? "新建 Prompt" : "编辑 Prompt")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .topBarLeading) { Button("取消") { onCancel() } }
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .navigationBarLeading) { Button("取消") { onCancel() } }
+        ToolbarItem(placement: .navigationBarTrailing) {
           Button("保存") { onSave(prompt) }
             .disabled(prompt.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
