@@ -140,6 +140,11 @@ public final class ClawPanelOverlayView: UIView {
   /// 波形条垂直居中面板（空会话波形条模式）
   private var aiWaveCenterY: NSLayoutConstraint!
 
+  // Per-person, per-panel drafts remain in this keyboard process only.
+  // Never persist unsent text to the App Group or mix it across contacts.
+  private var draftStore = ClawPanelDraftStore()
+  private var activeDraftContext: ClawPanelDraftContext?
+
   // AI 分析状态
   private var isLoading = false
   // 语音状态
@@ -177,6 +182,7 @@ public final class ClawPanelOverlayView: UIView {
       .receive(on: DispatchQueue.main)
       .sink { [weak self] tab in
         if tab < 0 {
+          self?.stashCurrentDraft()
           self?.inputTextView.resignFirstResponder()
           ClawVoiceInputService.shared.stop()
           ClawChatService.shared.stopSpeaking()
@@ -241,7 +247,8 @@ public final class ClawPanelOverlayView: UIView {
     styleButton.showsMenuAsPrimaryAction = true
     refreshStyleMenu()
 
-    newChatButton.setTitle("新对话", for: .normal)
+    newChatButton.setTitle("清空", for: .normal)
+    newChatButton.accessibilityLabel = "清空当前 AI 对话历史"
     newChatButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
     newChatButton.setTitleColor(ClawPanelPalette.deepBlue, for: .normal)
     newChatButton.addTarget(self, action: #selector(newChatTapped), for: .touchUpInside)
@@ -559,7 +566,20 @@ public final class ClawPanelOverlayView: UIView {
 
   // MARK: - Tab 刷新
 
+  private func stashCurrentDraft() {
+    guard let context = activeDraftContext, !isCallActive else { return }
+    draftStore.save(inputTextView.text ?? "", for: context)
+  }
+
+  private func restoreDraft(for tab: Int) {
+    let context = ClawPanelDraftContext(personID: HeartTargetService.shared.selectedProfile?.id, tab: tab)
+    activeDraftContext = context
+    inputTextView.text = draftStore.text(for: context)
+    ClawSuggestionEngine.shared.feed(inputTextView.text)
+  }
+
   func refresh(for tab: Int) {
+    stashCurrentDraft()
     // 面板配色跟随当前键盘主题
     ClawPanelPalette.sync(with: keyboardContext)
     guard let panelTab = PanelTab(rawValue: tab) else { return }
@@ -590,7 +610,7 @@ public final class ClawPanelOverlayView: UIView {
       NSLayoutConstraint.deactivate([micLeadingToPhone])
       NSLayoutConstraint.activate([micLeadingToText])
     }
-    inputTextView.text = ""
+    restoreDraft(for: tab)
     resultTextView.text = ""
     resultTextView.isHidden = true
     copyButton.isHidden = true
@@ -606,6 +626,9 @@ public final class ClawPanelOverlayView: UIView {
     micButton.tintColor = ClawPanelPalette.brandBlue
     inputRowHeightConstraint.constant = AILayout.inputRowHeight
     if isAI {
+      // Switch the persisted AI conversation as well as the visible draft.
+      // Never render another person's chat history when switching targets.
+      ClawChatService.shared.switchContext(contactID: HeartTargetService.shared.selectedProfile?.id)
       // AI tab：聊天列表弹性占位，输入行贴底；聊天对象与结果区不占空间
       heartTargetButton.isHidden = true
       heartHeightConstraint.constant = 0
@@ -735,7 +758,17 @@ public final class ClawPanelOverlayView: UIView {
 
   @objc private func newChatTapped() {
     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-    ClawChatService.shared.clearHistory()
+    guard let presenter = clawParentViewController else { return }
+    let alert = UIAlertController(
+      title: "清空当前 AI 对话？",
+      message: "这会删除当前对话历史，不会创建可恢复的新会话。",
+      preferredStyle: .alert
+    )
+    alert.addAction(UIAlertAction(title: "保留对话", style: .cancel))
+    alert.addAction(UIAlertAction(title: "清空历史", style: .destructive) { _ in
+      ClawChatService.shared.clearHistory()
+    })
+    presenter.present(alert, animated: true)
   }
 
   @objc private func speakToggleTapped() {
@@ -847,8 +880,22 @@ public final class ClawPanelOverlayView: UIView {
   }
 
   @objc private func bubbleTapped(_ sender: UITapGestureRecognizer) {
-    guard let container = sender.view, let text = container.accessibilityLabel else { return }
-    ClawChatService.shared.speak(text)
+    guard let container = sender.view,
+          let text = container.accessibilityLabel,
+          let presenter = clawParentViewController else { return }
+    let menu = UIAlertController(title: "CLAW 回答", message: nil, preferredStyle: .actionSheet)
+    menu.addAction(UIAlertAction(title: "复制文字", style: .default) { _ in
+      UIPasteboard.general.string = text
+    })
+    menu.addAction(UIAlertAction(title: "朗读", style: .default) { _ in
+      ClawChatService.shared.speak(text)
+    })
+    menu.addAction(UIAlertAction(title: "取消", style: .cancel))
+    if let popover = menu.popoverPresentationController {
+      popover.sourceView = container
+      popover.sourceRect = container.bounds
+    }
+    presenter.present(menu, animated: true)
   }
   @objc private func closeTapped() {
     keyboardContext.clawPanelTab = -1
@@ -1419,13 +1466,17 @@ public final class ClawPanelOverlayView: UIView {
 
     var actions: [UIAction] = [
       UIAction(title: "全局（不混联系人）", state: HeartTargetService.shared.selectedProfile == nil ? .on : .off) { _ in
+        self.stashCurrentDraft()
         HeartTargetService.shared.clearSelection()
+        self.refresh(for: self.keyboardContext.clawPanelTab)
         self.refreshHeartTargetMenu()
       },
     ]
     actions.append(contentsOf: profiles.enumerated().map { index, profile in
       UIAction(title: profile.displayName, state: index == HeartTargetService.shared.selectedIndex ? .on : .off) { _ in
+        self.stashCurrentDraft()
         HeartTargetService.shared.select(at: index)
+        self.refresh(for: self.keyboardContext.clawPanelTab)
         self.refreshHeartTargetMenu()
       }
     })

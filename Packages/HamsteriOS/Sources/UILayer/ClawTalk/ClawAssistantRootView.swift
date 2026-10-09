@@ -259,11 +259,15 @@ private struct ClawScreenshotReviewSheet: View {
   @Environment(\.dismiss) private var dismiss
   let preview: ClawScreenshotIngestionResult
   let profiles: [HeartTargetProfile]
+  @State private var availableProfiles: [HeartTargetProfile]
   let onConfirm: (UUID, [ClawConversationMessage]) throws -> Int
   let onUseText: (String) -> Void
   @State private var selectedProfileID: UUID?
   @State private var reviewedMessages: [ClawConversationMessage]
   @State private var errorText: String?
+  @State private var showingNewProfile = false
+  @State private var newProfileName = ""
+  @State private var newProfileRelationship = ""
 
   init(
     preview: ClawScreenshotIngestionResult,
@@ -273,6 +277,7 @@ private struct ClawScreenshotReviewSheet: View {
   ) {
     self.preview = preview
     self.profiles = profiles
+    _availableProfiles = State(initialValue: profiles)
     self.onConfirm = onConfirm
     self.onUseText = onUseText
     _selectedProfileID = State(initialValue: preview.profile?.id)
@@ -292,19 +297,21 @@ private struct ClawScreenshotReviewSheet: View {
       Form {
         Section {
           Menu {
-            ForEach(profiles) { profile in
+            ForEach(availableProfiles) { profile in
               Button(profile.displayName) { selectedProfileID = profile.id }
             }
+            Button("＋ 新建聊天对象") { showingNewProfile = true }
           } label: {
             HStack {
               Text("聊天对象")
               Spacer()
-              Text(profiles.first(where: { $0.id == selectedProfileID })?.displayName ?? "请手动选择")
+              Text(availableProfiles.first(where: { $0.id == selectedProfileID })?.displayName ?? "请手动选择")
                 .foregroundColor(.secondary)
             }
           }
-          if profiles.isEmpty {
-            Text("还没有人物档案。请先在「人物」页新建，再导入截图。")
+          if availableProfiles.isEmpty {
+            Button("立即新建聊天对象") { showingNewProfile = true }
+            Text("可以在这里创建人物，不必退出当前截图审核；保存画像仍需确认消息和发言者。")
               .font(.caption).foregroundColor(.secondary)
           }
         } header: {
@@ -361,6 +368,35 @@ private struct ClawScreenshotReviewSheet: View {
             }
           }
           .disabled(!canConfirm)
+        }
+      }
+      .sheet(isPresented: $showingNewProfile) {
+        NavigationView {
+          Form {
+            TextField("姓名或聊天昵称", text: $newProfileName)
+              .textInputAutocapitalization(.never)
+            TextField("关系（选填，例如朋友、客户）", text: $newProfileRelationship)
+          }
+          .navigationTitle("新建聊天对象")
+          .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+              Button("取消") { showingNewProfile = false }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+              Button("保存并选择") {
+                let name = newProfileName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return }
+                let profile = HeartTargetService.shared.upsert(HeartTargetProfile(
+                  name: name,
+                  relationship: newProfileRelationship.trimmingCharacters(in: .whitespacesAndNewlines)
+                ))
+                availableProfiles = HeartTargetService.shared.profiles
+                selectedProfileID = profile.id
+                showingNewProfile = false
+              }
+              .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+          }
         }
       }
       .alert("无法归档", isPresented: Binding(
@@ -1526,7 +1562,7 @@ private struct ClawPeopleView: View {
           ForEach(filteredProfiles) { profile in
             HStack(spacing: 8) {
               NavigationLink {
-                ClawContactDetailView(profile: profile)
+                ClawContactDetailView(profile: profile, onUseProfile: onUseProfile)
               } label: {
                 HStack(spacing: 10) {
                   Group {
@@ -1742,7 +1778,9 @@ private struct ClawContactEditorView: View {
 }
 
 private struct ClawContactDetailView: View {
+  @Environment(\.dismiss) private var dismiss
   let profile: HeartTargetProfile
+  let onUseProfile: () -> Void
   @State private var timeline: [ClawConversationMessage] = []
   @State private var memories: [ClawMemoryItem] = []
   @State private var tasks: [ClawSecretaryTask] = []
@@ -1754,10 +1792,12 @@ private struct ClawContactDetailView: View {
         Button {
           HeartTargetService.shared.select(id: profile.id)
           isSelected = true
+          dismiss()
+          onUseProfile()
         } label: {
-          Label(isSelected ? "当前助手人物" : "设为当前助手人物", systemImage: isSelected ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")
+          Label("与此人对话", systemImage: "message.fill")
         }
-        .disabled(isSelected)
+        .accessibilityHint("设为当前人物并打开 CLAW 助手")
       }
       Section {
         if profile.autoCreated {
