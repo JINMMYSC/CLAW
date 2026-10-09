@@ -1526,7 +1526,7 @@ private struct ClawPeopleView: View {
           ForEach(filteredProfiles) { profile in
             HStack(spacing: 8) {
               NavigationLink {
-                ClawContactDetailView(profile: profile)
+                ClawContactDetailView(profile: profile, onUseProfile: onUseProfile)
               } label: {
                 HStack(spacing: 10) {
                   Group {
@@ -1743,6 +1743,7 @@ private struct ClawContactEditorView: View {
 
 private struct ClawContactDetailView: View {
   let profile: HeartTargetProfile
+  let onUseProfile: () -> Void
   @State private var timeline: [ClawConversationMessage] = []
   @State private var memories: [ClawMemoryItem] = []
   @State private var tasks: [ClawSecretaryTask] = []
@@ -1754,10 +1755,11 @@ private struct ClawContactDetailView: View {
         Button {
           HeartTargetService.shared.select(id: profile.id)
           isSelected = true
+          onUseProfile()
         } label: {
-          Label(isSelected ? "当前助手人物" : "设为当前助手人物", systemImage: isSelected ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")
+          Label("与此人对话", systemImage: "message.fill")
         }
-        .disabled(isSelected)
+        .accessibilityHint("设为当前人物并打开 CLAW 助手")
       }
       Section {
         if profile.autoCreated {
