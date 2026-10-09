@@ -1681,6 +1681,118 @@ public final class ClawMemoryStore {
     return Int(sqlite3_column_int(statement, 0))
   }
 
+
+  /// Context recall candidate query: filter ownership, lifecycle, expiry and
+  /// optional cloud permissions inside SQLite *before* LIMIT. The unrestricted
+  /// searchMemoryV2 is retained for migration/administrative tooling.
+  public func searchContextMemoryV2(
+    _ request: MemoryRecallRequest,
+    limit: Int,
+    cloudEligibleOnly: Bool = false,
+    now: Date = Date(),
+    includeRecentUnmatched: Bool = true
+  ) throws -> [MemoryV2Record] {
+    lock.lock(); defer { lock.unlock() }
+    let global = "(memory_v2.scope = 'global' AND memory_v2.person_id IS NULL AND memory_v2.project_id IS NULL)"
+    var owners = global
+    var ownerBindings: [String] = []
+    switch request.scope {
+    case .global, .session:
+      // A session identifier is not part of MemoryRecallRequest. Never expose
+      // arbitrary session-scoped memory without a session ownership token.
+      break
+    case .person, .relationship:
+      if let personID = request.personID {
+        owners = "(\(global) OR (memory_v2.scope IN ('person','relationship') AND memory_v2.person_id = ? AND memory_v2.project_id IS NULL))"
+        ownerBindings.append(personID.uuidString)
+      }
+    case .project:
+      if let projectID = request.projectID {
+        owners = "(\(global) OR (memory_v2.scope = 'project' AND memory_v2.project_id = ? AND memory_v2.person_id IS NULL))"
+        ownerBindings.append(projectID.uuidString)
+      }
+    default:
+      // Group/app/local-only scopes can be further restricted by owner IDs;
+      // do not include data owned by another contact or project.
+      owners = "(\(global) OR (memory_v2.scope = ? AND \(request.personID == nil ? "memory_v2.person_id IS NULL" : "memory_v2.person_id = ?") AND \(request.projectID == nil ? "memory_v2.project_id IS NULL" : "memory_v2.project_id = ?"))"
+      ownerBindings.append(request.scope.rawValue)
+      if let personID = request.personID { ownerBindings.append(personID.uuidString) }
+      if let projectID = request.projectID { ownerBindings.append(projectID.uuidString) }
+    }
+    let privacy = cloudEligibleOnly
+      ? " AND memory_v2.cloud_permission IN ('aiAllowed','privateCloud')"
+      : ""
+    let whereClause = """
+      memory_v2.state IN ('active','confirmed')
+      AND (memory_v2.expires_at IS NULL OR memory_v2.expires_at > ?)
+      AND \(owners)\(privacy)
+      """
+    let boundedLimit = Int32(max(1, limit))
+
+    func rows(_ sql: String, textBindings: [String]) throws -> [MemoryV2Record] {
+      let statement = try prepare(sql)
+      defer { sqlite3_finalize(statement) }
+      sqlite3_bind_double(statement, 1, now.timeIntervalSince1970)
+      for (index, value) in textBindings.enumerated() {
+        bindText(value, at: Int32(index + 2), in: statement)
+      }
+      sqlite3_bind_int(statement, Int32(textBindings.count + 2), boundedLimit)
+      var matches: [MemoryV2Record] = []
+      while true {
+        let status = sqlite3_step(statement)
+        if status == SQLITE_DONE { break }
+        guard status == SQLITE_ROW else {
+          throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+        }
+        guard let blob = sqlite3_column_blob(statement, 0) else { continue }
+        let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0)))
+        if let record = try? JSONDecoder().decode(MemoryV2Record.self, from: data) {
+          matches.append(record)
+        }
+      }
+      return matches
+    }
+
+    let recentSQL = """
+      SELECT memory_v2.payload FROM memory_v2
+      WHERE \(whereClause) ORDER BY memory_v2.updated_at DESC LIMIT ?;
+      """
+    let trimmed = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
+    let tokens = trimmed.split { $0.isWhitespace || $0.isPunctuation }.map { "\($0)*" }
+    guard !tokens.isEmpty else { return try rows(recentSQL, textBindings: ownerBindings) }
+
+    var result: [MemoryV2Record] = []
+    let ftsSQL = """
+      SELECT memory_v2.payload FROM memory_v2_fts
+      JOIN memory_v2 ON memory_v2.id = memory_v2_fts.id
+      WHERE \(whereClause) AND memory_v2_fts MATCH ?
+      ORDER BY bm25(memory_v2_fts) LIMIT ?;
+      """
+    // SQLite's MATCH tokens may be unsupported for punctuation/CJK variants.
+    // In those cases search content and normalized_key by substring.
+    do {
+      result = try rows(ftsSQL, textBindings: ownerBindings + [tokens.joined(separator: " OR ")])
+    } catch {
+      result = []
+    }
+    if result.isEmpty {
+      let containsSQL = """
+        SELECT memory_v2.payload FROM memory_v2
+        WHERE \(whereClause)
+          AND (instr(lower(memory_v2.content), lower(?)) > 0
+               OR instr(lower(COALESCE(memory_v2.normalized_key, '')), lower(?)) > 0)
+        ORDER BY memory_v2.updated_at DESC LIMIT ?;
+        """
+      result = try rows(containsSQL, textBindings: ownerBindings + [trimmed, trimmed])
+    }
+    if includeRecentUnmatched {
+      let identifiers = Set(result.map(\.id))
+      result.append(contentsOf: try rows(recentSQL, textBindings: ownerBindings)
+        .filter { !identifiers.contains($0.id) })
+    }
+    return Array(result.prefix(Int(boundedLimit)))
+  }
+
   /// FTS5-backed candidate collection. The router performs scope guards and
   /// final hybrid ranking. Empty or tokenization-incompatible queries fall back
   /// to the full recent set so CJK and punctuation-heavy input remain usable.

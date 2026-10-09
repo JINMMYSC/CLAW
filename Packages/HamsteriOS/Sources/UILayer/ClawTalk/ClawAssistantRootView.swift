@@ -258,6 +258,7 @@ enum ClawImportedAttachmentReader {
 private struct ClawScreenshotReviewSheet: View {
   @Environment(\.dismiss) private var dismiss
   let preview: ClawScreenshotIngestionResult
+  let screenshot: UIImage?
   let profiles: [HeartTargetProfile]
   @State private var availableProfiles: [HeartTargetProfile]
   let onConfirm: (UUID, [ClawConversationMessage]) throws -> Int
@@ -271,11 +272,13 @@ private struct ClawScreenshotReviewSheet: View {
 
   init(
     preview: ClawScreenshotIngestionResult,
+    screenshot: UIImage?,
     profiles: [HeartTargetProfile],
     onConfirm: @escaping (UUID, [ClawConversationMessage]) throws -> Int,
     onUseText: @escaping (String) -> Void
   ) {
     self.preview = preview
+    self.screenshot = screenshot
     self.profiles = profiles
     _availableProfiles = State(initialValue: profiles)
     self.onConfirm = onConfirm
@@ -295,6 +298,19 @@ private struct ClawScreenshotReviewSheet: View {
   var body: some View {
     NavigationView {
       Form {
+        if let screenshot {
+          Section {
+            Image(uiImage: screenshot)
+              .resizable()
+              .scaledToFit()
+              .frame(maxWidth: .infinity, maxHeight: 250)
+              .accessibilityLabel("原始聊天截图预览")
+          } header: {
+            Text("原始截图（仅供本次核对）")
+          } footer: {
+            Text("请对照原图确认聊天气泡。退出审核后不保留这张临时预览；不会自动将原图保存为人物记忆。")
+          }
+        }
         Section {
           Menu {
             ForEach(availableProfiles) { profile in
@@ -338,6 +354,9 @@ private struct ClawScreenshotReviewSheet: View {
                 .accessibilityLabel("校对消息文字")
             }
             .padding(.vertical, 4)
+          }
+          .onDelete { offsets in
+            reviewedMessages.remove(atOffsets: offsets)
           }
         }
 
@@ -424,12 +443,14 @@ private struct ClawAssistantChatView: View {
   @State private var selectedProfileName = HeartTargetService.shared.selectedProfile?.displayName
   @State private var searchText = ""
   @State private var showingSearch = false
+  @State private var isAtChatBottom = true
   @State private var showingNewConversationConfirmation = false
   @State private var showingPhotoAttachment = false
   @State private var showingFileAttachment = false
   @State private var attachmentStatus = ""
   @State private var lastScreenshotReceipt: ClawScreenshotImportReceipt?
   @State private var pendingScreenshotReview: ClawScreenshotIngestionResult?
+  @State private var pendingScreenshotImage: UIImage?
   @State private var showingScreenshotReview = false
   @State private var quickPrompts = ClawQuickPromptStore(
     defaults: UserDefaults(suiteName: HamsterConstants.appGroupName) ?? .standard
@@ -485,17 +506,31 @@ private struct ClawAssistantChatView: View {
               }
               .padding(.horizontal)
             }
+            // A lazy bottom anchor tracks whether the user is reading older
+            // content. Incoming messages must not steal their scroll position.
+            Color.clear
+              .frame(height: 1)
+              .id("claw-chat-bottom")
+              .onAppear { isAtChatBottom = true }
+              .onDisappear { isAtChatBottom = false }
           }
           .padding(.vertical, 12)
         }
         .onChange(of: chat.messages.count) { _ in
-          if let id = chat.messages.last?.id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
+          guard ClawChatScrollPolicy.shouldFollow(
+            isAtBottom: isAtChatBottom, isSearching: showingSearch
+          ) else { return }
+          withAnimation { proxy.scrollTo("claw-chat-bottom", anchor: .bottom) }
         }
         .overlay(alignment: .bottomTrailing) {
-          if chat.messages.count > 5, let latest = chat.messages.last?.id {
-            Button { withAnimation { proxy.scrollTo(latest, anchor: .bottom) } } label: {
+          if chat.messages.count > 5 && !isAtChatBottom {
+            Button {
+              isAtChatBottom = true
+              withAnimation { proxy.scrollTo("claw-chat-bottom", anchor: .bottom) }
+            } label: {
               Image(systemName: "arrow.down.circle.fill").font(.title2)
             }
+            .accessibilityLabel("跳到最新消息")
             .padding(10)
           }
         }
@@ -627,10 +662,12 @@ private struct ClawAssistantChatView: View {
     }
     .sheet(isPresented: $showingScreenshotReview, onDismiss: {
       pendingScreenshotReview = nil
+      pendingScreenshotImage = nil
     }) {
       if let preview = pendingScreenshotReview {
         ClawScreenshotReviewSheet(
           preview: preview,
+          screenshot: pendingScreenshotImage,
           profiles: HeartTargetService.shared.profiles,
           onConfirm: { id, reviewed in
             guard let profile = HeartTargetService.shared.profile(id: id) else {
@@ -1053,6 +1090,7 @@ private struct ClawAssistantChatView: View {
               requireUserReview: true
             )
             pendingScreenshotReview = preview
+            pendingScreenshotImage = image
             showingScreenshotReview = true
             attachmentStatus = "请核对人物、发言者与文字，再决定是否归档"
           } catch {
