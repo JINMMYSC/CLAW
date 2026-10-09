@@ -64,8 +64,8 @@ public struct ClawReadOnlyDiagnosticTools {
     let buildAvailable = version != "unknown" && !(commit ?? "").isEmpty
     return result("getAppStatus", status: buildAvailable ? .ok : .unknown,
       message: buildAvailable
-        ? "检测到本机构建 \\(version)，源码标识 \\(commit!)；只证明版本元数据可读取。"
-        : "本机构建号 \\(version)；未嵌入或无法读取对应源码 SHA，不能精确定位当前版本。")
+        ? "检测到本机构建 \(version)，源码标识 \(commit!)；只证明版本元数据可读取。"
+        : "本机构建号 \(version)；未嵌入或无法读取对应源码 SHA，不能精确定位当前版本。")
   }
 
   public func getRecentErrors(since: TimeInterval = 600) -> ClawDiagnosticToolResult {
@@ -77,7 +77,7 @@ public struct ClawReadOnlyDiagnosticTools {
     }
     let last = errors.last!
     return result("getRecentErrors", status: .fault,
-      message: "观察到 \\(errors.count) 条错误；最近一次 \\(last.module)/\\(last.action)，调用点 \\(last.file):\\(last.line)。",
+      message: "观察到 \(errors.count) 条错误；最近一次 \(last.module)/\(last.action)，调用点 \(last.file):\(last.line)。",
       evidence: Array(errors.suffix(30)))
   }
 
@@ -92,18 +92,18 @@ public struct ClawReadOnlyDiagnosticTools {
     let errors = relevant.filter { $0.severity == "error" }
     if let error = errors.last {
       return result("getModuleHealth", status: .fault,
-        message: "\\(module) 最近存在失败：\\(error.action)；没有证据表明已成功恢复。",
+        message: "\(module) 最近存在失败：\(error.action)；没有证据表明已成功恢复。",
         evidence: relevant)
     }
     if module == "keyboard" && capture.keyboardState != .recent {
       return result("getModuleHealth", status: .unknown,
-        message: "键盘只有 \\(capture.keyboardState.rawValue) 快照，不能宣称扩展正在运行。")
+        message: "键盘只有 \(capture.keyboardState.rawValue) 快照，不能宣称扩展正在运行。")
     }
     // Presence of non-error events is not enough to assert functional health.
     return result("getModuleHealth", status: .unknown,
       message: relevant.isEmpty
-        ? "\\(module) 最近没有可验证事件，状态未知。"
-        : "\\(module) 有 \\(relevant.count) 条事件，但未完成独立功能自检，健康状态尚未确认。",
+        ? "\(module) 最近没有可验证事件，状态未知。"
+        : "\(module) 有 \(relevant.count) 条事件，但未完成独立功能自检，健康状态尚未确认。",
       evidence: relevant)
   }
 
@@ -146,10 +146,10 @@ public struct ClawReadOnlyDiagnosticTools {
   public func describe(_ tool: ClawDiagnosticToolResult) -> String {
     let code = tool.errorCode.map(String.init) ?? "未记录"
     return """
-    \\(tool.name)：\\(tool.status.rawValue)
-    实际证据：\\(tool.message)
-    错误域：\\(tool.errorDomain ?? "未记录")；错误码：\\(code)
-    Trace：\\(tool.evidenceTraceIDs.prefix(3).map(\.uuidString).joined(separator: ", "))
+    \(tool.name)：\(tool.status.rawValue)
+    实际证据：\(tool.message)
+    错误域：\(tool.errorDomain ?? "未记录")；错误码：\(code)
+    Trace：\(tool.evidenceTraceIDs.prefix(3).map(\.uuidString).joined(separator: ", "))
     未经检测的部分不会显示为正常，根因仍需与同 SHA 源码核验。
     """
   }
