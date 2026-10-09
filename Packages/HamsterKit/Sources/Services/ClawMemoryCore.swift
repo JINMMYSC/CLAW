@@ -1586,6 +1586,48 @@ public final class ClawMemoryStore {
     return found
   }
 
+  /// Context-only V2 read. Enforce ownership, active state and expiry in
+  /// SQLite BEFORE LIMIT; stale/private rows must not displace usable context.
+  public func activeContextMemoryV2(
+    scope: MemoryScope, personID: UUID? = nil,
+    limit: Int = 80, now: Date = Date()
+  ) throws -> [MemoryV2Record] {
+    guard scope == .global || personID != nil else { return [] }
+    lock.lock(); defer { lock.unlock() }
+    let owner = scope == .global ? "person_id IS NULL" : "person_id = ?"
+    let sql = """
+      SELECT payload FROM memory_v2
+      WHERE scope = ? AND state IN ('active','confirmed')
+        AND (expires_at IS NULL OR expires_at > ?) AND \(owner)
+      ORDER BY updated_at DESC LIMIT ?;
+    """
+    let statement = try prepare(sql)
+    defer { sqlite3_finalize(statement) }
+    bindText(scope.rawValue, at: 1, in: statement)
+    sqlite3_bind_double(statement, 2, now.timeIntervalSince1970)
+    var limitIndex: Int32 = 3
+    if scope != .global, let personID {
+      bindText(personID.uuidString, at: limitIndex, in: statement)
+      limitIndex += 1
+    }
+    sqlite3_bind_int(statement, limitIndex, Int32(max(1, limit)))
+    var result: [MemoryV2Record] = []
+    while true {
+      let rc = sqlite3_step(statement)
+      if rc == SQLITE_DONE { break }
+      guard rc == SQLITE_ROW else {
+        throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+      }
+      if let blob = sqlite3_column_blob(statement, 0) {
+        let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0)))
+        if let record = try? JSONDecoder().decode(MemoryV2Record.self, from: data) {
+          result.append(record)
+        }
+      }
+    }
+    return result
+  }
+
   /// 按作用域/人物/状态筛选 V2 记忆，按最近更新排序。
   public func memoryV2(
     scope: MemoryScope? = nil,

@@ -154,6 +154,53 @@ final class ClawContextBuilderScopeTests: XCTestCase {
     XCTAssertFalse(visible.contains { $0.content.contains("已失效") })
   }
 
+  func testInvalidatedRecentV2CannotDisplaceOlderActivePersonMemory() throws {
+    let person = HeartTargetProfile(name: "有效记忆优先级")
+    let source = MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    let older = MemoryV2Record(
+      type: .preference, state: .active, scope: .person,
+      content: "仍然有效的较早记忆", personID: person.id,
+      provenance: source, updatedAt: Date().addingTimeInterval(-3600)
+    )
+    try store.saveMemoryV2(older)
+    let invalidated = (0..<90).map { index in
+      MemoryV2Record(
+        type: .preference, state: .invalidated, scope: .person,
+        content: "已经失效的记忆\(index)", personID: person.id,
+        provenance: source, updatedAt: Date().addingTimeInterval(Double(index))
+      )
+    }
+    try store.saveMemoryV2Batch(invalidated)
+    // A latest-by-date fetch of one V2 memory is invalidated. The scoped
+    // context query must still find the older active memory.
+    XCTAssertEqual(try store.memoryV2(scope: .person, personID: person.id, limit: 1).first?.state, .invalidated)
+    let actual = try DefaultMemorySDK(store: store)
+      .contextualMemories(scope: "contact", personID: person.id, limit: 1)
+    XCTAssertEqual(actual.map(\.id), [older.id])
+  }
+
+  func testPersonOwnedGlobalRowsCannotDisplaceTrulyGlobalV2() throws {
+    let source = MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    let valid = MemoryV2Record(
+      type: .preference, state: .active, scope: .global,
+      content: "全局偏好需要保留", provenance: source,
+      updatedAt: Date().addingTimeInterval(-3600)
+    )
+    try store.saveMemoryV2(valid)
+    let person = UUID()
+    let misScoped = (0..<90).map { index in
+      MemoryV2Record(
+        type: .preference, state: .active, scope: .global,
+        content: "仍属于某个人的信息\(index)", personID: person,
+        provenance: source, updatedAt: Date().addingTimeInterval(Double(index))
+      )
+    }
+    try store.saveMemoryV2Batch(misScoped)
+    let actual = try DefaultMemorySDK(store: store).contextualMemories(scope: "global", limit: 1)
+    XCTAssertEqual(actual.map(\.id), [valid.id])
+    XCTAssertFalse(actual.contains { $0.content.contains("某个人") })
+  }
+
   func testOlderPersonMemoryRemainsVisibleAmongManyOtherPeople() throws {
     let alice = HeartTargetProfile(name: "艾丽")
     let bob = HeartTargetProfile(name: "贝贝")

@@ -91,15 +91,12 @@ public final class DefaultMemorySDK: MemorySDK {
     )
     let candidates: [MemoryV2Record]
     if scope == "global" {
-      // Use the existing SQLite scope index before applying the context limit:
-      // scanning 80 most-recent rows across all users hides old global facts.
-      candidates = try store.memoryV2(scope: .global, limit: count)
-        .filter { $0.personID == nil }
+      // Only eligible unowned global memories consume the retrieval budget.
+      candidates = try store.activeContextMemoryV2(scope: .global, limit: count)
     } else if scope == "contact", let personID {
-      // Restrict each query by person_id in SQL; never sample all persons'
-      // recent memories and filter afterward.
-      let people = try store.memoryV2(scope: .person, personID: personID, limit: count)
-      let relations = try store.memoryV2(scope: .relationship, personID: personID, limit: count)
+      // Filter privacy, invalidated rows and expiry in SQL, before top-N.
+      let people = try store.activeContextMemoryV2(scope: .person, personID: personID, limit: count)
+      let relations = try store.activeContextMemoryV2(scope: .relationship, personID: personID, limit: count)
       candidates = (people + relations).sorted { $0.updatedAt > $1.updatedAt }
     } else if scope == "contact" {
       return []
