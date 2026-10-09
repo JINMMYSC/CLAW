@@ -53,6 +53,18 @@ jobs:
             CODE_SIGNING_ALLOWED=NO | tee build-device.log
           ls -la build-dd/Build/Products/Release-iphoneos/
 
+      - name: Stamp exact source SHA in Host and extensions
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find build-dd/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' -type d | head -1)
+          test -n "$APP_PATH"
+          for plist in "$APP_PATH/Info.plist" "$APP_PATH"/PlugIns/*.appex/Info.plist; do
+            [ -f "$plist" ] || continue
+            /usr/libexec/PlistBuddy -c "Delete :ClawSourceCommit" "$plist" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Add :ClawSourceCommit string $GITHUB_SHA" "$plist"
+            test "$(/usr/libexec/PlistBuddy -c 'Print :ClawSourceCommit' "$plist")" = "$GITHUB_SHA"
+          done
+
       - name: Package .ipa (unsigned)
         run: |
           set -e
@@ -226,6 +238,22 @@ jobs:
       - name: Verify signed ipa bundles and entitlements
         if: steps.check.outputs.skip != 'true'
         run: python3 scripts/verify_signed_ipa.py --allow-missing-icloud build/GuruIM-signed.ipa
+
+      - name: Verify embedded source SHA matches signed IPA run
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          python3 - <<'PY'
+          import os, plistlib, zipfile
+          expected = os.environ["GITHUB_SHA"]
+          with zipfile.ZipFile("build/GuruIM-signed.ipa") as z:
+              paths = [n for n in z.namelist() if n.endswith("/Info.plist") and
+                       (n.count("/") == 2 or "/PlugIns/" in n and n.count("/") == 4)]
+              assert paths, "no signed app Info.plist"
+              for name in paths:
+                  actual = plistlib.loads(z.read(name)).get("ClawSourceCommit")
+                  assert actual == expected, f"{name}: missing or mismatched source SHA"
+              print(f"Verified {len(paths)} signed bundles against {expected}")
+          PY
 
       - name: Upload signed .ipa artifact
         if: steps.check.outputs.skip != 'true'
