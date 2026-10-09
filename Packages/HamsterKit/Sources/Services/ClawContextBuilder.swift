@@ -102,9 +102,11 @@ public final class ClawContextBuilder {
       timeline = []
     }
     let allTasks = includeTasks ? ((try? store.tasks(status: .open, limit: 40)) ?? []) : []
-    let relevantTasks = effectiveContactID == nil
-      ? allTasks
-      : allTasks.filter { $0.contactID == nil || $0.contactID == effectiveContactID }
+    let relevantTasks = allTasks.filter { task in
+      // Unresolved global queries must not inherit person-private tasks.
+      guard let taskContactID = task.contactID else { return true }
+      return effectiveContactID.map { $0 == taskContactID } ?? false
+    }
     return ClawContextPack(
       globalMemories: globals,
       contactMemories: contactMemories,

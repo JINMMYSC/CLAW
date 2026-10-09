@@ -51,6 +51,25 @@ final class ClawContextBuilderScopeTests: XCTestCase {
     XCTAssertTrue(pack.recentConversation.isEmpty)
   }
 
+  func testUnresolvedContextNeverExposesPersonOwnedTasks() throws {
+    let first = HeartTargetProfile(name: "王一", aliases: ["小王"])
+    let second = HeartTargetProfile(name: "王二", aliases: ["小王"])
+    try seedPerson(first, memory: "王一的私事", task: "王一的私密待办")
+    try seedPerson(second, memory: "王二的私事", task: "王二的私密待办")
+    try store.upsertTask(ClawSecretaryTask(title: "普通全局待办", sourceType: "test"))
+
+    let contextBuilder = builder(profiles: [first, second])
+    let queries: [String?] = [nil, "今天有什么安排？", "小王最近如何？"]
+    for query in queries {
+      let pack = contextBuilder.build(contactID: nil, query: query)
+      XCTAssertNil(pack.resolvedContactID, "Unresolved query: \(query ?? "<nil>")")
+      XCTAssertEqual(pack.openTasks.map(\.title), ["普通全局待办"])
+      XCTAssertTrue(pack.contactMemories.isEmpty)
+      XCTAssertFalse(pack.promptBlock().contains("王一的私密待办"))
+      XCTAssertFalse(pack.promptBlock().contains("王二的私密待办"))
+    }
+  }
+
   func testRelationshipWordsAloneNeverSelectAPerson() {
     let profiles = [
       HeartTargetProfile(name: "王一", relationship: "客户"),
