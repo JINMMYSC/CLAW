@@ -64,8 +64,12 @@ public extension FileManager {
   ) throws {
     let fm = FileManager.default
     // 递归获取全部文件
-    guard let srcFiles = fm.enumerator(at: src, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
-    guard let dstFiles = fm.enumerator(at: dst, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+    guard let srcFiles = fm.enumerator(at: src, includingPropertiesForKeys: [.isDirectoryKey]) else {
+      throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: src.path])
+    }
+    guard let dstFiles = fm.enumerator(at: dst, includingPropertiesForKeys: [.isDirectoryKey]) else {
+      throw CocoaError(.fileWriteNoSuchFile, userInfo: [NSFilePathErrorKey: dst.path])
+    }
 
     let dstFilesMapping = dstFiles.allObjects.compactMap { $0 as? URL }.reduce(into: [String: URL]()) { $0[$1.path.replacingOccurrences(of: dst.path, with: "")] = $1 }
     let srcPrefix = src.path
@@ -91,32 +95,38 @@ public extension FileManager {
 
       let dstFile = dstFilesMapping[relativePath] ?? dst.appendingPathComponent(relativePath, isDirectory: isDirectory)
 
-      if fm.fileExists(atPath: dstFile.path) {
-        // 目录不比较内容
-        if isDirectory {
-          continue
-        }
-
-        if fm.contentsEqual(atPath: file.path, andPath: dstFile.path) {
-          continue // 文件已存在, 且内容相同，跳过
-        }
-
-        if override {
-          try fm.removeItem(at: dstFile)
+      let exists = fm.fileExists(atPath: dstFile.path)
+      if exists {
+        if isDirectory { continue }
+        if fm.contentsEqual(atPath: file.path, andPath: dstFile.path) { continue }
+        if !override {
+          throw CocoaError(.fileWriteFileExists, userInfo: [NSFilePathErrorKey: dstFile.path])
         }
       }
-
       if !fm.fileExists(atPath: dstFile.deletingLastPathComponent().path) {
         try FileManager.createDirectory(dst: dstFile.deletingLastPathComponent())
       }
-
       if isDirectory {
         try FileManager.createDirectory(dst: dstFile)
         continue
       }
 
-      Logger.statistics.debug("incrementalCopy copy file: \(file.path) dst: \(dstFile.path)")
-      try fm.copyItem(at: file, to: dstFile)
+      // Never remove the old destination before a replacement has been fully
+      // copied. Stage within the destination directory so the final swap
+      // occurs on the same volume. A failed copy leaves the old file intact.
+      let staged = dstFile.deletingLastPathComponent()
+        .appendingPathComponent(".claw-copy-" + UUID().uuidString)
+      do {
+        try fm.copyItem(at: file, to: staged)
+        if exists {
+          _ = try fm.replaceItemAt(dstFile, withItemAt: staged)
+        } else {
+          try fm.moveItem(at: staged, to: dstFile)
+        }
+      } catch {
+        try? fm.removeItem(at: staged)
+        throw error
+      }
     }
   }
 }
