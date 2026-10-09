@@ -25,7 +25,17 @@ public final class ClawScreenshotChatParser {
     capturedAt: Date = Date(),
     sourceRef: String? = nil
   ) -> ClawScreenshotParseResult {
-    let useful = lines.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    // Vision observations do not promise visual reading order. Normalize
+    // top-to-bottom before grouping so the timeline is independent of the
+    // OCR callback order (Vision coordinates have their origin at bottom-left).
+    let useful = lines
+      .filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+      .sorted {
+        if $0.boundingBox.midY != $1.boundingBox.midY {
+          return $0.boundingBox.midY > $1.boundingBox.midY
+        }
+        return $0.boundingBox.minX < $1.boundingBox.minX
+      }
     let raw = useful.map(\.text).joined(separator: "\n")
     let title = detectTitle(in: useful, expectedContactName: contactName)
     let body = useful.filter { !isChromeLine($0, title: title) }
@@ -48,7 +58,12 @@ public final class ClawScreenshotChatParser {
     let calendar = Calendar.current
     var messages: [ClawConversationMessage] = []
     for (index, group) in groups.enumerated() {
-      let ordered = group.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
+      let ordered = group.sorted {
+        if $0.boundingBox.midY != $1.boundingBox.midY {
+          return $0.boundingBox.midY > $1.boundingBox.midY
+        }
+        return $0.boundingBox.minX < $1.boundingBox.minX
+      }
       let content = ordered.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
       guard content.count > 0, !looksLikeTimestamp(content) else { continue }
       let representative = ordered[0]
