@@ -23,7 +23,12 @@ public final class ClawContactIdentityResolver {
     "微信", "聊天", "消息", "通讯录", "返回", "更多", "详情", "群聊", "new chat", "messages",
   ]
 
-  public init() {}
+  private let profilesProvider: () -> [HeartTargetProfile]
+
+  /// Injectable for identity-collision tests without editing saved contacts.
+  public init(profilesProvider: @escaping () -> [HeartTargetProfile] = { HeartTargetService.shared.profiles }) {
+    self.profilesProvider = profilesProvider
+  }
 
   public func resolve(
     displayTitle: String?,
@@ -31,6 +36,7 @@ public final class ClawContactIdentityResolver {
     allowCreate: Bool = true
   ) -> ClawContactResolution {
     let service = HeartTargetService.shared
+    let profiles = profilesProvider()
     guard let rawTitle = displayTitle else {
       return ClawContactResolution(profile: service.selectedProfile, confidence: service.selectedProfile == nil ? 0 : 0.65, created: false, reason: "no-title")
     }
@@ -39,21 +45,29 @@ public final class ClawContactIdentityResolver {
       return ClawContactResolution(profile: service.selectedProfile, confidence: service.selectedProfile == nil ? 0 : 0.55, created: false, reason: "generic-title")
     }
 
-    if let fingerprint = avatarFingerprint,
-       let profile = service.profiles.first(where: { $0.avatarFingerprint == fingerprint }) {
-      // Preview-only resolution must not update lastSeenAt or persist the
-      // profile before the user explicitly approves the OCR import.
-      if allowCreate { touch(profile) }
-      return ClawContactResolution(profile: profile, confidence: 0.995, created: false, reason: "avatar")
+    if let fingerprint = avatarFingerprint {
+      let matchingAvatars = profiles.filter { $0.avatarFingerprint == fingerprint }
+      if matchingAvatars.count > 1 {
+        // Duplicate avatar fingerprints are not proof of identity.
+        return ClawContactResolution(profile: nil, confidence: 0, created: false, reason: "ambiguous-avatar")
+      }
+      if let profile = matchingAvatars.first {
+        // OCR preview cannot persist or change the selected person.
+        if allowCreate { touch(profile) }
+        return ClawContactResolution(profile: profile, confidence: 0.995, created: false, reason: "avatar")
+      }
     }
-    if let profile = service.profiles.first(where: { $0.matches(displayTitle: title) }) {
-      // Preview-only resolution must not update lastSeenAt or persist the
-      // profile before the user explicitly approves the OCR import.
+    let exactMatches = profiles.filter { $0.matches(displayTitle: title) }
+    if exactMatches.count > 1 {
+      // A shared alias must never select the first profile and import private data.
+      return ClawContactResolution(profile: nil, confidence: 0, created: false, reason: "ambiguous-name-or-alias")
+    }
+    if let profile = exactMatches.first {
       if allowCreate { touch(profile) }
       return ClawContactResolution(profile: profile, confidence: 0.98, created: false, reason: "name-or-alias")
     }
 
-    let fuzzy = service.profiles.filter { profile in
+    let fuzzy = profiles.filter { profile in
       let name = normalized(profile.name)
       guard min(name.count, title.count) >= 2 else { return false }
       return name.contains(title) || title.contains(name)
