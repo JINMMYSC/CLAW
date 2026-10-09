@@ -26,31 +26,42 @@ public struct ClawReadOnlyDiagnosticTools {
   private let now: Date
   private let version: String
   private let commit: String?
+  private let voiceObservation: ClawDiagnosticCapabilityObservation?
+  private let syncObservation: ClawDiagnosticCapabilityObservation?
 
   public init(
     capture: ClawDiagnosticCapture,
     now: Date = Date(),
     version: String = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown",
-    commit: String? = Bundle.main.object(forInfoDictionaryKey: "ClawSourceCommit") as? String
+    commit: String? = Bundle.main.object(forInfoDictionaryKey: "ClawSourceCommit") as? String,
+    voiceObservation: ClawDiagnosticCapabilityObservation? = nil,
+    syncObservation: ClawDiagnosticCapabilityObservation? = nil
   ) {
     self.capture = capture
     self.now = now
     self.version = version
     self.commit = commit
+    self.voiceObservation = voiceObservation
+    self.syncObservation = syncObservation
   }
 
   public static func current() -> ClawReadOnlyDiagnosticTools {
-    ClawReadOnlyDiagnosticTools(capture: ClawDiagnosticsCaptureService.captureCurrent())
+    ClawReadOnlyDiagnosticTools(
+      capture: ClawDiagnosticsCaptureService.captureCurrent(),
+      voiceObservation: ClawRuntimeCapabilityInspector.inspectVoice(),
+      syncObservation: ClawRuntimeCapabilityInspector.inspectSync()
+    )
   }
 
   private func result(
     _ name: String, status: ClawDiagnosticToolStatus, message: String,
-    evidence: [ClawDiagnosticEvent] = []
+    evidence: [ClawDiagnosticEvent] = [],
+    capability: ClawDiagnosticCapabilityObservation? = nil
   ) -> ClawDiagnosticToolResult {
     let last = evidence.last(where: { $0.severity == "error" })
     return ClawDiagnosticToolResult(
       name: name, status: status,
-      observedAt: evidence.last?.timestamp,
+      observedAt: capability?.checkedAt ?? evidence.last?.timestamp,
       sourceCommit: commit,
       message: message,
       evidenceTraceIDs: Array(Set(evidence.map(\.traceID))).prefix(10).sorted {
@@ -109,16 +120,24 @@ public struct ClawReadOnlyDiagnosticTools {
 
   public func inspectVoice() -> ClawDiagnosticToolResult {
     let observed = getModuleHealth("voice")
-    return result("inspectVoice", status: observed.status,
-      message: observed.message + " 麦克风/语音识别系统授权和当前音频路由尚未实时检测；本接口不会启动录音。",
-      evidence: capture.events.filter { $0.module == "voice" })
+    let check = voiceObservation
+    let status: ClawDiagnosticToolStatus =
+      observed.status == .fault ? .fault : check?.status ?? .unknown
+    return result("inspectVoice", status: status,
+      message: observed.message + " " + (check?.message ?? "麦克风/语音识别系统授权尚未实时检测。") +
+        " 当前音频路由及识别引擎运行情况尚未检测；不会启动录音。",
+      evidence: capture.events.filter { $0.module == "voice" }, capability: check)
   }
 
   public func inspectSync() -> ClawDiagnosticToolResult {
     let observed = getModuleHealth("icloud")
-    return result("inspectSync", status: observed.status,
-      message: observed.message + " 当前 iCloud 账户、容器可用性及本地数据一致性尚未经自检。",
-      evidence: capture.events.filter { $0.module == "icloud" })
+    let check = syncObservation
+    let status: ClawDiagnosticToolStatus =
+      observed.status == .fault ? .fault : check?.status ?? .unknown
+    return result("inspectSync", status: status,
+      message: observed.message + " " + (check?.message ?? "iCloud 签名和身份状态尚未实时检测。") +
+        " 尚未检查实际云文件读写与本地数据一致性。",
+      evidence: capture.events.filter { $0.module == "icloud" }, capability: check)
   }
 
   public func inspectNavigation() -> ClawDiagnosticToolResult {
