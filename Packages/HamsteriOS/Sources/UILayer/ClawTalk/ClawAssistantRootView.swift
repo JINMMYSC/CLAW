@@ -160,13 +160,13 @@ private struct ClawSettingsHubView: View {
         }
 
         Section("诊断与兼容性") {
-#if DEBUG
+          // Signed Release builds also need explicit, user-initiated export
+          // from real iPhone failures. Never export or upload automatically.
           NavigationLink {
             ClawDeveloperDiagnosticsView()
           } label: {
             Label("开发者诊断与导出", systemImage: "stethoscope")
           }
-#endif
           Button {
             openCLAWSettings(HamsterConstants.appURLForMain)
           } label: {
