@@ -72,6 +72,102 @@ final class MemoryRouterTests: XCTestCase {
                   "Chinese substring lookup must not be limited to recent V2 records")
   }
 
+
+  func testOtherPeopleCannotDisplaceOlderSelectedPersonBeforeCandidateLimit() throws {
+    let selected = UUID()
+    let target = try saveRetrievalFixture("selected historical", personID: selected, timestamp: 1_000)
+    try addRetrievalNoise(personID: UUID())
+    let found = try recallFixture(query: "", personID: selected)
+    XCTAssertEqual(found.map(\.id), [target.id])
+  }
+
+  func testInactiveRecordsCannotDisplaceOlderActiveRecordBeforeCandidateLimit() throws {
+    let target = try saveRetrievalFixture("active historical", timestamp: 1_000)
+    for state in [MemoryState.candidate, .archived, .invalidated] {
+      try addRetrievalNoise(state: state)
+    }
+    XCTAssertEqual(try recallFixture(query: "").map(\.id), [target.id])
+  }
+
+  func testExpiredRecordsCannotDisplaceOlderUnexpiredRecordBeforeCandidateLimit() throws {
+    let target = try saveRetrievalFixture("unexpired historical", timestamp: 1_000)
+    try addRetrievalNoise(expiresAt: Date(timeIntervalSince1970: 1))
+    XCTAssertEqual(try recallFixture(query: "").map(\.id), [target.id])
+  }
+
+  func testPersonOwnedGlobalRowsNeverEnterGlobalRecall() throws {
+    _ = try saveRetrievalFixture("owned global", personID: UUID(), scope: .global, timestamp: 1_000)
+    XCTAssertTrue(try recallFixture(query: "").isEmpty)
+  }
+
+  func testProjectOwnedGlobalRowsNeverEnterUnscopedRecall() throws {
+    _ = try saveRetrievalFixture("project global", projectID: UUID(), timestamp: 1_000)
+    XCTAssertTrue(try recallFixture(query: "").isEmpty)
+  }
+
+  func testFTSFiltersPersonBeforeCandidateLimit() throws {
+    let selected = UUID()
+    let target = try saveRetrievalFixture(
+      "alpha " + Array(repeating: "padding", count: 200).joined(separator: " "),
+      personID: selected, timestamp: 1_000
+    )
+    try addRetrievalNoise(personID: UUID(), prefix: "alpha")
+    XCTAssertEqual(try recallFixture(query: "alpha", personID: selected).map(\.id), [target.id])
+  }
+
+  func testChineseSubstringFallbackFiltersPersonBeforeCandidateLimit() throws {
+    let selected = UUID()
+    let target = try saveRetrievalFixture("历史记录包含独特方案需要讨论", personID: selected, timestamp: 1_000)
+    try addRetrievalNoise(personID: UUID(), prefix: "新记录包含独特方案需要讨论")
+    XCTAssertEqual(try recallFixture(query: "独特方案", personID: selected).map(\.id), [target.id])
+  }
+
+  func testPunctuationOnlyQueryUsesScopedRecentFallback() throws {
+    let selected = UUID()
+    let target = try saveRetrievalFixture("selected historical", personID: selected, timestamp: 1_000)
+    try addRetrievalNoise(personID: UUID())
+    XCTAssertEqual(try recallFixture(query: "...", personID: selected).map(\.id), [target.id])
+  }
+
+  @discardableResult
+  private func saveRetrievalFixture(
+    _ content: String,
+    personID: UUID? = nil,
+    projectID: UUID? = nil,
+    scope: MemoryScope? = nil,
+    state: MemoryState = .active,
+    expiresAt: Date? = nil,
+    timestamp: TimeInterval
+  ) throws -> MemoryV2Record {
+    var item = record(content, scope: scope ?? (personID == nil ? .global : .person), personID: personID)
+    item.projectID = projectID
+    item.state = state
+    item.expiresAt = expiresAt
+    item.updatedAt = Date(timeIntervalSince1970: timestamp)
+    try sdk.remember(item)
+    return item
+  }
+
+  private func addRetrievalNoise(
+    personID: UUID? = nil,
+    state: MemoryState = .active,
+    expiresAt: Date? = nil,
+    prefix: String = "new unrelated"
+  ) throws {
+    for index in 0..<100 {
+      try saveRetrievalFixture(
+        "\(prefix) \(state.rawValue) \(index)", personID: personID,
+        state: state, expiresAt: expiresAt, timestamp: 2_000 + Double(index)
+      )
+    }
+  }
+
+  private func recallFixture(query: String, personID: UUID? = nil) throws -> [MemoryV2Record] {
+    try MemoryRouter(store: store).recall(
+      MemoryRecallRequest(query: query, personID: personID, scope: personID == nil ? .global : .person, limit: 1)
+    )
+  }
+
   private func record(
     _ content: String,
     scope: MemoryScope,
