@@ -173,9 +173,17 @@ public final class ClawChatService: NSObject, ObservableObject {
 
     // Local opt-in self-test command: no LLM request, no personal Memory write.
     // This intentionally does not collect system permissions or user chat text.
-    if trimmed == "/自检" || trimmed.lowercased() == "/diagnose" {
+    if trimmed == "/自检" || trimmed.lowercased() == "/diagnose" ||
+       trimmed == "/查语音" || trimmed == "/查同步" {
       messages.append(ClawChatMessage(role: "user", content: trimmed, excludeFromContext: true))
-      postAssistant(ClawDiagnosticInspector.report(capture: ClawDiagnosticsCaptureService.captureCurrent()))
+      let tools = ClawReadOnlyDiagnosticTools.current()
+      if trimmed == "/查语音" {
+        postAssistant(tools.describe(tools.inspectVoice()))
+      } else if trimmed == "/查同步" {
+        postAssistant(tools.describe(tools.inspectSync()))
+      } else {
+        postAssistant(ClawDiagnosticInspector.report(capture: ClawDiagnosticsCaptureService.captureCurrent()))
+      }
       return
     }
 
