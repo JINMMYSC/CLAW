@@ -171,18 +171,26 @@ public final class ClawChatService: NSObject, ObservableObject {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, !isSending else { return }
 
-    // Local opt-in self-test command: no LLM request, no personal Memory write.
-    // This intentionally does not collect system permissions or user chat text.
-    if trimmed == "/自检" || trimmed.lowercased() == "/diagnose" ||
-       trimmed == "/查语音" || trimmed == "/查同步" {
-      messages.append(ClawChatMessage(role: "user", content: trimmed, excludeFromContext: true))
+    // Software troubleshooting stays in a separate global diagnostic context.
+    // Neither the query nor the private conversation is sent to an LLM or
+    // appended to Memory Core. Only known read-only tools may be called.
+    let diagnosis = ClawDiagnosticIntentRouter.match(trimmed)
+    if diagnosis != .none {
+      if activeContextID != nil { switchContext(contactID: nil) }
+      let command: String
+      switch diagnosis {
+      case .voice: command = "/查语音"
+      case .sync: command = "/查同步"
+      case .overview: command = "/自检"
+      case .none: return
+      }
+      messages.append(ClawChatMessage(role: "user", content: command, excludeFromContext: true))
       let tools = ClawReadOnlyDiagnosticTools.current()
-      if trimmed == "/查语音" {
-        postAssistant(tools.describe(tools.inspectVoice()))
-      } else if trimmed == "/查同步" {
-        postAssistant(tools.describe(tools.inspectSync()))
-      } else {
-        postAssistant(ClawDiagnosticInspector.report(capture: ClawDiagnosticsCaptureService.captureCurrent()))
+      switch diagnosis {
+      case .voice: postAssistant(tools.describe(tools.inspectVoice()))
+      case .sync: postAssistant(tools.describe(tools.inspectSync()))
+      case .overview: postAssistant(ClawDiagnosticInspector.report(capture: ClawDiagnosticsCaptureService.captureCurrent()))
+      case .none: break
       }
       return
     }
