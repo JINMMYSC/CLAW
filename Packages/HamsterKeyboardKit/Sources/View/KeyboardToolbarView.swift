@@ -19,6 +19,30 @@ import UIKit
  2. 常用功能视图（ClawTalk 三入口 + 眼睛 + 表情 + 下拉）
  3. 实时 AI 建议条（右侧空余区域）
  */
+/// One source of truth for the mutually exclusive toolbar surfaces.
+/// RIME key updates, panel tab changes and candidate expansion must agree.
+public struct ClawToolbarVisibility: Equatable {
+  public let showsFunctionBar: Bool
+  public let showsCandidateBar: Bool
+  public let showsPanel: Bool
+  public let showsSuggestions: Bool
+
+  public static func resolve(
+    inputIsEmpty: Bool,
+    panelIsOpen: Bool,
+    candidatesAreExpanded: Bool,
+    hasSuggestions: Bool
+  ) -> ClawToolbarVisibility {
+    let candidates = !panelIsOpen && (!inputIsEmpty || candidatesAreExpanded)
+    return ClawToolbarVisibility(
+      showsFunctionBar: !candidates,
+      showsCandidateBar: candidates,
+      showsPanel: panelIsOpen,
+      showsSuggestions: candidates && !candidatesAreExpanded && hasSuggestions
+    )
+  }
+}
+
 class KeyboardToolbarView: NibLessView {
   private let appearance: KeyboardAppearance
   private let actionHandler: KeyboardActionHandler
@@ -542,10 +566,7 @@ class KeyboardToolbarView: NibLessView {
 
   /// 实时建议条显隐：有建议 + 面板收起 + 有输入时显示
   func updateSuggestionBarVisibility() {
-    let hasSuggestions = !ClawSuggestionEngine.shared.suggestions.isEmpty
-    let panelExpanded = keyboardContext.clawPanelTab >= 0
-    let show = hasSuggestions && !panelExpanded && !lastInputEmpty
-    suggestionBarView.isHidden = !show
+    suggestionBarView.isHidden = !toolbarVisibility.showsSuggestions
     updateSuggestionBarHeight()
   }
 
@@ -553,14 +574,30 @@ class KeyboardToolbarView: NibLessView {
   private func updateSuggestionBarHeight() {
     let panelHeight = ClawPanelOverlayView.preferredHeight(for: keyboardContext.clawPanelTab)
     let available = max(0, bounds.height - keyboardContext.heightOfToolbar - panelHeight - 12)
-    let show = !ClawSuggestionEngine.shared.suggestions.isEmpty && keyboardContext.clawPanelTab < 0 && !lastInputEmpty
-    let desired = show ? min(max(available, 0), 120) : 0
+    let desired = toolbarVisibility.showsSuggestions ? min(available, 120) : 0
     if abs(suggestionBarHeightConstraint.constant - desired) > 0.5 {
       suggestionBarHeightConstraint.constant = desired
     }
   }
 
   // MARK: - 状态联动
+
+  private var toolbarVisibility: ClawToolbarVisibility {
+    ClawToolbarVisibility.resolve(
+      inputIsEmpty: lastInputEmpty,
+      panelIsOpen: keyboardContext.clawPanelTab >= 0,
+      candidatesAreExpanded: !keyboardContext.candidatesViewState.isCollapse(),
+      hasSuggestions: !ClawSuggestionEngine.shared.suggestions.isEmpty
+    )
+  }
+
+  private func applyToolbarVisibility() {
+    let state = toolbarVisibility
+    panelOverlayView.isHidden = !state.showsPanel
+    commonFunctionBar.isHidden = !state.showsFunctionBar
+    candidateBarView.isHidden = !state.showsCandidateBar
+    candidateQuickToolsBar.isHidden = !state.showsCandidateBar
+  }
 
   func combine() {
     // 候选栏展开/收起：切换候选栏的上边界。
@@ -572,6 +609,8 @@ class KeyboardToolbarView: NibLessView {
         let expanded = !state.isCollapse()
         self.candidateTopToFunctionBar?.isActive = !expanded
         self.candidateTopToPanel?.isActive = expanded
+        self.applyToolbarVisibility()
+        self.updateSuggestionBarVisibility()
         self.setNeedsLayout()
       }
       .store(in: &subscriptions)
@@ -582,9 +621,9 @@ class KeyboardToolbarView: NibLessView {
         guard let self = self else { return }
         let isEmpty = $0.isEmpty
         self.lastInputEmpty = isEmpty
-        self.commonFunctionBar.isHidden = !isEmpty
-        self.candidateBarView.isHidden = isEmpty
-        self.candidateQuickToolsBar.isHidden = isEmpty
+        // Never allow RIME input updates to resurrect an older toolbar on top
+        // of an active AI, Help Reply or Super Talk panel.
+        self.applyToolbarVisibility()
         self.updateSuggestionBarVisibility()
 
         // 检测是否启用内嵌编码
@@ -602,18 +641,7 @@ class KeyboardToolbarView: NibLessView {
       .receive(on: DispatchQueue.main)
       .sink { [weak self] tab in
         guard let self else { return }
-        let expanded = tab >= 0
-        self.panelOverlayView.isHidden = !expanded
-        // 面板展开时功能行保持显示，候选栏不遮挡面板
-        if expanded {
-          self.commonFunctionBar.isHidden = false
-          self.candidateBarView.isHidden = true
-          self.candidateQuickToolsBar.isHidden = true
-        } else {
-          self.commonFunctionBar.isHidden = !self.lastInputEmpty
-          self.candidateBarView.isHidden = self.lastInputEmpty
-          self.candidateQuickToolsBar.isHidden = self.lastInputEmpty
-        }
+        self.applyToolbarVisibility()
         self.updateEntryButtonStates()
         self.updateSuggestionBarVisibility()
         let target = ClawPanelOverlayView.preferredHeight(for: tab)

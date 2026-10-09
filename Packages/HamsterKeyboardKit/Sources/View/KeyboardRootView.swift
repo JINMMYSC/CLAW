@@ -420,23 +420,31 @@ class KeyboardRootView: NibLessView {
         }
 
         if keyboardContext.enableToolbar {
-          // NSLayoutConstraint.deactivate(toolbarCollapseDynamicConstraints)
+          // Native layouts can reuse the same UIView across input-mode changes.
+          // Removing its children here destroyed live keys and left stale UI.
+          if keyboardView === primaryKeyboardView {
+            primaryKeyboardView.setNeedsLayout()
+            return
+          }
+          // Deactivate the old anchors *before* releasing their references.
+          // Otherwise the previous keyboard stays constrained behind the new one.
+          NSLayoutConstraint.deactivate(toolbarCollapseDynamicConstraints + toolbarExpandDynamicConstraints)
           toolbarCollapseDynamicConstraints.removeAll(keepingCapacity: true)
           toolbarExpandDynamicConstraints.removeAll(keepingCapacity: true)
-
-          primaryKeyboardView.subviews.forEach { $0.removeFromSuperview() }
           primaryKeyboardView.removeFromSuperview()
 
           primaryKeyboardView = keyboardView
-          addSubview(primaryKeyboardView)
+          if keyboardContext.candidatesViewState.isCollapse() {
+            insertSubview(primaryKeyboardView, belowSubview: toolbarView)
+          }
 
-          // 工具栏收缩时约束
           toolbarCollapseDynamicConstraints = createToolbarCollapseDynamicConstraints()
-
-          // 工具栏展开时约束
           toolbarExpandDynamicConstraints = createToolbarExpandDynamicConstraints()
-
-          NSLayoutConstraint.activate(toolbarCollapseDynamicConstraints)
+          if keyboardContext.candidatesViewState.isCollapse() {
+            NSLayoutConstraint.activate(toolbarCollapseDynamicConstraints)
+          } else {
+            NSLayoutConstraint.activate(toolbarExpandDynamicConstraints)
+          }
         } else {
           NSLayoutConstraint.deactivate(constraints)
           primaryKeyboardView.removeFromSuperview()
@@ -473,7 +481,11 @@ class KeyboardRootView: NibLessView {
       // IOS 原生布局：面板展开时候选栏固定顶行，工具栏高度多一行
       let extra = (panelExpanded && keyboardContext.useIOSNativeLayout) ? keyboardContext.heightOfToolbar : 0
       toolbarHeightConstraint?.constant = keyboardContext.heightOfToolbar + extra + panelHeight
-      addSubview(primaryKeyboardView)
+      // Keep the keys below the toolbar instead of moving the old layout in
+      // front of the new candidate/AI surface on every collapse.
+      if primaryKeyboardView.superview == nil {
+        insertSubview(primaryKeyboardView, belowSubview: toolbarView)
+      }
       NSLayoutConstraint.deactivate(toolbarExpandDynamicConstraints)
       NSLayoutConstraint.activate(toolbarCollapseDynamicConstraints)
     } else {

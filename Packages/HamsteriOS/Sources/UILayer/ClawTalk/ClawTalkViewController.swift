@@ -5,6 +5,19 @@ import UIKit
 public final class ClawTalkViewController: NibLessViewController {
   private let viewModel = ClawTalkViewModel()
 
+  public override func viewWillAppear(_ animated: Bool) {
+    super.viewWillAppear(animated)
+    // The five-tab SwiftUI home owns its navigation chrome. Do not stack the
+    // old UIKit "Now ClawTalk" bar above the new app's tabs and page headers.
+    navigationController?.setNavigationBarHidden(true, animated: false)
+  }
+
+  public override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    // Legacy settings and RIME routes still use a normal back button.
+    navigationController?.setNavigationBarHidden(false, animated: false)
+  }
+
   public override func viewDidLoad() {
     super.viewDidLoad()
     title = "Now ClawTalk"

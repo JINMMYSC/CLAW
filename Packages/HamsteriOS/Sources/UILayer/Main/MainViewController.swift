@@ -33,6 +33,9 @@ open class MainViewController: UISplitViewController {
   private let mainViewModel: MainViewModel
   private let subViewControllerFactory: SubViewControllerFactory
   private let settingsViewController: SettingsViewController
+  // Legacy settings are opened only as a secondary destination, not a second home.
+  private lazy var legacySettingsDestination: SettingsViewController =
+    subViewControllerFactory.makeSettingsViewController()
 
   private lazy var inputSchemaViewController: InputSchemaViewController
     = subViewControllerFactory.makeInputSchemaViewController()
@@ -106,7 +109,9 @@ open class MainViewController: UISplitViewController {
     self.delegate = self
     // primary 视图始终可见
     self.presentsWithGesture = false
-    self.preferredDisplayMode = .twoBesideSecondary
+    // Show one CLAW home on both iPhone and iPad. Do not tile the legacy
+    // Settings column beside the new five-tab experience.
+    self.preferredDisplayMode = .secondaryOnly
     self.preferredSplitBehavior = .tile
     self.displayModeButtonVisibility = .never
     self.showsSecondaryOnlyButton = false
@@ -212,13 +217,9 @@ extension MainViewController {
   }
 
   func presentMainViewController() {
-    primaryNavigationViewController.popToRootViewController(animated: false)
-    // Legacy "main" deep links must still reach the old complete settings.
-    // In compact layout the detail navigation may be the visible column.
-    if isCollapsed, secondaryNavigationViewController.viewIfLoaded?.window != nil {
-      let settings = subViewControllerFactory.makeSettingsViewController()
-      secondaryNavigationViewController.pushViewController(settings, animated: true)
-    }
+    // Old "main" links remain available without replacing or duplicating the
+    // five-tab CLAW home. Back returns to the exact assistant tab state.
+    presentViewController(legacySettingsDestination)
   }
 
   func presentInputSchemaViewController() {
@@ -297,16 +298,14 @@ extension MainViewController {
   }
 
   private func presentViewController(_ vc: UIViewController) {
-    primaryNavigationViewController.popToRootViewController(animated: false)
-    if isCollapsed {
-      // The compact app now defaults to the CLAW secondary column. Pushing
-      // into a hidden primary nav would make keyboard/settings links appear
-      // broken. Route through whichever navigation is actually on screen.
-      let secondaryVisible = secondaryNavigationViewController.viewIfLoaded?.window != nil
-      let visibleNav = secondaryVisible ? secondaryNavigationViewController : primaryNavigationViewController
-      visibleNav.pushViewController(vc, animated: true)
-      return
+    // Never replace the assistant's navigation root with a legacy screen on
+    // iPad or iPhone; otherwise the old screen can take over the new UI.
+    let navigation = secondaryNavigationViewController
+    if navigation.topViewController === vc { return }
+    if navigation.viewControllers.contains(where: { $0 === vc }) {
+      navigation.popToViewController(vc, animated: true)
+    } else {
+      navigation.pushViewController(vc, animated: true)
     }
-    secondaryNavigationViewController.viewControllers = [vc]
   }
 }
