@@ -126,6 +126,11 @@ extension MainViewController {
   override open func viewDidLoad() {
     super.viewDidLoad()
 
+    // The assistant is now the initial screen on iPhone and iPad. The legacy
+    // Settings viewDidAppear no longer fires on cold launch, so explicitly
+    // run the shared RIME/first-launch bootstrap before keyboard use.
+    settingsViewController.startAppDataBootstrapIfNeeded()
+
     /// 动态控制导航
     mainViewModel.subViewPublished
       .receive(on: DispatchQueue.main)
