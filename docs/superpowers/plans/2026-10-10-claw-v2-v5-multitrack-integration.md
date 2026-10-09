@@ -146,3 +146,9 @@
 
 - [x] `1b59ffb9`：设置内加入“微信 ClawBot · 本机连接”入口，并新增 `ClawWeChatLocalSettingsView.swift`；如实显示未连接、暂未开放扫码、图片语音接口尚未连通以及 iOS 后台限制。**仅 UI/状态说明，不是微信登录实现，未 CI。**
 - [ ] 等待合法独立客户端接入权限与真实传输层完成后，将演示状态绑定实际连接状态；Keychain 管理凭证、并发租约、消息 ACK/重试幂等、扫码同机授权及媒体/STT 真机测试。
+
+### 2026-10-10 automation integration checkpoint
+
+- [x] Screenshot OCR is preview-only, including the legacy `requireUserReview: false` path. Explicit `confirmReviewed*` remains required for writes. Branch `feature/claw-v5-screenshot-consent-20261010`, commit `3c370199`.
+- [x] Memory Router ranking and MMR use the same injected clock; future timestamps receive no bonus above 1. Branch `feature/claw-v5-memory-recency-20261010`, commit `abe1e089`.
+- [ ] Changes integrated at `271d6203`. Swift/Xcode, real-device, and same-SHA final CI have NOT been run. Continue remaining P0/P1/P2 tasks before release verification.
