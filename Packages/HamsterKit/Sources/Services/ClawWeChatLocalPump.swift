@@ -16,7 +16,9 @@ public struct ClawWeChatLocalBatch {
 /// Media references are opaque, and transport must authenticate/decrypt them.
 public protocol ClawWeChatLocalTransport {
   func fetch(after cursor: String?) async throws -> ClawWeChatLocalBatch
-  func downloadMedia(reference: String) async throws -> Data
+  /// Implementations must bound downloads WHILE streaming; never allocate
+  /// untrusted image/voice payloads in full before checking maximumBytes.
+  func downloadMedia(reference: String, maximumBytes: Int) async throws -> Data
   func sendText(_ text: String, conversationID: String) async throws
 }
 
@@ -80,12 +82,19 @@ public actor ClawWeChatLocalPump {
       keyboardVisible: keyboardVisible,
       keyboardFullAccess: keyboardFullAccess
     ) else { throw ClawWeChatLocalPumpError.notRunning }
+    try Task.checkCancellation()
     isPolling = true
     defer { isPolling = false }
 
     let batch = try await transport.fetch(after: cursor)
+    // If the user leaves the app, authorization expires, or the keyboard
+    // loses execution permission during fetch, do NOT consume the cursor.
+    guard connection == .active else { throw ClawWeChatLocalPumpError.notRunning }
+    try Task.checkCancellation()
     var handled = 0
     for message in batch.messages {
+      guard connection == .active else { throw ClawWeChatLocalPumpError.notRunning }
+      try Task.checkCancellation()
       // This bridge is a *personal* assistant. Never process other people's
       // messages under the owner's personal-memory authorization.
       guard message.senderID == allowedSenderID else { continue }
@@ -99,13 +108,16 @@ public actor ClawWeChatLocalPump {
         case .image, .voice:
           // Bytes must come from the authenticated adapter, never an
           // arbitrary file URL chosen by the sender.
-          let data = try await transport.downloadMedia(reference: message.mediaReference!)
+          let data = try await transport.downloadMedia(
+            reference: message.mediaReference!, maximumBytes: maximumMediaBytes
+          )
           guard data.count <= maximumMediaBytes else {
             throw ClawWeChatLocalPumpError.mediaTooLarge
           }
           media = data
         }
         let response = try await processor.makeReply(to: message, media: media)
+        try Task.checkCancellation()
         if let reply = response?.trimmingCharacters(in: .whitespacesAndNewlines), !reply.isEmpty {
           guard connection == .active else { throw ClawWeChatLocalPumpError.notRunning }
           try await transport.sendText(reply, conversationID: message.conversationID)
@@ -118,6 +130,9 @@ public actor ClawWeChatLocalPump {
         throw error
       }
     }
+    // A paused/cancelled connection must not acknowledge unseen messages.
+    guard connection == .active else { throw ClawWeChatLocalPumpError.notRunning }
+    try Task.checkCancellation()
     cursor = batch.nextCursor
     return handled
   }

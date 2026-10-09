@@ -8,16 +8,25 @@ private actor FakeWeChatTransport: ClawWeChatLocalTransport {
   var downloaded: [String] = []
   var sent: [String] = []
   var cursors: [String?] = []
+  var mediaSize = 8
+  var fetchHook: (() async -> Void)?
+  var maxDownloadBytes: [Int] = []
 
   func setMessages(_ value: [ClawWeChatLocalMessage]) { messages = value }
+  func setFetchHook(_ hook: (() async -> Void)?) { fetchHook = hook }
+  func setMediaSize(_ size: Int) { mediaSize = size }
+  func downloadLimits() -> [Int] { maxDownloadBytes }
   func failNextSend() { sendFailures += 1 }
   func fetch(after cursor: String?) async throws -> ClawWeChatLocalBatch {
     cursors.append(cursor)
+    if let fetchHook { await fetchHook() }
     return ClawWeChatLocalBatch(messages: messages, nextCursor: "next-page")
   }
-  func downloadMedia(reference: String) async throws -> Data {
+  func downloadMedia(reference: String, maximumBytes: Int) async throws -> Data {
     downloaded.append(reference)
-    return Data(repeating: 1, count: 8)
+    maxDownloadBytes.append(maximumBytes)
+    guard mediaSize <= maximumBytes else { throw ClawWeChatLocalPumpError.mediaTooLarge }
+    return Data(repeating: 1, count: mediaSize)
   }
   func sendText(_ text: String, conversationID: String) async throws {
     if sendFailures > 0 {
@@ -69,6 +78,8 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
     let sentAfterFirst = await transport.sentMessages()
     let kinds = await processor.processedKinds()
     XCTAssertEqual(downloads, ["opaque-b", "opaque-c"])
+    let limits = await transport.downloadLimits()
+    XCTAssertEqual(limits, [12 * 1024 * 1024, 12 * 1024 * 1024])
     XCTAssertEqual(sentAfterFirst.count, 3)
     XCTAssertEqual(kinds, [.text, .image, .voice])
     let second = try await pump.pollOnce(hostForeground: true, keyboardVisible: false, keyboardFullAccess: false)
@@ -111,4 +122,51 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
     let sent = await transport.sentMessages()
     XCTAssertEqual(sent.count, 1)
   }
+  func testPauseDuringFetchLeavesCursorAndMessagesUntouched() async throws {
+    let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
+    await transport.setMessages([message("pause", kind: .image)])
+    let pump = ClawWeChatLocalPump(
+      transport: transport, processor: processor, allowedSenderID: "owner"
+    )
+    await transport.setFetchHook {
+      await pump.setConnection(.authorizedPaused)
+    }
+    await pump.setConnection(.active)
+    do {
+      _ = try await pump.pollOnce(hostForeground: true, keyboardVisible: false, keyboardFullAccess: false)
+      XCTFail("A paused connection must not acknowledge a fetched batch")
+    } catch ClawWeChatLocalPumpError.notRunning { }
+    let pausedCursor = await pump.lastCursor()
+    let sentWhilePaused = await transport.sentMessages()
+    XCTAssertNil(pausedCursor)
+    XCTAssertTrue(sentWhilePaused.isEmpty)
+
+    await transport.setFetchHook(nil)
+    await pump.setConnection(.active)
+    let recovered = try await pump.pollOnce(
+      hostForeground: true, keyboardVisible: false, keyboardFullAccess: false
+    )
+    XCTAssertEqual(recovered, 1)
+    let sent = await transport.sentMessages()
+    XCTAssertEqual(sent.count, 1)
+  }
+
+  func testOversizedImageIsRejectedWithoutAdvancingCursor() async throws {
+    let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
+    await transport.setMessages([message("huge", kind: .image)])
+    await transport.setMediaSize(32)
+    let pump = ClawWeChatLocalPump(
+      transport: transport, processor: processor, allowedSenderID: "owner", maximumMediaBytes: 16
+    )
+    await pump.setConnection(.active)
+    do {
+      _ = try await pump.pollOnce(hostForeground: true, keyboardVisible: false, keyboardFullAccess: false)
+      XCTFail("Oversized media must be rejected")
+    } catch ClawWeChatLocalPumpError.mediaTooLarge { }
+    let cursor = await pump.lastCursor()
+    let processed = await processor.processedKinds()
+    XCTAssertNil(cursor)
+    XCTAssertTrue(processed.isEmpty)
+  }
+
 }
