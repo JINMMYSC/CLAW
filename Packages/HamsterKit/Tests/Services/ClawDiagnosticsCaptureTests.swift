@@ -28,6 +28,29 @@ final class ClawDiagnosticsCaptureTests: XCTestCase {
     XCTAssertEqual(ClawDiagnosticsCaptureService.readKeyboard(at: file).state, .corrupted)
   }
 
+  func testDiagnosticExportCleanupOnlyDeletesExpiredArchives() throws {
+    let fm = FileManager.default
+    let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try fm.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: root) }
+
+    func create(_ name: String, modified: Date) throws -> URL {
+      let folder = root.appendingPathComponent(name, isDirectory: true)
+      try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+      try Data("safe".utf8).write(to: folder.appendingPathComponent("CLAW-Diagnostics.zip"))
+      try fm.setAttributes([.modificationDate: modified], ofItemAtPath: folder.path)
+      return folder
+    }
+    let now = Date(timeIntervalSince1970: 2_000_000)
+    let old = try create("claw-report-" + UUID().uuidString, modified: now.addingTimeInterval(-100_000))
+    let fresh = try create("claw-report-" + UUID().uuidString, modified: now.addingTimeInterval(-10))
+    let unrelated = try create("other-report-" + UUID().uuidString, modified: now.addingTimeInterval(-100_000))
+    ClawDiagnosticsCaptureService.pruneOldExports(in: root, now: now)
+    XCTAssertFalse(fm.fileExists(atPath: old.path))
+    XCTAssertTrue(fm.fileExists(atPath: fresh.path))
+    XCTAssertTrue(fm.fileExists(atPath: unrelated.path))
+  }
+
   func testExportContainsOnlyRedactedEvents() throws {
     let logger = ClawDiagnosticsCore(storageURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString), processName: "host")
     logger.record(
