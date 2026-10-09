@@ -389,12 +389,12 @@ public class AIService {
         log.log("✗ empty response (HTTP \(status))", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.emptyResponse)) }; return
       }
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
         log.log("✗ parse error (HTTP \(status)) body=[redacted]", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.parseError)) }; return
       }
       if let errObj = json["error"] as? [String: Any], let msg = errObj["message"] as? String {
-        log.log("✗ API error (HTTP \(status)): \(msg) | body=[redacted]", level: .error, tag: "AI")
+        log.log("✗ API response error (HTTP \(status)); response content redacted", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.apiError(msg))) }; return
       }
       guard let choices = json["choices"] as? [[String: Any]],
@@ -464,12 +464,12 @@ public class AIService {
         log.log("✗ empty response (HTTP \(status))", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.emptyResponse)) }; return
       }
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
         log.log("✗ parse error (HTTP \(status)) body=[redacted]", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.parseError)) }; return
       }
       if let errObj = json["error"] as? [String: Any], let msg = errObj["message"] as? String {
-        log.log("✗ API error (HTTP \(status)): \(msg) | body=[redacted]", level: .error, tag: "AI")
+        log.log("✗ API response error (HTTP \(status)); response content redacted", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.apiError(msg))) }; return
       }
       guard let content = json["content"] as? [[String: Any]],
