@@ -41,6 +41,8 @@ public actor ClawWeChatLocalPump {
   private let transport: ClawWeChatLocalTransport
   private let processor: ClawWeChatLocalMessageProcessor
   private let allowedSenderID: String
+  /// Exact opt-in chat; never reply to the owner's unrelated or group conversations.
+  private let allowedConversationID: String
   private let maximumMediaBytes: Int
   private var inbox: ClawWeChatLocalInboxGuard
   private var cursor: String?
@@ -51,12 +53,14 @@ public actor ClawWeChatLocalPump {
     transport: ClawWeChatLocalTransport,
     processor: ClawWeChatLocalMessageProcessor,
     allowedSenderID: String,
+    allowedConversationID: String,
     maximumMediaBytes: Int = 12 * 1024 * 1024,
     inboxCapacity: Int = 512
   ) {
     self.transport = transport
     self.processor = processor
     self.allowedSenderID = allowedSenderID
+    self.allowedConversationID = allowedConversationID
     maximumMediaBytes = max(1, maximumMediaBytes)
     inbox = ClawWeChatLocalInboxGuard(capacity: inboxCapacity)
   }
@@ -95,9 +99,12 @@ public actor ClawWeChatLocalPump {
     for message in batch.messages {
       guard connection == .active else { throw ClawWeChatLocalPumpError.notRunning }
       try Task.checkCancellation()
-      // This bridge is a *personal* assistant. Never process other people's
-      // messages under the owner's personal-memory authorization.
-      guard message.senderID == allowedSenderID else { continue }
+      // Owner identity alone is insufficient: their message may have been
+      // sent inside a group or another private conversation. Only the exact
+      // separately authorized personal-assistant conversation may be processed
+      // or replied to. Do not infer consent from the sender alone.
+      guard message.senderID == allowedSenderID,
+            message.conversationID == allowedConversationID else { continue }
       let admission = inbox.admit(message, bridgeActive: connection == .active)
       guard admission == .accepted else { continue }
       do {

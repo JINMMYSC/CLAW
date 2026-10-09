@@ -54,10 +54,11 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
   private func message(
     _ id: String,
     kind: ClawWeChatLocalMessageKind,
-    sender: String = "owner"
+    sender: String = "owner",
+    conversation: String = "chat"
   ) -> ClawWeChatLocalMessage {
     ClawWeChatLocalMessage(
-      messageID: id, conversationID: "chat", senderID: sender,
+      messageID: id, conversationID: conversation, senderID: sender,
       kind: kind, text: kind == .text ? "问 CLAW" : nil,
       mediaReference: kind == .text ? nil : "opaque-\(id)"
     )
@@ -70,7 +71,7 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
       message("b", kind: .image),
       message("c", kind: .voice)
     ])
-    let pump = ClawWeChatLocalPump(transport: transport, processor: processor, allowedSenderID: "owner")
+    let pump = ClawWeChatLocalPump(transport: transport, processor: processor, allowedSenderID: "owner", allowedConversationID: "chat")
     await pump.setConnection(.active)
     let first = try await pump.pollOnce(hostForeground: true, keyboardVisible: false, keyboardFullAccess: false)
     XCTAssertEqual(first, 3)
@@ -93,7 +94,7 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
   func testPausedKeyboardCannotPollAndUnknownSenderIsIgnored() async throws {
     let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
     await transport.setMessages([message("x", kind: .text, sender: "stranger")])
-    let pump = ClawWeChatLocalPump(transport: transport, processor: processor, allowedSenderID: "owner")
+    let pump = ClawWeChatLocalPump(transport: transport, processor: processor, allowedSenderID: "owner", allowedConversationID: "chat")
     await pump.setConnection(.active)
     do {
       _ = try await pump.pollOnce(hostForeground: false, keyboardVisible: true, keyboardFullAccess: false)
@@ -109,7 +110,7 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
     let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
     await transport.setMessages([message("r", kind: .voice)])
     await transport.failNextSend()
-    let pump = ClawWeChatLocalPump(transport: transport, processor: processor, allowedSenderID: "owner")
+    let pump = ClawWeChatLocalPump(transport: transport, processor: processor, allowedSenderID: "owner", allowedConversationID: "chat")
     await pump.setConnection(.active)
     do {
       _ = try await pump.pollOnce(hostForeground: true, keyboardVisible: false, keyboardFullAccess: false)
@@ -126,7 +127,7 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
     let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
     await transport.setMessages([message("pause", kind: .image)])
     let pump = ClawWeChatLocalPump(
-      transport: transport, processor: processor, allowedSenderID: "owner"
+      transport: transport, processor: processor, allowedSenderID: "owner", allowedConversationID: "chat"
     )
     await transport.setFetchHook {
       await pump.setConnection(.authorizedPaused)
@@ -156,7 +157,7 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
     await transport.setMessages([message("huge", kind: .image)])
     await transport.setMediaSize(32)
     let pump = ClawWeChatLocalPump(
-      transport: transport, processor: processor, allowedSenderID: "owner", maximumMediaBytes: 16
+      transport: transport, processor: processor, allowedSenderID: "owner", allowedConversationID: "chat", maximumMediaBytes: 16
     )
     await pump.setConnection(.active)
     do {
@@ -167,6 +168,48 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
     let processed = await processor.processedKinds()
     XCTAssertNil(cursor)
     XCTAssertTrue(processed.isEmpty)
+  }
+
+  func testOwnersGroupAndUnapprovedChatsNeverReceiveAIReply() async throws {
+    let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
+    await transport.setMessages([
+      message("group", kind: .text, conversation: "project-group"),
+      message("other", kind: .voice, conversation: "private-friend"),
+      message("assistant", kind: .text, conversation: "chat")
+    ])
+    let pump = ClawWeChatLocalPump(
+      transport: transport, processor: processor,
+      allowedSenderID: "owner", allowedConversationID: "chat"
+    )
+    await pump.setConnection(.active)
+    let count = try await pump.pollOnce(
+      hostForeground: true, keyboardVisible: false, keyboardFullAccess: false
+    )
+    XCTAssertEqual(count, 1)
+    let sent = await transport.sentMessages()
+    let downloads = await transport.downloadedMedia()
+    let processed = await processor.processedKinds()
+    XCTAssertEqual(sent, ["chat:已处理"])
+    XCTAssertTrue(downloads.isEmpty, "Unapproved media must not even be downloaded")
+    XCTAssertEqual(processed, [.text])
+  }
+
+  func testOnlyUnapprovedConversationDoesNotInvokeProcessor() async throws {
+    let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
+    await transport.setMessages([message("group", kind: .image, conversation: "project-group")])
+    let pump = ClawWeChatLocalPump(
+      transport: transport, processor: processor,
+      allowedSenderID: "owner", allowedConversationID: "chat"
+    )
+    await pump.setConnection(.active)
+    let count = try await pump.pollOnce(
+      hostForeground: true, keyboardVisible: false, keyboardFullAccess: false
+    )
+    XCTAssertEqual(count, 0)
+    let processed = await processor.processedKinds()
+    let sent = await transport.sentMessages()
+    XCTAssertTrue(processed.isEmpty)
+    XCTAssertTrue(sent.isEmpty)
   }
 
 }
