@@ -31,4 +31,23 @@ final class ClawReadOnlyDiagnosticToolsTests: XCTestCase {
     XCTAssertTrue(results.allSatisfy { $0.status != .fault })
     XCTAssertTrue(results.allSatisfy { $0.status != .ok || $0.name == "getAppStatus" })
   }
+  func testRealPermissionFaultHasObservedTimestampWithoutFabricatedTrace() {
+    let snapshot = ClawDiagnosticCapabilityObservation(status: .fault, message: "用户拒绝麦克风权限")
+    let tools = ClawReadOnlyDiagnosticTools(
+      capture: emptyCapture(), version: "1", commit: nil,
+      voiceObservation: snapshot)
+    let result = tools.inspectVoice()
+    XCTAssertEqual(result.status, .fault)
+    XCTAssertNotNil(result.observedAt)
+    XCTAssertTrue(result.evidenceTraceIDs.isEmpty)
+  }
+
+  func testSignedCloudCapabilityMissingOverridesNoEventUnknown() {
+    let snapshot = ClawDiagnosticCapabilityObservation(status: .fault, message: "没有 CloudDocuments 权限")
+    let tools = ClawReadOnlyDiagnosticTools(
+      capture: emptyCapture(), version: "1", commit: nil,
+      syncObservation: snapshot)
+    XCTAssertEqual(tools.inspectSync().status, .fault)
+  }
+
 }

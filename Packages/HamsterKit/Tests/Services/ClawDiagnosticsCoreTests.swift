@@ -9,6 +9,12 @@ final class ClawDiagnosticsCoreTests: XCTestCase {
     XCTAssertEqual(ClawDiagnosticsCore.identifier("key=secret"), "redacted")
   }
 
+  func testCustomNSErrorDomainsCannotLeakPrivateText() {
+    XCTAssertEqual(ClawDiagnosticsCore.safeErrorDomain("AVAudioSessionErrorDomain"), "AVAudioSessionErrorDomain")
+    XCTAssertEqual(ClawDiagnosticsCore.safeErrorDomain("CONTACT_SECRET_123"), "unrecognized_error_domain")
+    XCTAssertEqual(ClawDiagnosticsCore.safeErrorDomain("CKErrorDomain"), "CKErrorDomain")
+  }
+
   func testUnderlyingErrorCodeIsRecordedWithoutLocalizedDescription() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: url) }
