@@ -110,8 +110,8 @@ public enum ClawDiagnosticsCaptureService {
             (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
             fm.fileExists(atPath: url.appendingPathComponent("CLAW-Diagnostics.zip").path)
       else { return nil }
-      let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))
-        ?.contentModificationDate ?? now
+      let attributes = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+      let modified = attributes?.contentModificationDate ?? now
       return (url, modified)
     }.sorted { $0.timestamp > $1.timestamp }
     for (index, candidate) in candidates.enumerated() {
