@@ -128,6 +128,34 @@ final class MemoryRouterTests: XCTestCase {
     XCTAssertEqual(global.map(\.id), [wanted.id])
   }
 
+
+  func testRecencyUsesProvidedClockAndCapsFutureDates() {
+    let now = Date(timeIntervalSince1970: 2_100_000_000)
+    let day: TimeInterval = 86_400
+    XCTAssertEqual(MemoryRouter.recencyFactor(updatedAt: now, now: now), 1, accuracy: 0.00001)
+    XCTAssertEqual(MemoryRouter.recencyFactor(updatedAt: now.addingTimeInterval(365 * day), now: now), 1, accuracy: 0.00001)
+    XCTAssertEqual(MemoryRouter.recencyFactor(updatedAt: now.addingTimeInterval(-90 * day), now: now), 0.5, accuracy: 0.00001)
+    XCTAssertEqual(MemoryRouter.recencyFactor(updatedAt: now.addingTimeInterval(-365 * day), now: now), 0, accuracy: 0.00001)
+  }
+
+  func testRecallRanksAgainstInjectedClockRatherThanWallClock() throws {
+    let now = Date(timeIntervalSince1970: 2_100_000_000)
+    let day: TimeInterval = 86_400
+    var oldImportant = record("优先级高的历史记录", scope: .global)
+    oldImportant.updatedAt = now.addingTimeInterval(-400 * day)
+    oldImportant.importance = 0.95
+    var recentLowPriority = record("优先级低的近期记录", scope: .global)
+    recentLowPriority.updatedAt = now.addingTimeInterval(-10 * day)
+    recentLowPriority.importance = 0.55
+    try sdk.remember(oldImportant)
+    try sdk.remember(recentLowPriority)
+
+    let result = try MemoryRouter(store: store).recall(
+      MemoryRecallRequest(query: "", scope: .global, limit: 1), now: now
+    )
+    XCTAssertEqual(result.first?.id, oldImportant.id)
+  }
+
   private func record(
     _ content: String,
     scope: MemoryScope,
