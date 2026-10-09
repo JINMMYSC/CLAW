@@ -30,8 +30,8 @@ struct ClawDeveloperDiagnosticsView: View {
 
       Section("最近异常") {
         if let capture, !capture.incidents.isEmpty {
-          ForEach(Array(capture.incidents.suffix(20).enumerated()), id: \.offset) { indexed in
-            let item = indexed.element
+          ForEach(0..<min(capture.incidents.count, 20), id: \.self) { index in
+            let item = capture.incidents[capture.incidents.count - min(capture.incidents.count, 20) + index]
             VStack(alignment: .leading, spacing: 4) {
               Text(item.failureModule + " / " + item.failureAction)
                 .font(.subheadline.weight(.medium))
