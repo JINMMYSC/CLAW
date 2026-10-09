@@ -90,13 +90,10 @@ final class ClawVoiceSessionLifecycle {
       let result: Result<String, Error> = self.partialText.isEmpty
         ? .failure(ClawVoiceError.noTranscriptAfterStop)
         : .success(self.partialText)
-      // Baseline extraction intentionally retains the existing defect: the
-      // stop watchdog does not deliver a streaming terminal callback.
-      if case .streaming? = self.callbacks {
-        self.cancel()
-      } else {
-        self.finish(generation: generation, result: result, cancelTask: true)
-      }
+      // Streaming and one-shot sessions share one terminal arbitration.
+      // finish() clears the watchdog and generation before invoking callbacks,
+      // so late Speech results and duplicate timeouts cannot deliver twice.
+      self.finish(generation: generation, result: result, cancelTask: true)
     }
     return true
   }
