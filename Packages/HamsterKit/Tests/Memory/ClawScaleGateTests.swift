@@ -48,17 +48,24 @@ final class ClawScaleGateTests: XCTestCase {
     )
 
     let writeStart = Date()
-    try store.saveMemoryV2(historical)
+    // Use production's batched transaction path. The earlier per-record
+    // baseline was 1,259s for 100k writes on the CI simulator.
+    var batch = [historical]
     for index in 1..<100_000 {
       let scope: MemoryScope = index.isMultiple(of: 20) ? .global : .person
       let personID: UUID? = scope == .person ? bob : nil
-      try store.saveMemoryV2(MemoryV2Record(
+      batch.append(MemoryV2Record(
         type: .semantic, state: .active, scope: scope,
         content: "规模测试记录 \(index) 的变化",
         normalizedKey: "scale-\(index)", personID: personID,
         provenance: .init(originType: .systemObserved, ingestionMethod: "scale-fixture")
       ))
+      if batch.count == 500 {
+        try store.saveMemoryV2Batch(batch)
+        batch.removeAll(keepingCapacity: true)
+      }
     }
+    if !batch.isEmpty { try store.saveMemoryV2Batch(batch) }
     let writeDuration = Date().timeIntervalSince(writeStart)
     let scopedStart = Date()
     let aliceRows = try store.memoryV2(scope: .person, personID: alice, limit: 80)

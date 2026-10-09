@@ -74,6 +74,35 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     XCTAssertEqual(try store.conversation(contactID: profile.id).count, firstMessages.count)
   }
 
+  func testDifferentScreenshotsOnlyDeduplicateLongExactOverlapForSamePerson() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("overlap-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = ClawMemoryStore(databaseURL: root.appendingPathComponent("memory.sqlite"))
+    let service = ClawScreenshotIngestionService(store: store)
+    let person = HeartTargetProfile(name: "A")
+    let longText = "这份完整的项目验收方案需要下周五之前交给客户确认"
+    let a = ClawConversationMessage(contactID: person.id, speaker: .other,
+      content: longText, sourceType: "screenshot", sourceRef: "screenshot-digest:a")
+    let b = ClawConversationMessage(contactID: person.id, speaker: .other,
+      content: longText, occurredAt: a.occurredAt.addingTimeInterval(3600),
+      sourceType: "screenshot", sourceRef: "screenshot-digest:b")
+    XCTAssertEqual(try service.confirmReviewed(messages: [a], for: person), 1)
+    XCTAssertEqual(try service.confirmReviewed(messages: [b], for: person), 0)
+    XCTAssertEqual(try store.conversation(contactID: person.id).count, 1)
+
+    let short1 = ClawConversationMessage(contactID: person.id, speaker: .other,
+      content: "好的", sourceType: "screenshot", sourceRef: "screenshot-digest:c")
+    let short2 = ClawConversationMessage(contactID: person.id, speaker: .other,
+      content: "好的", sourceType: "screenshot", sourceRef: "screenshot-digest:d")
+    XCTAssertEqual(try service.confirmReviewed(messages: [short1], for: person), 1)
+    XCTAssertEqual(try service.confirmReviewed(messages: [short2], for: person), 1)
+    XCTAssertEqual(try store.conversation(contactID: person.id).count, 3)
+
+    let anotherPerson = HeartTargetProfile(name: "B")
+    XCTAssertEqual(try service.confirmReviewed(messages: [b], for: anotherPerson), 1)
+    XCTAssertEqual(try store.conversation(contactID: anotherPerson.id).count, 1)
+  }
+
   func testReviewRejectsUnknownSpeakerWithoutWritingAnything() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("screenshot-review-\(UUID())")
     defer { try? FileManager.default.removeItem(at: root) }

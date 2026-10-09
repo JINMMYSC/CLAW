@@ -204,15 +204,17 @@ public final class DefaultMemorySDK: MemorySDK {
   }
 
   public func flush(_ session: MemoryFlushSession) throws {
-    for record in session.records {
-      var scoped = record
-      scoped.sessionID = scoped.sessionID ?? session.sessionID
-      try store.saveMemoryV2(
-        scoped,
-        rawEvents: session.rawEvents,
-        legacyProjection: legacyProjection(scoped)
-      )
+    let scoped = session.records.map { record -> MemoryV2Record in
+      var item = record
+      item.sessionID = item.sessionID ?? session.sessionID
+      return item
     }
+    let projections = Dictionary(uniqueKeysWithValues: scoped.map {
+      ($0.id, legacyProjection($0))
+    })
+    try store.saveMemoryV2Batch(
+      scoped, rawEvents: session.rawEvents, legacyProjections: projections
+    )
   }
 
   public func projection(_ kind: MemoryProjectionKind, personID: UUID? = nil, projectID: UUID? = nil, limit: Int = 100) throws -> MemoryProjection {

@@ -69,6 +69,30 @@ final class MemorySDKTests: XCTestCase {
     XCTAssertEqual(try store.memoryV2VersionCount(id: record.id), 1)
   }
 
+  func testFlushBatchWritesAllVersionsLegacyAndEvidence() throws {
+    let sessionID = UUID()
+    let raw = RawMemoryEvent(kind: "chat", content: "双方确认")
+    let evidence = MemoryEvidence(rawEventID: raw.id, excerpt: raw.content)
+    let records = (0..<30).map { i in makeRecord(content: "batch \(i)", evidence: [evidence]) }
+    let session = MemoryFlushSession(sessionID: sessionID, records: records, rawEvents: [raw])
+    try sdk.flush(session)
+    XCTAssertEqual(try store.memoryV2Count(), 30)
+    XCTAssertEqual(try store.memories(limit: 100).count, 30)
+    XCTAssertEqual(try store.memoryV2(id: records[0].id)?.sessionID, sessionID)
+    XCTAssertEqual(try store.memoryV2(id: records[29].id)?.evidence.count, 1)
+  }
+
+  func testBatchRollsBackEverythingWhenEvidenceConflicts() throws {
+    let evidenceID = UUID()
+    let a = makeRecord(content: "batch first",
+      evidence: [MemoryEvidence(id: evidenceID, rawEventID: UUID())])
+    let b = makeRecord(content: "batch conflict",
+      evidence: [MemoryEvidence(id: evidenceID, rawEventID: UUID())])
+    XCTAssertThrowsError(try store.saveMemoryV2Batch([a,b]))
+    XCTAssertEqual(try store.memoryV2Count(), 0)
+    XCTAssertNil(try store.memoryV2(id: a.id))
+  }
+
   func testV2AndLegacyProjectionRollbackTogetherWhenEvidenceConflicts() throws {
     let sharedEvidenceID = UUID()
     let first = makeRecord(

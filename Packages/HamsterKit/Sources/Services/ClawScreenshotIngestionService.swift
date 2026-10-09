@@ -26,6 +26,33 @@ public struct ClawScreenshotIngestionResult: Equatable {
   }
 }
 
+/// Conservative exact-match rule for overlapping chat screenshots. A
+/// frequent short reply such as "好的" is never collapsed; compare only long
+/// phrases from two distinct screenshots of the *same person* and speaker.
+public enum ClawScreenshotOverlapPolicy {
+  public static func isOverlap(
+    _ candidate: ClawConversationMessage,
+    among existing: [ClawConversationMessage]
+  ) -> Bool {
+    guard candidate.sourceType == "screenshot",
+          let source = candidate.sourceRef, source.hasPrefix("screenshot-digest:") else {
+      return false
+    }
+    let value = candidate.content.lowercased().filter { !$0.isWhitespace }
+    guard value.count >= 16 else { return false }
+    return existing.contains { old in
+      guard old.contactID == candidate.contactID,
+            old.speaker == candidate.speaker, old.sourceType == "screenshot",
+            let prior = old.sourceRef, prior.hasPrefix("screenshot-digest:"),
+            prior != source,
+            abs(old.occurredAt.timeIntervalSince(candidate.occurredAt)) <= 172_800 else {
+        return false
+      }
+      return old.content.lowercased().filter { !$0.isWhitespace } == value
+    }
+  }
+}
+
 /// End-to-end screenshot ingestion boundary. It resolves identity, routes
 /// uncertain parses to review, and only persists high-confidence timelines.
 public final class ClawScreenshotIngestionService {
@@ -105,9 +132,14 @@ public final class ClawScreenshotIngestionService {
       return item
     }
     var inserted: [ClawConversationMessage] = []
+    // Fetch a bounded window once, rather than perform an extra database
+    // query for every OCR bubble. Dedup never crosses a person boundary.
+    var seen = try store.conversation(contactID: profile.id, limit: 250)
     for item in approved {
+      if ClawScreenshotOverlapPolicy.isOverlap(item, among: seen) { continue }
       if try store.appendConversation(item) {
         inserted.append(item)
+        seen.append(item)
       }
     }
     guard !inserted.isEmpty else { return 0 }

@@ -1174,6 +1174,38 @@ public final class ClawMemoryStore {
     }
   }
 
+  /// Commit a batch of memories and all their derived records atomically.
+  /// The single transaction reduces fsync overhead versus a transaction for
+  /// each memory. A conflict in any member rolls back the entire batch.
+  @discardableResult
+  public func saveMemoryV2Batch(
+    _ records: [MemoryV2Record],
+    rawEvents: [RawMemoryEvent] = [],
+    legacyProjections: [UUID: ClawMemoryItem] = [:]
+  ) throws -> [MemoryV2Record] {
+    guard !records.isEmpty else { return [] }
+    lock.lock(); defer { lock.unlock() }
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      try insertRawEvents(rawEvents)
+      for record in records {
+        let payload = try JSONEncoder().encode(record)
+        try upsertMemoryV2Row(record, payload: payload)
+        try insertMemoryVersion(record, payload: payload)
+        try replaceMemoryEvidence(record)
+        try insertMemoryLineage(record)
+        if let legacy = legacyProjections[record.id] {
+          try upsertMemoryUnlocked(legacy)
+        }
+      }
+      try executeUnlocked("COMMIT;")
+      return records
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
+  }
+
   /// 按 id 读取一条 V2 记忆。
   public func memoryV2(id: UUID) throws -> MemoryV2Record? {
     lock.lock(); defer { lock.unlock() }
