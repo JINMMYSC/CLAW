@@ -118,3 +118,26 @@
 - 按用户要求，不在所有目标完成前触发正式的 Build Test / Startup Smoke / Signed IPA 总流程。
 - 本地/工具不可用或腾讯接口权限未获确认，应明确标记 BLOCKED，不得虚称已完成；不得跳过而把 CI 说成全绿。
 - 集成完成后在**同一个提交 SHA**上运行三个工作流，失败逐项定位修复，最终获得可安装 IPA 后做 iPhone 真机回归。
+
+## 2026-10-10 本轮隔离开发与集成状态（不是验收结论）
+
+开发线先分支独立提交，再合到 `feature/claw-v5-integration-20261010`，集成提交 `3c8ea136`。未调用完整 CI / Signed IPA / 真机测试，以下一律是“代码已提交、待验证”。
+
+| 工作线 | 独立分支 / SHA | 代码进度 | 待验收或阻塞 |
+| --- | --- | --- | --- |
+| 截图安全（输入法） | `feature/claw-v5-screenshot-review-20261010 @ 6a919b91` | 移除键盘截图自动建档、自动归档任务与证据 JPEG；OCR 仅进入对应人物面板草稿，由用户检查后主动发送分析 | 多截图顺序、识别正确率、第三方 App 弹层权限、真正审核入库仍走主程序 |
+| 主程序截图审核 | `feature/claw-v5-host-screenshot-proof-20261010 @ 2f553bc2` | 审核页显示临时原始截图、允许删掉误识别消息；确认后才调用原有事务归档 | 设备内存、VoiceOver、照片来源、归档与撤销 |
+| 聊天滚动 | `feature/claw-v5-chat-scroll-20261010 @ f0e856c1` | 查看旧消息/搜索时不自动抢焦点滚到底，保留跳到最新入口 | 长对话/流式更新的 SwiftUI 真机滚动位置 |
+| 记忆 SQL 限额 | `feature/claw-v5-memory-scope-20261010 @ d150d025` | SQL 在 LIMIT 前筛选 scope/person/state/expire/cloud_permission，新增跨人物/过期/出网预算测试 | SQL/FTS/中文召回、数据库迁移兼容、性能与并发 |
+| 微信本地桥接骨架 | `feature/claw-v5-wechat-pump-20261010 @ 4d1cc481` | 有界单次消息接收、文字/图片/语音协议接口、入站去重、失败重试及测试假实现 | **未实现腾讯授权、扫码、真实收发、媒体解密、OCR/语音转换，也未证明键盘进程持续在线** |
+| 紧凑键盘触控 | `feature/claw-v5-keyboard-touch-20261010 @ c05118ee` | 小屏把低频隐私/表情移至更多，保留三入口，增加竖向点击热区 | 实机 320/375/430pt、候选条与 9/26 键、VoiceOver |
+| 集成候选 | `feature/claw-v5-integration-20261010 @ 3c8ea136` | 组合上面六条开发线，人工移植宿主截图预览与滚动修改 | **未经 Swift/Xcode 编译，不能签 IPA 或宣布功能完成** |
+
+### 下一步任务
+
+1. **先解决静态与单元级问题**：核验 `ClawWeChatLocalPump` 的 actor 并发、OCR 草稿合并的调用路径、SwiftUI 截图审核和 `MemoryRouter` SQL 的全部测试。
+2. P0：补充接入方的身份验证与设备内连接租约；目前微信接口仅为可替换测试骨架，尚无腾讯独立接入许可证据。
+3. 图片：真实媒体下载/格式解密/OCR/视觉理解，语音：音频解码/STT/AI 回复/主程序实时语音交接，保持用户审核与可撤销边界。
+4. 更多 UI：人物画像来源、Today 任务关联、隐私与导航、故障自诊断入口；不强行新增 55 个 ViewController。
+5. 将独立分支与原先待集成的语音/iCloud/启动 P0 分支差异核对；最终变更冻结后**统一**运行 Build Test、Startup Smoke、Signed IPA 三项同 SHA CI，再做 iPhone 真机验收。
+
