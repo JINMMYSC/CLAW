@@ -241,7 +241,7 @@ enum ClawImportedAttachmentReader {
     guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
     defer { try? handle.close() }
     guard let data = try? handle.read(upToCount: maxCount * 4 + 64),
-          let data, !data.isEmpty else { return nil }
+          !data.isEmpty else { return nil }
     let text = String(decoding: data, as: UTF8.self)
     let cleaned = String(text.prefix(maxCount))
     return cleaned.isEmpty ? nil : cleaned
