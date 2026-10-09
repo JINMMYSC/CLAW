@@ -55,6 +55,17 @@ public final class ClawDiagnosticsCore {
     return value
   }
 
+  /// Custom NSError domains may contain account or server input even when
+  /// they are valid ASCII. Export only known OS SDK domains.
+  public static func safeErrorDomain(_ value: String) -> String {
+    let allowed: Set<String> = [
+      "AVAudioSessionErrorDomain", "SFSpeechErrorDomain",
+      "kAFAssistantErrorDomain", "NSURLErrorDomain", "NSCocoaErrorDomain",
+      "NSPOSIXErrorDomain", "CKErrorDomain", "NSOSStatusErrorDomain"
+    ]
+    return allowed.contains(value) ? value : "unrecognized_error_domain"
+  }
+
   public func record(
     module: String,
     action: String,
@@ -73,7 +84,7 @@ public final class ClawDiagnosticsCore {
       module: Self.identifier(module), action: Self.identifier(action),
       severity: level, file: Self.identifier(file),
       function: Self.identifier(function), line: line,
-      errorDomain: nsError.map { Self.identifier($0.domain) },
+      errorDomain: nsError.map { Self.safeErrorDomain($0.domain) },
       errorCode: nsError?.code,
       buildVersion: Self.identifier(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"),
       sourceCommit: commit.flatMap { Self.identifier($0) == "redacted" ? nil : $0 }

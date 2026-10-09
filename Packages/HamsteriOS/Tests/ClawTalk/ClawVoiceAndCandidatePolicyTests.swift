@@ -17,6 +17,13 @@ final class ClawVoiceAndCandidatePolicyTests: XCTestCase {
     )
   }
 
+  func testVoicePreflightBlocksMissingPermissionBeforeAudioSession() {
+    XCTAssertNil(ClawVoiceLaunchPolicy.recordingError(isKeyboardExtension: false, authorization: .authorized))
+    XCTAssertNotNil(ClawVoiceLaunchPolicy.recordingError(isKeyboardExtension: false, authorization: .undetermined))
+    XCTAssertNotNil(ClawVoiceLaunchPolicy.recordingError(isKeyboardExtension: false, authorization: .denied))
+    XCTAssertNotNil(ClawVoiceLaunchPolicy.recordingError(isKeyboardExtension: true, authorization: .authorized))
+  }
+
   func testOneShotDictationKeepsPartialTranscriptForStopFallback() {
     XCTAssertTrue(ClawVoiceInputService.makeOneShotRequest().shouldReportPartialResults)
   }

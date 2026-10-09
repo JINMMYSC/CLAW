@@ -41,6 +41,16 @@ enum ClawVoiceLaunchPolicy {
     case .undetermined: return .showPermissionRequired
     }
   }
+
+  /// Permission decision is pure and tested before touching the audio graph.
+  static func recordingError(isKeyboardExtension: Bool, authorization: ClawVoiceInputService.ClawVoiceAuth) -> ClawVoiceError? {
+    switch action(isKeyboardExtension: isKeyboardExtension, authorization: authorization) {
+    case .openHostDictation: return .keyboardExtensionUnsupported
+    case .showPermissionDenied: return .permissionDenied
+    case .showPermissionRequired: return .permissionRequired
+    case .recordLocally: return nil
+    }
+  }
 }
 
 /// 语音输入服务：按住说话 / 连续语音 → Speech 转文字。
@@ -176,6 +186,14 @@ public final class ClawVoiceInputService: NSObject {
     let generation = resetForNewSession()
     diagnostic("recording_requested")
     diagnoseAuthorizations()
+    if let preflight = ClawVoiceLaunchPolicy.recordingError(
+      isKeyboardExtension: false, authorization: authorizationStatus
+    ) {
+      LogService.shared.log(.voiceAuthorizationFailed)
+      diagnostic("recording_blocked_by_permissions", severity: "error")
+      completion(.failure(preflight))
+      return
+    }
     guard let recognizer = makeRecognizer(), recognizer.isAvailable else {
       LogService.shared.log(.voiceRecognizerUnavailable)
       diagnostic("recognizer_unavailable", severity: "error")
@@ -276,6 +294,14 @@ public final class ClawVoiceInputService: NSObject {
     let generation = resetForNewSession()
     diagnostic("recording_requested")
     diagnoseAuthorizations()
+    if let preflight = ClawVoiceLaunchPolicy.recordingError(
+      isKeyboardExtension: false, authorization: authorizationStatus
+    ) {
+      LogService.shared.log(.voiceAuthorizationFailed)
+      diagnostic("recording_blocked_by_permissions", severity: "error")
+      onError(preflight)
+      return
+    }
     streamingPartial = onPartial
     streamingSegment = onSegment
     streamingError = onError
@@ -510,6 +536,8 @@ public enum ClawVoiceError: LocalizedError {
   case recognizerUnavailable
   case audioUnavailable
   case keyboardExtensionUnsupported
+  case permissionRequired
+  case permissionDenied
   case noTranscriptAfterStop
   case unknown
 
@@ -517,7 +545,9 @@ public enum ClawVoiceError: LocalizedError {
     switch self {
     case .recognizerUnavailable: return "语音识别不可用，请检查系统设置"
     case .audioUnavailable: return "麦克风不可用"
-    case .keyboardExtensionUnsupported: return "键盘扩展无法直接使用麦克风，请切换到系统键盘使用听写"
+    case .keyboardExtensionUnsupported: return "键盘扩展无法直接使用麦克风，请在 CLAW 主程序录音"
+    case .permissionRequired: return "请先在 CLAW 主程序授权语音识别和麦克风"
+    case .permissionDenied: return "麦克风或语音识别权限已被拒绝，请在系统设置中允许 CLAW 使用"
     case .noTranscriptAfterStop: return "录音已结束，但没有识别到文字，请检查语音识别权限和网络后重试"
     case .unknown: return "语音识别失败"
     }
