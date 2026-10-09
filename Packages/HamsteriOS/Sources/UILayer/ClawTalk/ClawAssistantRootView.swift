@@ -1,6 +1,7 @@
 import CryptoKit
 import HamsterKeyboardKit
 import HamsterKit
+import PDFKit
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -216,6 +217,34 @@ enum ClawDraftContext {
     guard oldKey != newKey else { return currentText }
     cache[oldKey] = currentText
     return cache[newKey] ?? ""
+  }
+}
+
+/// Bounded, local-only attachment text extraction. PDFKit is provided by
+/// iOS; no third-party document runtime is embedded in the keyboard.
+enum ClawImportedAttachmentReader {
+  static func readText(from url: URL, maxCharacters: Int = 8_000, maxPDFPages: Int = 24) -> String? {
+    let maxCount = max(1, maxCharacters)
+    if url.pathExtension.lowercased() == "pdf" {
+      guard let pdf = PDFDocument(url: url) else { return nil }
+      var text = ""
+      for index in 0..<min(pdf.pageCount, max(1, maxPDFPages)) {
+        guard let pageText = pdf.page(at: index)?.string, !pageText.isEmpty else { continue }
+        if !text.isEmpty, text.count < maxCount { text += "\n" }
+        guard text.count < maxCount else { break }
+        text += String(pageText.prefix(maxCount - text.count))
+      }
+      let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      return cleaned.isEmpty ? nil : cleaned
+    }
+    // Don't load multi-GB files into memory just to attach 8,000 characters.
+    guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+    defer { try? handle.close() }
+    guard let data = try? handle.read(upToCount: maxCount * 4 + 64),
+          let data, !data.isEmpty else { return nil }
+    let text = String(decoding: data, as: UTF8.self)
+    let cleaned = String(text.prefix(maxCount))
+    return cleaned.isEmpty ? nil : cleaned
   }
 }
 
@@ -589,10 +618,13 @@ private struct ClawAssistantChatView: View {
       guard case .success(let urls) = result, let url = urls.first else { return }
       let scoped = url.startAccessingSecurityScopedResource()
       defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-      if let text = try? String(contentsOf: url), !text.isEmpty {
-        input = [input, "文件：\(url.lastPathComponent)\n\(String(text.prefix(8_000)))"].filter { !$0.isEmpty }.joined(separator: "\n")
+      if let text = ClawImportedAttachmentReader.readText(from: url) {
+        input = [input, "文件：\(url.lastPathComponent)\n\(text)"].filter { !$0.isEmpty }.joined(separator: "\n")
+        attachmentStatus = "文件文字已加入草稿，可检查后发送"
       } else {
-        attachmentStatus = "无法读取这个文件"
+        attachmentStatus = url.pathExtension.lowercased() == "pdf"
+          ? "PDF 无可提取文字；扫描版请使用截图识别"
+          : "无法读取这个文件"
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: .clawVoiceCallRequested)) { _ in
@@ -605,6 +637,18 @@ private struct ClawAssistantChatView: View {
     }
     .onReceive(NotificationCenter.default.publisher(for: .heartTargetProfilesDidChange)) { _ in
       let profile = HeartTargetService.shared.selectedProfile
+      if draftPersonID != profile?.id {
+        // A transcript started for person A must not be sent under person B.
+        // UUID invalidation also stops late Speech authorization callbacks.
+        if recording || voiceGesture.isRecording || oneShotFinalizing || keyboardDictationID != nil {
+          cancelPendingVoice(preserveKeyboardFailure: keyboardDictationID != nil)
+          voiceHint = "已切换聊天对象，原会话语音输入已取消"
+        } else {
+          voiceAuthorizationRequestID = UUID()
+          holdVoiceRequestID = UUID()
+        }
+        if callActive { stopHandsFreeCall() }
+      }
       switchDraft(to: profile?.id)
       selectedProfileName = profile?.displayName
       chat.switchContext(contactID: profile?.id)
@@ -1083,8 +1127,10 @@ private struct ClawAssistantChatView: View {
         DispatchQueue.main.async {
           callListening = false
           if callActive {
-            voiceHint = "通话中断：\(error.localizedDescription)"
-            callActive = false
+            let errorMessage = "通话中断：\(error.localizedDescription)"
+            // Explicitly close the mic/TTS and Live Activity on error.
+            stopHandsFreeCall()
+            voiceHint = errorMessage
           }
         }
       }
