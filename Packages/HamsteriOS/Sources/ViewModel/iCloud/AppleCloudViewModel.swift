@@ -13,6 +13,17 @@ import OSLog
 import ProgressHUD
 import UIKit
 
+private enum ClawICloudBuildError: LocalizedError {
+  case missingSigningCapability
+
+  var errorDescription: String? {
+    switch self {
+    case .missingSigningCapability:
+      return "当前安装的 CLAW TALK 签名版本没有 iCloud 文稿容器权限，无法进行云端拷贝或恢复。请使用带 iCloud 权限的签名包；本地文件没有因本次检测而修改。"
+    }
+  }
+}
+
 public class AppleCloudViewModel: ObservableObject {
   public enum SyncState {
     case idle
@@ -99,6 +110,13 @@ public class AppleCloudViewModel: ObservableObject {
     guard canStart else { return }
     await ProgressHUD.animate("拷贝中……", interaction: false)
     do {
+      guard Bundle.main.object(forInfoDictionaryKey: "ClawICloudContainerEntitled") as? Bool != false else {
+        ClawDiagnosticsCore.shared.record(
+          module: "icloud", action: "copy_blocked_missing_entitlement",
+          severity: "error", traceID: traceID
+        )
+        throw ClawICloudBuildError.missingSigningCapability
+      }
       guard URL.iCloudDocumentURL != nil else { throw ICloudPathError.unavailable }
       let regexList = regexOnCopyFile.split(separator: ",").map { String($0) }
       phase = "shared_support"
@@ -135,6 +153,13 @@ public class AppleCloudViewModel: ObservableObject {
     guard canStart else { return }
     await ProgressHUD.animate("从 iCloud 恢复中……", interaction: false)
     do {
+      guard Bundle.main.object(forInfoDictionaryKey: "ClawICloudContainerEntitled") as? Bool != false else {
+        ClawDiagnosticsCore.shared.record(
+          module: "icloud", action: "restore_blocked_missing_entitlement",
+          severity: "error", traceID: traceID
+        )
+        throw ClawICloudBuildError.missingSigningCapability
+      }
       guard URL.iCloudDocumentURL != nil else { throw ICloudPathError.unavailable }
       phase = "shared_support"
       try FileManager.copyAppleCloudSharedSupportDirectoryToSandbox()
