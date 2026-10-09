@@ -131,6 +131,16 @@ private struct ClawSettingsHubView: View {
             .font(.footnote).foregroundColor(.secondary)
         }
 
+        Section("微信 AI 助手") {
+          NavigationLink {
+            ClawWeChatLocalSettingsView()
+          } label: {
+            Label("微信 ClawBot · 本机连接", systemImage: "message.badge.waveform")
+          }
+          Text("本机连接尚未开放扫码授权。不会在后台假装常驻，也不会主动读取其他微信聊天。")
+            .font(.footnote).foregroundColor(.secondary)
+        }
+
         Section("数据与隐私") {
           NavigationLink {
             ClawTalkRootView(viewModel: viewModel)
