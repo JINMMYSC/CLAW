@@ -59,7 +59,8 @@ final class ClawVoiceDictationHandoffTests: XCTestCase {
   func testInterruptedHostRequestCanRecoverWithoutReplacingActiveRecording() {
     let (handoff, defaults, suite) = makeStore()
     defer { defaults.removePersistentDomain(forName: suite) }
-    let started = Date(timeIntervalSince1970: 1000)
+    // Use a relative clock: complete() and dismissFailure() validate against Date().
+    let started = Date().addingTimeInterval(-181)
     let id = handoff.begin(at: started)
     XCTAssertFalse(handoff.failStalePending(olderThan: 180, at: started.addingTimeInterval(179)))
     XCTAssertEqual(handoff.snapshot(at: started.addingTimeInterval(179)).state, .pending)

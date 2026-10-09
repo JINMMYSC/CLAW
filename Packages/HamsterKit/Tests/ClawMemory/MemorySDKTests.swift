@@ -69,9 +69,9 @@ final class MemorySDKTests: XCTestCase {
     first.content = "第一人的新关键词"
     first.version += 1
     try sdk.remember(first)
-    XCTAssertTrue(try store.searchMemoryV2(query: "新关键词").contains { $0.id == first.id })
-    XCTAssertFalse(try store.searchMemoryV2(query: "旧关键词").contains { $0.id == first.id })
-    XCTAssertTrue(try store.searchMemoryV2(query: "保留词").contains { $0.id == second.id })
+    XCTAssertTrue(try store.searchMemoryV2(query: "新关键词", includeRecentUnmatched: false).contains { $0.id == first.id })
+    XCTAssertFalse(try store.searchMemoryV2(query: "旧关键词", includeRecentUnmatched: false).contains { $0.id == first.id })
+    XCTAssertTrue(try store.searchMemoryV2(query: "保留词", includeRecentUnmatched: false).contains { $0.id == second.id })
   }
 
   func testFullDeleteDoesNotRetainVersionOrAuditSnapshots() throws {

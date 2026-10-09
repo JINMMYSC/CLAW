@@ -1590,7 +1590,9 @@ public final class ClawMemoryStore {
   /// FTS5-backed candidate collection. The router performs scope guards and
   /// final hybrid ranking. Empty or tokenization-incompatible queries fall back
   /// to the full recent set so CJK and punctuation-heavy input remain usable.
-  public func searchMemoryV2(query: String, limit: Int = 200) throws -> [MemoryV2Record] {
+  public func searchMemoryV2(
+    query: String, limit: Int = 200, includeRecentUnmatched: Bool = true
+  ) throws -> [MemoryV2Record] {
     lock.lock(); defer { lock.unlock() }
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return try memoryV2(limit: limit) }
@@ -1632,10 +1634,13 @@ public final class ClawMemoryStore {
         }
       }
     }
-    // Include recent non-matches for global defaults; ranking will put matches first.
-    let recent = try memoryV2(limit: limit)
-    let ids = Set(result.map(\.id))
-    result.append(contentsOf: recent.filter { !ids.contains($0.id) })
+    // Recall uses broad recent candidates for global defaults and ranking.
+    // Index regression tests can request strict FTS/sub-string matches instead.
+    if includeRecentUnmatched {
+      let recent = try memoryV2(limit: limit)
+      let ids = Set(result.map(\.id))
+      result.append(contentsOf: recent.filter { !ids.contains($0.id) })
+    }
     return Array(result.prefix(max(1, limit)))
   }
 
