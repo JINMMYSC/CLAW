@@ -88,6 +88,9 @@ public class AppleCloudViewModel: ObservableObject {
   }
 
   func copyFileToiCloud() async {
+    let traceID = UUID()
+    var phase = "preflight"
+    ClawDiagnosticsCore.shared.record(module: "icloud", action: "copy_requested", traceID: traceID)
     let canStart = await MainActor.run { () -> Bool in
       if case .syncing = syncState { return false }
       syncState = .syncing
@@ -98,15 +101,20 @@ public class AppleCloudViewModel: ObservableObject {
     do {
       guard URL.iCloudDocumentURL != nil else { throw ICloudPathError.unavailable }
       let regexList = regexOnCopyFile.split(separator: ",").map { String($0) }
+      phase = "shared_support"
       try FileManager.copySandboxSharedSupportDirectoryToAppleCloud(regexList)
+      phase = "user_data"
       try FileManager.copySandboxUserDataDirectoryToAppleCloud(regexList)
+      ClawDiagnosticsCore.shared.record(module: "icloud", action: "copy_completed", traceID: traceID)
       UserDefaults.standard.set(Date(), forKey: lastSyncTimeKey)
       UserDefaults.standard.set(true, forKey: lastSyncSuccessKey)
       await ProgressHUD.dismiss()
       await MainActor.run { syncState = .finished(success: true, message: "文件已成功拷贝至 iCloud") }
     } catch {
-      Logger.statistics.error("apple cloud copy to iCloud error: \(error)")
+      // Never log the full NSError description or personal sandbox paths.
+      Logger.statistics.error("apple cloud copy failed")
       LogService.shared.log(.iCloudCopyFailed)
+      ClawDiagnosticsCore.shared.record(module: "icloud", action: "copy_failed_\(phase)", severity: "error", traceID: traceID, error: error)
       UserDefaults.standard.set(Date(), forKey: lastSyncTimeKey)
       UserDefaults.standard.set(false, forKey: lastSyncSuccessKey)
       await ProgressHUD.dismiss()
@@ -116,6 +124,9 @@ public class AppleCloudViewModel: ObservableObject {
 
   /// 从 iCloud 恢复文件至本地（SharedSupport + UserData）
   func restoreFromiCloud() async {
+    let traceID = UUID()
+    var phase = "preflight"
+    ClawDiagnosticsCore.shared.record(module: "icloud", action: "restore_requested", traceID: traceID)
     let canStart = await MainActor.run { () -> Bool in
       if case .syncing = syncState { return false }
       syncState = .syncing
@@ -125,15 +136,19 @@ public class AppleCloudViewModel: ObservableObject {
     await ProgressHUD.animate("从 iCloud 恢复中……", interaction: false)
     do {
       guard URL.iCloudDocumentURL != nil else { throw ICloudPathError.unavailable }
+      phase = "shared_support"
       try FileManager.copyAppleCloudSharedSupportDirectoryToSandbox()
+      phase = "user_data"
       try FileManager.copyAppleCloudUserDataDirectoryToSandbox()
+      ClawDiagnosticsCore.shared.record(module: "icloud", action: "restore_completed", traceID: traceID)
       UserDefaults.standard.set(Date(), forKey: lastSyncTimeKey)
       UserDefaults.standard.set(true, forKey: lastSyncSuccessKey)
       await ProgressHUD.dismiss()
       await MainActor.run { syncState = .finished(success: true, message: "已从 iCloud 恢复，请执行「重新部署」生效") }
     } catch {
-      Logger.statistics.error("apple cloud restore error: \(error)")
+      Logger.statistics.error("apple cloud restore failed")
       LogService.shared.log(.iCloudRestoreFailed)
+      ClawDiagnosticsCore.shared.record(module: "icloud", action: "restore_failed_\(phase)", severity: "error", traceID: traceID, error: error)
       UserDefaults.standard.set(Date(), forKey: lastSyncTimeKey)
       UserDefaults.standard.set(false, forKey: lastSyncSuccessKey)
       await ProgressHUD.dismiss()

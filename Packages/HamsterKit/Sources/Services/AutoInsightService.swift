@@ -192,6 +192,7 @@ public class AutoInsightService {
 
     guard !clawTalkText.isEmpty || !clipboardText.isEmpty else {
       log.log("无 ClawTalk 及剪贴板数据，跳过本次分析", level: .warn, tag: "AutoInsight")
+      ClawDiagnosticsCore.shared.record(module: "autoinsight", action: "no_source_data")
       return .noData
     }
     log.log("ClawTalk \(clawTalkCount) 条 + 剪贴板 \(clipCount) 条，发起两路并发 AI 请求", tag: "AutoInsight")
@@ -296,7 +297,9 @@ public class AutoInsightService {
       for (id, date) in clipboardRefs {
         clipService.deleteEntry(id: id, for: date)
       }
-      log.log("剪贴板已清除 \(clipboardRefs.count) 条（分析成功）", tag: "AutoInsight")
+      // deleteEntry deletes only CLAW's saved collection rows, not UIPasteboard.general.
+      log.log("应用内剪贴板采集记录已清理 \(clipboardRefs.count) 条（系统剪贴板未修改）", tag: "AutoInsight")
+      ClawDiagnosticsCore.shared.record(module: "clipboard", action: "internal_entries_cleaned")
     } else if !clipboardRefs.isEmpty {
       log.log("剪贴板保留（分析未完全成功）", tag: "AutoInsight")
     }
