@@ -1508,42 +1508,79 @@ extension ClawPanelOverlayView: UITextViewDelegate {
   }
 }
 
-// MARK: - PHPickerViewControllerDelegate（上传聊天截图）
-
+// MARK: - PHPickerViewControllerDelegate（临时识别聊天截图）
+//
+// The keyboard only prepares an editable draft. The host app owns the
+// reviewed/person-scoped, transactional screenshot import. No screenshot
+// evidence, profile, task, or long-term memory is written from this path.
 extension ClawPanelOverlayView: PHPickerViewControllerDelegate {
   public func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
     picker.dismiss(animated: true)
     guard !results.isEmpty else { return }
+    let capturedContext = ClawPanelDraftContext(
+      personID: HeartTargetService.shared.selectedProfile?.id,
+      tab: keyboardContext.clawPanelTab
+    )
     showResultMessage("正在识别 1/\(results.count)…")
-    processScreenshotResults(results, index: 0, transcripts: [], insertedTotal: 0)
+    processScreenshotResults(
+      results,
+      index: 0,
+      transcripts: [],
+      failedCount: 0,
+      capturedContext: capturedContext
+    )
   }
 
   private func processScreenshotResults(
     _ results: [PHPickerResult],
     index: Int,
     transcripts: [String],
-    insertedTotal: Int
+    failedCount: Int,
+    capturedContext: ClawPanelDraftContext
   ) {
     guard index < results.count else {
       let combined = transcripts
         .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         .joined(separator: "\n")
         .trimmingCharacters(in: .whitespacesAndNewlines)
-      refreshHeartTargetMenu()
       guard !combined.isEmpty else {
-        showResultMessage("这些截图没有识别到可用聊天文字")
+        showResultMessage("截图未识别到可用文字，原有草稿已保留")
         return
       }
-      inputTextView.text = combined
-      ClawSuggestionEngine.shared.feed(combined)
-      showResultMessage("已归档 \(insertedTotal) 条聊天记录，正在生成回复…")
-      runAnalysis(text: combined)
+      let currentlySelected = ClawPanelDraftContext(
+        personID: HeartTargetService.shared.selectedProfile?.id,
+        tab: keyboardContext.clawPanelTab
+      )
+      let sameContext = currentlySelected == capturedContext
+      // Never overwrite a user's in-progress typing or a different person's
+      // draft if they switched contacts while OCR was running.
+      let existing = sameContext
+        ? (inputTextView.text ?? "")
+        : draftStore.text(for: capturedContext)
+      let draft = ClawScreenshotDraftPolicy.combine(existing: existing, recognized: combined)
+      draftStore.save(draft, for: capturedContext)
+      if sameContext {
+        inputTextView.text = draft
+        ClawSuggestionEngine.shared.feed(draft)
+      }
+      let failureNotice = failedCount > 0 ? "（\(failedCount) 张识别失败）" : ""
+      if sameContext {
+        showResultMessage("截图文字已加入草稿\(failureNotice)。请核对后点「帮我回」；尚未保存人物画像")
+      } else {
+        showResultMessage("截图文字已保留在原人物面板草稿\(failureNotice)，请切回检查；未写入记忆")
+      }
       return
     }
 
     let provider = results[index].itemProvider
     guard provider.canLoadObject(ofClass: UIImage.self) else {
-      processScreenshotResults(results, index: index + 1, transcripts: transcripts, insertedTotal: insertedTotal)
+      processScreenshotResults(
+        results,
+        index: index + 1,
+        transcripts: transcripts,
+        failedCount: failedCount + 1,
+        capturedContext: capturedContext
+      )
       return
     }
     provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
@@ -1554,47 +1591,28 @@ extension ClawPanelOverlayView: PHPickerViewControllerDelegate {
             results,
             index: index + 1,
             transcripts: transcripts,
-            insertedTotal: insertedTotal
+            failedCount: failedCount + 1,
+            capturedContext: capturedContext
           )
         }
         return
       }
-      let sourceRef = image.jpegData(compressionQuality: 0.88)
-        .flatMap { ClawScreenshotEvidenceStore.shared.saveJPEG($0) }
-        ?? "screenshot:\(UUID().uuidString)"
-      VisionOCRService.shared.recognizeLines(in: image) { result in
+
+      // Transient locator for OCR grouping only. In particular, do NOT call
+      // ClawScreenshotEvidenceStore.saveJPEG from the keyboard extension.
+      let sourceRef = "screenshot-transient:\(UUID().uuidString)"
+      VisionOCRService.shared.recognizeLines(in: image) { [weak self] result in
         DispatchQueue.main.async {
+          guard let self else { return }
           switch result {
           case .success(let lines):
-            let selected = HeartTargetService.shared.selectedProfile
-            let firstPass = ClawScreenshotChatParser.shared.parse(
-              lines: lines,
-              contactID: selected?.id,
-              contactName: selected?.displayName,
-              sourceRef: sourceRef
-            )
-            let resolution = ClawContactIdentityResolver.shared.resolve(
-              displayTitle: firstPass.detectedTitle,
-              allowCreate: true
-            )
-            let profile = resolution.profile ?? selected
-            if let profile { HeartTargetService.shared.select(id: profile.id) }
+            let profile = capturedContext.personID.flatMap { HeartTargetService.shared.profile(id: $0) }
             let parsed = ClawScreenshotChatParser.shared.parse(
               lines: lines,
-              contactID: profile?.id,
+              contactID: capturedContext.personID,
               contactName: profile?.displayName,
               sourceRef: sourceRef
             )
-            var inserted = 0
-            for message in parsed.messages {
-              if (try? ClawMemoryStore.shared.appendConversation(message)) == true {
-                inserted += 1
-                ClawSecretaryExtractor.shared.persistExtractedTasks(from: message)
-              }
-            }
-            if inserted > 0, let profileID = profile?.id {
-              ClawContactProfileLearner.shared.refreshIfNeeded(profileID: profileID)
-            }
             let transcript = parsed.messages.map { message -> String in
               let speaker: String
               switch message.speaker {
@@ -1602,26 +1620,32 @@ extension ClawPanelOverlayView: PHPickerViewControllerDelegate {
               case .other: speaker = message.senderName ?? profile?.displayName ?? "对方"
               case .assistant: speaker = "CLAW"
               case .system: speaker = "系统"
-              case .unknown: speaker = message.senderName ?? "未知"
+              case .unknown: speaker = "未确认发言者"
               }
               return "\(speaker)：\(message.content)"
             }.joined(separator: "\n")
+            let recognized = transcript.isEmpty ? parsed.rawText : transcript
             var next = transcripts
-            let text = transcript.isEmpty ? parsed.rawText : transcript
-            if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { next.append(text) }
-            self.showResultMessage("正在识别 \(min(index + 2, results.count))/\(results.count)…")
+            if !recognized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+              next.append(recognized)
+            }
+            if index + 1 < results.count {
+              self.showResultMessage("正在识别 \(index + 2)/\(results.count)…")
+            }
             self.processScreenshotResults(
               results,
               index: index + 1,
               transcripts: next,
-              insertedTotal: insertedTotal + inserted
+              failedCount: failedCount,
+              capturedContext: capturedContext
             )
           case .failure:
             self.processScreenshotResults(
               results,
               index: index + 1,
               transcripts: transcripts,
-              insertedTotal: insertedTotal
+              failedCount: failedCount + 1,
+              capturedContext: capturedContext
             )
           }
         }
