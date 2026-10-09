@@ -68,7 +68,8 @@ public extension FileManager {
       throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: src.path])
     }
     guard let dstFiles = fm.enumerator(at: dst, includingPropertiesForKeys: [.isDirectoryKey]) else {
-      throw CocoaError(.fileWriteNoSuchFile, userInfo: [NSFilePathErrorKey: dst.path])
+      throw NSError(domain: NSCocoaErrorDomain, code: NSFileNoSuchFileError,
+                    userInfo: [NSFilePathErrorKey: dst.path])
     }
 
     let dstFilesMapping = dstFiles.allObjects.compactMap { $0 as? URL }.reduce(into: [String: URL]()) { $0[$1.path.replacingOccurrences(of: dst.path, with: "")] = $1 }
