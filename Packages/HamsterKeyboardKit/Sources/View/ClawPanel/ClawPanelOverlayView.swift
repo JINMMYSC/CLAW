@@ -626,6 +626,9 @@ public final class ClawPanelOverlayView: UIView {
     micButton.tintColor = ClawPanelPalette.brandBlue
     inputRowHeightConstraint.constant = AILayout.inputRowHeight
     if isAI {
+      // Switch the persisted AI conversation as well as the visible draft.
+      // Never render another person's chat history when switching targets.
+      ClawChatService.shared.switchContext(contactID: HeartTargetService.shared.selectedProfile?.id)
       // AI tab：聊天列表弹性占位，输入行贴底；聊天对象与结果区不占空间
       heartTargetButton.isHidden = true
       heartHeightConstraint.constant = 0

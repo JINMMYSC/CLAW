@@ -1778,6 +1778,7 @@ private struct ClawContactEditorView: View {
 }
 
 private struct ClawContactDetailView: View {
+  @Environment(\.dismiss) private var dismiss
   let profile: HeartTargetProfile
   let onUseProfile: () -> Void
   @State private var timeline: [ClawConversationMessage] = []
@@ -1791,6 +1792,7 @@ private struct ClawContactDetailView: View {
         Button {
           HeartTargetService.shared.select(id: profile.id)
           isSelected = true
+          dismiss()
           onUseProfile()
         } label: {
           Label("与此人对话", systemImage: "message.fill")
