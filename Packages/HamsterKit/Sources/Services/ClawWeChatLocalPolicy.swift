@@ -100,4 +100,12 @@ public struct ClawWeChatLocalInboxGuard {
     }
     return .accepted
   }
+
+  /// A failed download/AI request/send must be eligible for retry with the
+  /// same message ID. Successful replies remain suppressed until evicted.
+  public mutating func release(_ message: ClawWeChatLocalMessage) {
+    let key = MessageKey(conversationID: message.conversationID, messageID: message.messageID)
+    guard seen.remove(key) != nil else { return }
+    order.removeAll { $0 == key }
+  }
 }
