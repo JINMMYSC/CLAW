@@ -77,6 +77,39 @@ jobs:
           zip -qry GuruIM-unsigned.ipa Payload/
           ls -lh GuruIM-unsigned.ipa
 
+      - name: Verify and collect same-build dSYM symbols
+        run: |
+          set -euo pipefail
+          PRODUCTS=build-dd/Build/Products/Release-iphoneos
+          mkdir -p build-debug-symbols
+          APP_PATH=$(find "$PRODUCTS" -maxdepth 1 -type d -name '*.app' | head -1)
+          test -n "$APP_PATH"
+          for bundle in "$APP_PATH" "$APP_PATH"/PlugIns/*.appex; do
+            [ -d "$bundle" ] || continue
+            name=$(basename "$bundle")
+            dsym="$PRODUCTS/$name.dSYM"
+            test -d "$dsym" || { echo "::error::Missing dSYM for $name"; exit 1; }
+            executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Info.plist")
+            binary="$bundle/$executable"
+            test -f "$binary"
+            binary_uuids=$(xcrun dwarfdump --uuid "$binary" | sed -E 's/.*UUID: ([0-9A-Fa-f-]+).*/\1/' | sort)
+            dsym_uuids=$(xcrun dwarfdump --uuid "$dsym" | sed -E 's/.*UUID: ([0-9A-Fa-f-]+).*/\1/' | sort)
+            test -n "$binary_uuids" && test "$binary_uuids" = "$dsym_uuids" || {
+              echo "::error::dSYM UUID mismatch for $name"; exit 1;
+            }
+            cp -R "$dsym" build-debug-symbols/
+            echo "Verified matching dSYM UUID for $name"
+          done
+          echo "$GITHUB_SHA" > build-debug-symbols/SOURCE_SHA.txt
+
+      - name: Upload matching-build dSYM symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: claw-matching-dsym
+          path: build-debug-symbols/
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Upload .ipa artifact
         uses: actions/upload-artifact@v4
         with:
