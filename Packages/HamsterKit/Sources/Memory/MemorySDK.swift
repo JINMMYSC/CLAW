@@ -239,7 +239,9 @@ public final class DefaultMemorySDK: MemorySDK {
     return MemoryProjection(kind: kind, records: Array(records.prefix(max(1, limit))))
   }
 
-  private func legacyProjection(_ record: MemoryV2Record) -> ClawMemoryItem {
+  /// Internal compatibility projection used by the transactional screenshot
+  /// importer while migrating legacy view consumers to the Memory SDK.
+  func legacyProjection(_ record: MemoryV2Record) -> ClawMemoryItem {
     let kind: ClawMemoryKind
     switch record.type {
     case .preference: kind = .communicationPreference

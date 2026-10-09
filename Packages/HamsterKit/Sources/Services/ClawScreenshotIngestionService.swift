@@ -68,12 +68,10 @@ public enum ClawScreenshotOverlapPolicy {
 public final class ClawScreenshotIngestionService {
   private let store: ClawMemoryStore
   private let parser: ClawScreenshotChatParser
-  private let sdk: DefaultMemorySDK
 
   public init(store: ClawMemoryStore = .shared, parser: ClawScreenshotChatParser = .shared) {
     self.store = store
     self.parser = parser
-    self.sdk = DefaultMemorySDK(store: store)
   }
 
   public func ingest(
@@ -150,25 +148,16 @@ public final class ClawScreenshotIngestionService {
       }
       return item
     }
-    var inserted: [ClawConversationMessage] = []
-    // Fetch a bounded window once, rather than perform an extra database
-    // query for every OCR bubble. Dedup never crosses a person boundary.
+    // Build a candidate batch without modifying storage; the store commits
+    // bubbles, related memories and tasks atomically or rolls everything back.
+    var candidates: [ClawConversationMessage] = []
     var seen = try store.conversation(contactID: profile.id, limit: 250)
     for item in approved {
       if ClawScreenshotOverlapPolicy.isOverlap(item, among: seen) { continue }
-      if try store.appendConversation(item) {
-        inserted.append(item)
-        seen.append(item)
-      }
+      candidates.append(item)
+      seen.append(item)
     }
-    guard !inserted.isEmpty else {
-      return ClawScreenshotImportReceipt(personID: profile.id, messageIDs: [])
-    }
-    let flush = MemoryFlushService().extract(
-      sessionID: UUID(), messages: inserted, personID: profile.id
-    )
-    for record in flush.records { try sdk.remember(record, evidence: record.evidence) }
-    for task in flush.tasks { try sdk.createTask(task) }
+    let inserted = try store.commitScreenshotImport(candidates, personID: profile.id)
     return ClawScreenshotImportReceipt(
       personID: profile.id, messageIDs: inserted.map(\.id)
     )

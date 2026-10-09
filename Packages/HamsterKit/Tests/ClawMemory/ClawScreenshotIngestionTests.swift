@@ -103,6 +103,21 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     XCTAssertEqual(try store.conversation(contactID: anotherPerson.id).count, 1)
   }
 
+  func testAtomicImportRejectsUnconfirmedSpeakersWithoutPartialWrites() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("atomic-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = ClawMemoryStore(databaseURL: root.appendingPathComponent("memory.sqlite"))
+    let person = UUID()
+    let approved = ClawConversationMessage(contactID: person, speaker: .other,
+      content: "周五提交真实资料", sourceType: "screenshot")
+    let invalid = ClawConversationMessage(contactID: person, speaker: .unknown,
+      content: "未经确认", sourceType: "screenshot")
+    XCTAssertThrowsError(try store.commitScreenshotImport([approved, invalid], personID: person))
+    XCTAssertTrue(try store.conversation(contactID: person).isEmpty)
+    XCTAssertTrue(try store.tasks().isEmpty)
+    XCTAssertEqual(try store.memoryV2Count(), 0)
+  }
+
   func testScreenshotUndoReceiptPreservesEarlierAndOtherPeopleImports() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("undo-\(UUID())")
     defer { try? FileManager.default.removeItem(at: root) }

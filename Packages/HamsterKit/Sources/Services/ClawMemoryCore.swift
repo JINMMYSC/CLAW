@@ -845,6 +845,50 @@ public final class ClawMemoryStore {
     return sqlite3_changes(try requireDB()) > 0
   }
 
+  /// Commit screenshot bubbles, extracted memories and tasks in ONE SQLite
+  /// transaction. A task/evidence/FTS failure must not leave orphaned chat
+  /// rows that cannot be undone using an import receipt.
+  @discardableResult
+  public func commitScreenshotImport(
+    _ messages: [ClawConversationMessage], personID: UUID
+  ) throws -> [ClawConversationMessage] {
+    guard !messages.isEmpty else { return [] }
+    guard messages.allSatisfy({
+      $0.contactID == personID && $0.sourceType == "screenshot" &&
+        $0.speaker != .unknown && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }) else {
+      throw ClawMemoryStoreError.sqlite(message: "无法归档未经确认的截图消息")
+    }
+    lock.lock(); defer { lock.unlock() }
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      var inserted: [ClawConversationMessage] = []
+      for message in messages {
+        if try appendConversationUnlocked(message) { inserted.append(message) }
+      }
+      if !inserted.isEmpty {
+        let flush = MemoryFlushService().extract(
+          sessionID: UUID(), messages: inserted, personID: personID
+        )
+        let sdk = DefaultMemorySDK(store: self)
+        for record in flush.records {
+          let payload = try JSONEncoder().encode(record)
+          try upsertMemoryV2Row(record, payload: payload)
+          try insertMemoryVersion(record, payload: payload)
+          try replaceMemoryEvidence(record)
+          try insertMemoryLineage(record)
+          try upsertMemoryUnlocked(sdk.legacyProjection(record))
+        }
+        for task in flush.tasks { try upsertTask(task) }
+      }
+      try executeUnlocked("COMMIT;")
+      return inserted
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
+  }
+
   /// Undo an explicitly approved screenshot import using its inserted-ID
   /// receipt. Validate *every* message belongs to this person and was imported
   /// from a screenshot before removing any row. Associated task and inferred
