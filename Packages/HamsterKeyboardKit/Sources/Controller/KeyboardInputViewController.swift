@@ -1409,10 +1409,12 @@ extension KeyboardInputViewController {
 }
 
 private enum AssociatedKeys {
-  static var textBuffer = "clawTalkTextBuffer"
-  static var sessionStartTime = "clawTalkSessionStartTime"
-  static var initialContext = "clawTalkInitialContext"
-  static var sessionBlocked = "clawTalkSessionBlocked"
+  // Objective-C association keys use stable variable addresses, not the
+  // internal representation of Swift Strings.
+  static var textBuffer: UInt8 = 0
+  static var sessionStartTime: UInt8 = 0
+  static var initialContext: UInt8 = 0
+  static var sessionBlocked: UInt8 = 0
 }
 
 extension UIKeyboardType {

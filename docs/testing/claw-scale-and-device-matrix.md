@@ -30,3 +30,12 @@ exercise 250,000 conversation messages spread over 500 people, importing 1,000
 messages per SQLite transaction. The gate is opt-in and reports the measured
 write duration as `CLAW_SCALE_250K`. It also asserts person-scoped lookup.
 It is **not** an iPhone peak-memory measurement or permission for release.
+
+## Repeatable final-SHA stress gate
+
+Ordinary pushes skip the expensive 100k and 250k fixtures. To run both on a
+specific final source SHA, include `[claw-stress]` in that commit's message on
+the UX branch. The Build Test workflow will run both opt-in tests on that push;
+manual `workflow_dispatch` input flags continue to work independently. When
+a stress run is queued or running, do not claim it passed. Record both
+`CLAW_SCALE_100K` and `CLAW_SCALE_250K` from the final completed job logs.
