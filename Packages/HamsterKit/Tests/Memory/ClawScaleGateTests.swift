@@ -29,7 +29,8 @@ final class ClawScaleGateTests: XCTestCase {
   /// import covers different SQLite tables and indexing costs.
   func testOptInQuarterMillionConversationImport() throws {
     let env = ProcessInfo.processInfo.environment
-    guard env["CLAW_CONVERSATION_STRESS"] == "1" else {
+    guard env["CLAW_CONVERSATION_STRESS"] == "1" ||
+          env["TEST_RUNNER_CLAW_CONVERSATION_STRESS"] == "1" else {
       throw XCTSkip("250k conversation benchmark is opt-in")
     }
     let root = FileManager.default.temporaryDirectory
