@@ -175,7 +175,7 @@ public final class ClawChatService: NSObject, ObservableObject {
     // This intentionally does not collect system permissions or user chat text.
     if trimmed == "/自检" || trimmed.lowercased() == "/diagnose" {
       messages.append(ClawChatMessage(role: "user", content: trimmed, excludeFromContext: true))
-      postAssistant(ClawDiagnosticInspector.report())
+      postAssistant(ClawDiagnosticInspector.report(capture: ClawDiagnosticsCaptureService.captureCurrent()))
       return
     }
 
