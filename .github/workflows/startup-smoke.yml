@@ -5,7 +5,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, work/claw-voice-keyboard-bg, work/claw-productization-20261006]
+    branches: [main, work/claw-voice-keyboard-bg, work/claw-productization-20261006, 'work/claw-ux-*']
     paths:
       - "Hamster/**"
       - "HamsterKeyboard/**"
@@ -185,7 +185,9 @@ jobs:
             if [ "$state" = dark ]; then
               xcrun simctl ui "$SIMULATOR_UDID" appearance dark
             fi
-            xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
+            # Each UI state needs fresh process arguments; do not reuse the
+            # prior simulator process with an outdated screenshot fixture.
+            xcrun simctl launch --terminate-running-process --console "$SIMULATOR_UDID" app.lgm.7517 \
               -clawComposerScreenshot "$state" \
               >"composer-$state.log" 2>&1 &
             monitor=$!

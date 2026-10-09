@@ -59,6 +59,19 @@ final class MemoryRouterTests: XCTestCase {
     XCTAssertEqual(result.map(\.content), ["周五提交项目方案"])
   }
 
+  func testOldUnspacedChineseMemoryIsFoundBeyondRecentWindow() throws {
+    let historical = record("特别罕见的独特方案需要周五提交", scope: .global)
+    try sdk.remember(historical)
+    for index in 0..<125 {
+      try sdk.remember(record("最近的普通记录第\(index)条", scope: .global))
+    }
+    let found = try MemoryRouter(store: store).recall(
+      MemoryRecallRequest(query: "独特方案", scope: .global, limit: 10)
+    )
+    XCTAssertTrue(found.contains(where: { $0.id == historical.id }),
+                  "Chinese substring lookup must not be limited to recent V2 records")
+  }
+
   private func record(
     _ content: String,
     scope: MemoryScope,

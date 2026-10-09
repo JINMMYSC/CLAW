@@ -74,6 +74,65 @@ public final class DefaultMemorySDK: MemorySDK {
     try store.saveMemoryV2(record, legacyProjection: item)
   }
 
+  /// Transitional, scope-safe projection for older views while their models
+  /// still render ClawMemoryItem. New and corrected V2 entries take precedence;
+  /// legacy-only rows remain visible until all writers are migrated.
+  /// No caller outside the SDK should combine legacy and V2 reads.
+  public func contextualMemories(
+    scope: String,
+    personID: UUID? = nil,
+    limit: Int = 80
+  ) throws -> [ClawMemoryItem] {
+    let count = max(1, limit)
+    let legacy = try store.memories(
+      scope: scope,
+      subjectID: scope == "contact" ? personID : nil,
+      limit: count
+    )
+    let candidates: [MemoryV2Record]
+    if scope == "global" {
+      // Only eligible unowned global memories consume the retrieval budget.
+      candidates = try store.activeContextMemoryV2(scope: .global, limit: count)
+    } else if scope == "contact", let personID {
+      // Filter privacy, invalidated rows and expiry in SQL, before top-N.
+      let people = try store.activeContextMemoryV2(scope: .person, personID: personID, limit: count)
+      let relations = try store.activeContextMemoryV2(scope: .relationship, personID: personID, limit: count)
+      candidates = (people + relations).sorted { $0.updatedAt > $1.updatedAt }
+    } else if scope == "contact" {
+      return []
+    } else {
+      return legacy
+    }
+    let now = Date()
+    let permitted = candidates.filter {
+      ($0.state == .active || $0.state == .confirmed) &&
+        ($0.expiresAt == nil || $0.expiresAt! > now)
+    }
+    // Check all selected legacy IDs against the V2 primary-key index, not just
+    // the limited recent V2 candidates. Old invalidated or relocated rows must
+    // not reappear if they fall outside the top-N V2 selection.
+    let v2AuthoritativeIDs = try store.memoryV2ExistingIDs(Set(legacy.map(\.id)))
+    let legacyByID = Dictionary(uniqueKeysWithValues: legacy.map { ($0.id, $0) })
+    var seen = Set<UUID>()
+    var merged: [ClawMemoryItem] = []
+    for record in permitted {
+      var item = legacyProjection(record)
+      // Preserve trusted source metadata when a V2 write updated the same
+      // legacy row, but never replace newer V2 content or scope with stale data.
+      if let old = legacyByID[record.id] {
+        item.kind = old.kind
+        item.sourceType = old.sourceType
+        item.sourceRef = old.sourceRef
+      }
+      if scope == "contact" { item.scope = "contact" }
+      if seen.insert(item.id).inserted { merged.append(item) }
+    }
+    for item in legacy where !v2AuthoritativeIDs.contains(item.id) && seen.insert(item.id).inserted {
+      merged.append(item)
+    }
+    return Array(merged.sorted { $0.lastObservedAt > $1.lastObservedAt }.prefix(count))
+  }
+
   public func recall(_ request: MemoryRecallRequest) throws -> [MemoryV2Record] {
     try MemoryRouter(store: store).recall(request)
   }
@@ -105,6 +164,10 @@ public final class DefaultMemorySDK: MemorySDK {
 
   public func forget(id: UUID, mode: ForgetMode) throws {
     guard var record = try store.memoryV2(id: id) else { throw MemorySDKError.missingMemory(id) }
+    if mode == .fullDelete {
+      try store.purgeMemoryV2(id: id)
+      return
+    }
     record.version += 1
     record.updatedAt = Date()
     switch mode {
@@ -115,11 +178,6 @@ public final class DefaultMemorySDK: MemorySDK {
       record.state = .archived
     case .invalidateDerivedFacts, .fullDelete:
       record.state = .invalidated
-      if mode == .fullDelete {
-        record.content = ""
-        record.evidence = []
-        record.lineage = MemoryLineage()
-      }
     }
     try store.saveMemoryV2(record)
     _ = try? store.setMemoryStatus(id: id, status: mode == .archive ? .archived : .superseded)
@@ -146,15 +204,18 @@ public final class DefaultMemorySDK: MemorySDK {
   }
 
   public func flush(_ session: MemoryFlushSession) throws {
-    for record in session.records {
-      var scoped = record
-      scoped.sessionID = scoped.sessionID ?? session.sessionID
-      try store.saveMemoryV2(
-        scoped,
-        rawEvents: session.rawEvents,
-        legacyProjection: legacyProjection(scoped)
-      )
+    let scoped = session.records.map { record -> MemoryV2Record in
+      var item = record
+      item.sessionID = item.sessionID ?? session.sessionID
+      return item
     }
+    // The same memory can be refined repeatedly in one session. Do not
+    // crash on a repeated UUID; the final projection wins for that ID.
+    var projections: [UUID: ClawMemoryItem] = [:]
+    for item in scoped { projections[item.id] = legacyProjection(item) }
+    try store.saveMemoryV2Batch(
+      scoped, rawEvents: session.rawEvents, legacyProjections: projections
+    )
   }
 
   public func projection(_ kind: MemoryProjectionKind, personID: UUID? = nil, projectID: UUID? = nil, limit: Int = 100) throws -> MemoryProjection {
@@ -173,7 +234,9 @@ public final class DefaultMemorySDK: MemorySDK {
     return MemoryProjection(kind: kind, records: Array(records.prefix(max(1, limit))))
   }
 
-  private func legacyProjection(_ record: MemoryV2Record) -> ClawMemoryItem {
+  /// Internal compatibility projection used by the transactional screenshot
+  /// importer while migrating legacy view consumers to the Memory SDK.
+  func legacyProjection(_ record: MemoryV2Record) -> ClawMemoryItem {
     let kind: ClawMemoryKind
     switch record.type {
     case .preference: kind = .communicationPreference

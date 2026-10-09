@@ -23,6 +23,7 @@ public class AppleCloudViewModel: ObservableObject {
   public let settingsViewModel: SettingsViewModel
 
   @Published public var syncState: SyncState = .idle
+  @Published public var restoreConfirmationRequested = false
 
   // MARK: - Last Sync Status (persisted in UserDefaults)
 
@@ -68,7 +69,9 @@ public class AppleCloudViewModel: ObservableObject {
       text: "从 iCloud 恢复",
       type: .button,
       buttonAction: { [unowned self] in
-        Task { await restoreFromiCloud() }
+        // Restoring overwrites the local RIME files. Require a confirmation in
+        // the host view controller before starting this irreversible copy.
+        restoreConfirmationRequested = true
       }
     ),
     .init(
@@ -85,9 +88,15 @@ public class AppleCloudViewModel: ObservableObject {
   }
 
   func copyFileToiCloud() async {
-    await MainActor.run { syncState = .syncing }
+    let canStart = await MainActor.run { () -> Bool in
+      if case .syncing = syncState { return false }
+      syncState = .syncing
+      return true
+    }
+    guard canStart else { return }
     await ProgressHUD.animate("拷贝中……", interaction: false)
     do {
+      guard URL.iCloudDocumentURL != nil else { throw ICloudPathError.unavailable }
       let regexList = regexOnCopyFile.split(separator: ",").map { String($0) }
       try FileManager.copySandboxSharedSupportDirectoryToAppleCloud(regexList)
       try FileManager.copySandboxUserDataDirectoryToAppleCloud(regexList)
@@ -107,10 +116,15 @@ public class AppleCloudViewModel: ObservableObject {
 
   /// 从 iCloud 恢复文件至本地（SharedSupport + UserData）
   func restoreFromiCloud() async {
-    await MainActor.run { syncState = .syncing }
+    let canStart = await MainActor.run { () -> Bool in
+      if case .syncing = syncState { return false }
+      syncState = .syncing
+      return true
+    }
+    guard canStart else { return }
     await ProgressHUD.animate("从 iCloud 恢复中……", interaction: false)
     do {
-      _ = URL.iCloudDocumentURL
+      guard URL.iCloudDocumentURL != nil else { throw ICloudPathError.unavailable }
       try FileManager.copyAppleCloudSharedSupportDirectoryToSandbox()
       try FileManager.copyAppleCloudUserDataDirectoryToSandbox()
       UserDefaults.standard.set(Date(), forKey: lastSyncTimeKey)

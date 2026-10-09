@@ -51,12 +51,199 @@ final class ClawContextBuilderScopeTests: XCTestCase {
     XCTAssertTrue(pack.recentConversation.isEmpty)
   }
 
+  func testUnresolvedContextNeverExposesPersonOwnedTasks() throws {
+    let first = HeartTargetProfile(name: "王一", aliases: ["小王"])
+    let second = HeartTargetProfile(name: "王二", aliases: ["小王"])
+    try seedPerson(first, memory: "王一的私事", task: "王一的私密待办")
+    try seedPerson(second, memory: "王二的私事", task: "王二的私密待办")
+    try store.upsertTask(ClawSecretaryTask(title: "普通全局待办", sourceType: "test"))
+
+    let contextBuilder = builder(profiles: [first, second])
+    let queries: [String?] = [nil, "今天有什么安排？", "小王最近如何？"]
+    for query in queries {
+      let pack = contextBuilder.build(contactID: nil, query: query)
+      XCTAssertNil(pack.resolvedContactID, "Unresolved query: \(query ?? "<nil>")")
+      XCTAssertEqual(pack.openTasks.map(\.title), ["普通全局待办"])
+      XCTAssertTrue(pack.contactMemories.isEmpty)
+      XCTAssertFalse(pack.promptBlock().contains("王一的私密待办"))
+      XCTAssertFalse(pack.promptBlock().contains("王二的私密待办"))
+    }
+  }
+
+  func testTaskVisibilityIsAppliedBeforeFortyRowLimit() throws {
+    let current = HeartTargetProfile(name: "当前对象")
+    let other = HeartTargetProfile(name: "其他对象")
+    try store.upsertTask(ClawSecretaryTask(title: "全局重要事项", sourceType: "test"))
+    try store.upsertTask(ClawSecretaryTask(title: "当前对象的待办", contactID: current.id, sourceType: "test"))
+    for index in 0..<55 {
+      try store.upsertTask(ClawSecretaryTask(
+        title: "其他人的截止日期\(index)", contactID: other.id,
+        dueAt: Date(timeIntervalSince1970: Double(1_000 + index)),
+        sourceType: "test"
+      ))
+    }
+
+    let contextBuilder = builder(profiles: [current, other])
+    let global = contextBuilder.build(contactID: nil, query: "今天的全局计划")
+    XCTAssertEqual(global.openTasks.map(\.title), ["全局重要事项"])
+    let personal = contextBuilder.build(contactID: current.id)
+    XCTAssertEqual(Set(personal.openTasks.map(\.title)), Set(["全局重要事项", "当前对象的待办"]))
+    XCTAssertFalse(personal.openTasks.contains { $0.title.hasPrefix("其他人的截止日期") })
+    XCTAssertEqual(try store.tasks(status: .open, limit: 40).count, 40,
+                   "The unscoped task list retains its existing semantics")
+  }
+
   func testRelationshipWordsAloneNeverSelectAPerson() {
     let profiles = [
       HeartTargetProfile(name: "王一", relationship: "客户"),
       HeartTargetProfile(name: "王二", relationship: "客户"),
     ]
     XCTAssertNil(ClawQueryPersonResolver().resolve(query: "最近哪个客户要跟进？", profiles: profiles))
+  }
+
+  func testInvalidatedV2CannotReappearThroughActiveLegacyProjection() throws {
+    let person = HeartTargetProfile(name: "旧记忆测试")
+    let sdk = DefaultMemorySDK(store: store)
+    let record = MemoryV2Record(
+      type: .preference, state: .active, scope: .person,
+      content: "已过期的私人偏好", personID: person.id,
+      provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    )
+    try sdk.remember(record)
+    XCTAssertTrue(try sdk.contextualMemories(scope: "contact", personID: person.id)
+      .contains { $0.id == record.id })
+    var invalidated = record
+    invalidated.state = .invalidated
+    invalidated.version += 1
+    try store.saveMemoryV2(invalidated)
+    XCTAssertFalse(try sdk.contextualMemories(scope: "contact", personID: person.id)
+      .contains { $0.id == record.id })
+  }
+
+  func testInvalidatedV2OutsideTopNCanNeverResurrectViaNewerLegacyProjection() throws {
+    let person = HeartTargetProfile(name: "失效记录范围测试")
+    let sdk = DefaultMemorySDK(store: store)
+    let stale = MemoryV2Record(
+      type: .preference, state: .active, scope: .person,
+      content: "已失效的私人偏好", personID: person.id,
+      provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    )
+    try sdk.remember(stale)
+    var invalidated = stale
+    invalidated.state = .invalidated
+    invalidated.version += 1
+    try store.saveMemoryV2(invalidated)
+    // Legacy observation timestamp may be much newer than the V2 row. The
+    // V2 LIMIT below excludes stale, but the legacy LIMIT includes it.
+    try store.upsertMemory(ClawMemoryItem(
+      id: stale.id, kind: .fact, scope: "contact", subjectID: person.id,
+      content: "已失效的私人偏好", sourceType: "test",
+      lastObservedAt: Date().addingTimeInterval(3600)
+    ))
+    let fresh = MemoryV2Record(
+      type: .preference, state: .active, scope: .person,
+      content: "新近确认的私人偏好", personID: person.id,
+      provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    )
+    try sdk.remember(fresh)
+
+    XCTAssertEqual(try store.memoryV2(scope: .person, personID: person.id, limit: 1).map(\.id), [fresh.id])
+    XCTAssertEqual(try store.memories(scope: "contact", subjectID: person.id, limit: 1).map(\.id), [stale.id])
+    let visible = try sdk.contextualMemories(scope: "contact", personID: person.id, limit: 1)
+    XCTAssertEqual(visible.map(\.id), [fresh.id])
+    XCTAssertFalse(visible.contains { $0.content.contains("已失效") })
+  }
+
+  func testInvalidatedRecentV2CannotDisplaceOlderActivePersonMemory() throws {
+    let person = HeartTargetProfile(name: "有效记忆优先级")
+    let source = MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    let older = MemoryV2Record(
+      type: .preference, state: .active, scope: .person,
+      content: "仍然有效的较早记忆", personID: person.id,
+      provenance: source, updatedAt: Date().addingTimeInterval(-3600)
+    )
+    try store.saveMemoryV2(older)
+    let invalidated = (0..<90).map { index in
+      MemoryV2Record(
+        type: .preference, state: .invalidated, scope: .person,
+        content: "已经失效的记忆\(index)", personID: person.id,
+        provenance: source, updatedAt: Date().addingTimeInterval(Double(index))
+      )
+    }
+    try store.saveMemoryV2Batch(invalidated)
+    // A latest-by-date fetch of one V2 memory is invalidated. The scoped
+    // context query must still find the older active memory.
+    XCTAssertEqual(try store.memoryV2(scope: .person, personID: person.id, limit: 1).first?.state, .invalidated)
+    let actual = try DefaultMemorySDK(store: store)
+      .contextualMemories(scope: "contact", personID: person.id, limit: 1)
+    XCTAssertEqual(actual.map(\.id), [older.id])
+  }
+
+  func testPersonOwnedGlobalRowsCannotDisplaceTrulyGlobalV2() throws {
+    let source = MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    let valid = MemoryV2Record(
+      type: .preference, state: .active, scope: .global,
+      content: "全局偏好需要保留", provenance: source,
+      updatedAt: Date().addingTimeInterval(-3600)
+    )
+    try store.saveMemoryV2(valid)
+    let person = UUID()
+    let misScoped = (0..<90).map { index in
+      MemoryV2Record(
+        type: .preference, state: .active, scope: .global,
+        content: "仍属于某个人的信息\(index)", personID: person,
+        provenance: source, updatedAt: Date().addingTimeInterval(Double(index))
+      )
+    }
+    try store.saveMemoryV2Batch(misScoped)
+    let actual = try DefaultMemorySDK(store: store).contextualMemories(scope: "global", limit: 1)
+    XCTAssertEqual(actual.map(\.id), [valid.id])
+    XCTAssertFalse(actual.contains { $0.content.contains("某个人") })
+  }
+
+  func testOlderPersonMemoryRemainsVisibleAmongManyOtherPeople() throws {
+    let alice = HeartTargetProfile(name: "艾丽")
+    let bob = HeartTargetProfile(name: "贝贝")
+    let sdk = DefaultMemorySDK(store: store)
+    try sdk.remember(MemoryV2Record(
+      type: .preference, state: .active, scope: .person,
+      content: "艾丽的旧交流偏好", personID: alice.id,
+      provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    ))
+    for i in 0..<125 {
+      try sdk.remember(MemoryV2Record(
+        type: .preference, state: .active, scope: .person,
+        content: "贝贝第\(i)条较新的交流偏好", personID: bob.id,
+        provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+      ))
+    }
+    let pack = builder(profiles: [alice, bob]).build(contactID: alice.id)
+    XCTAssertTrue(pack.contactMemories.contains { $0.content == "艾丽的旧交流偏好" })
+    XCTAssertFalse(pack.contactMemories.contains { $0.subjectID == bob.id })
+  }
+
+  func testSDKContextReadsV2AndLegacyWithoutCrossPersonLeak() throws {
+    let alice = HeartTargetProfile(name: "艾丽")
+    let bob = HeartTargetProfile(name: "贝贝")
+    let sdk = DefaultMemorySDK(store: store)
+    try sdk.remember(MemoryV2Record(
+      type: .preference, state: .confirmed, scope: .person,
+      content: "艾丽喜欢简短回复", personID: alice.id,
+      provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    ))
+    try sdk.remember(MemoryV2Record(
+      type: .preference, state: .active, scope: .person,
+      content: "贝贝习惯电话沟通", personID: bob.id,
+      provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    ))
+    try seedPerson(alice, memory: "艾丽的旧版记忆")
+    let alicePack = builder(profiles: [alice, bob]).build(contactID: alice.id)
+    XCTAssertTrue(alicePack.contactMemories.contains { $0.content == "艾丽喜欢简短回复" })
+    XCTAssertTrue(alicePack.contactMemories.contains { $0.content == "艾丽的旧版记忆" })
+    XCTAssertFalse(alicePack.contactMemories.contains { $0.content == "贝贝习惯电话沟通" })
+    let globalPack = builder(profiles: [alice, bob]).build(contactID: nil, query: "今天做什么")
+    XCTAssertTrue(globalPack.contactMemories.isEmpty)
+    XCTAssertFalse(globalPack.globalMemories.contains { $0.content == "艾丽喜欢简短回复" })
   }
 
   func testExplicitContactOverridesANameInTheQuery() throws {

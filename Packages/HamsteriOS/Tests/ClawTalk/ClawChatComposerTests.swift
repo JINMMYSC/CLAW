@@ -64,6 +64,25 @@ final class ClawChatComposerTests: XCTestCase {
     XCTAssertEqual(sent, ["你好"])
   }
 
+  func testAttachmentsRemainAccessibleWhileTypingWithoutReplacingDraft() {
+    let bar = ClawChatComposerBar(frame: CGRect(x: 0, y: 0, width: 320, height: 56))
+    bar.configure(text: "仍未发送的文字", isSending: false, voiceActive: false, voiceWillCancel: false)
+    bar.layoutIfNeeded()
+    let attachments = bar.subviews.compactMap { $0 as? UIStackView }
+      .flatMap { $0.arrangedSubviews }
+      .compactMap { $0 as? UIButton }
+      .first(where: { $0.accessibilityIdentifier == "claw.composer.attachments" })
+    XCTAssertNotNil(attachments, "Attachment action must remain visible when send is active")
+    XCTAssertTrue(attachments?.isEnabled == true)
+    XCTAssertFalse(attachments?.isHidden ?? true)
+    // No UIApplicationMain runs in this unit-test target. Invoke the real
+    // control action directly; sendActions would never reach its target.
+    bar.toggleAttachments()
+    XCTAssertEqual(bar.mode, .more)
+    XCTAssertEqual(bar.textView.text, "仍未发送的文字")
+    XCTAssertTrue(bar.isSendVisible)
+  }
+
   func testNativeLayoutScreenshotAttachment() {
     let bar = ClawChatComposerBar(frame: CGRect(x: 0, y: 0, width: 393, height: 56))
     bar.configure(text: "你好，CLAW", isSending: false, voiceActive: false, voiceWillCancel: false)

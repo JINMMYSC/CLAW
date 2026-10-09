@@ -86,13 +86,14 @@ public final class ClawContextBuilder {
     let profiles = profilesProvider()
     let effectiveContactID = contactID ?? personResolver.resolve(query: query, profiles: profiles)
     let resolvedProfile = effectiveContactID.flatMap { id in profiles.first(where: { $0.id == id }) }
-    let rawGlobals = ((try? store.memories(scope: "global", limit: 80)) ?? [])
+    let sdk = DefaultMemorySDK(store: store)
+    let rawGlobals = ((try? sdk.contextualMemories(scope: "global", limit: 80)) ?? [])
       .filter { policy.isSourceEnabled($0.sourceType) && vault.isVisibleToAI($0) }
     let globals = rank(rawGlobals, query: query).prefix(40).map { $0 }
     let contactMemories: [ClawMemoryItem]
     let timeline: [ClawConversationMessage]
     if let effectiveContactID {
-      let rawContact = ((try? store.memories(scope: "contact", subjectID: effectiveContactID, limit: 80)) ?? [])
+      let rawContact = ((try? sdk.contextualMemories(scope: "contact", personID: effectiveContactID, limit: 80)) ?? [])
         .filter { policy.isSourceEnabled($0.sourceType) && vault.isVisibleToAI($0) }
       contactMemories = rank(rawContact, query: query).prefix(40).map { $0 }
       timeline = (try? store.conversation(contactID: effectiveContactID, limit: 32)) ?? []
@@ -100,10 +101,11 @@ public final class ClawContextBuilder {
       contactMemories = []
       timeline = []
     }
-    let allTasks = includeTasks ? ((try? store.tasks(status: .open, limit: 40)) ?? []) : []
-    let relevantTasks = effectiveContactID == nil
-      ? allTasks
-      : allTasks.filter { $0.contactID == nil || $0.contactID == effectiveContactID }
+    // Scope at the SQLite boundary, not after an unrelated top-40 cutoff.
+    // Unknown people see global tasks only; selected people see global + own.
+    let relevantTasks = includeTasks
+      ? ((try? store.contextTasks(contactID: effectiveContactID, limit: 40)) ?? [])
+      : []
     return ClawContextPack(
       globalMemories: globals,
       contactMemories: contactMemories,
@@ -119,7 +121,11 @@ public final class ClawContextBuilder {
       return items.sorted { $0.lastObservedAt > $1.lastObservedAt }
     }
     let queryTokens = tokens(query)
-    let semantic = semanticQuery(query)
+    // Avoid allocating on-device sentence embeddings inside a keyboard
+    // extension: all per-keystroke context ranking stays lexical and bounded.
+    // The host app may still use semantic ranking on demand.
+    let isKeyboardExtension = Bundle.main.bundleURL.pathExtension.lowercased() == "appex"
+    let semantic = isKeyboardExtension ? nil : semanticQuery(query)
     let now = Date()
     return items.sorted { lhs, rhs in
       score(lhs, queryTokens: queryTokens, semantic: semantic, now: now)

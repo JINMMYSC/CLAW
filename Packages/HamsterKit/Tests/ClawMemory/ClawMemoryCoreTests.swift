@@ -64,6 +64,22 @@ final class ClawMemoryCoreTests: XCTestCase {
     XCTAssertEqual(try store.conversation(contactID: contact).count, 1)
   }
 
+  func testConversationBatchDeduplicatesAndKeepsPeopleIsolated() throws {
+    let a = UUID(), b = UUID()
+    let messages = (0..<75).map { index in
+      ClawConversationMessage(
+        contactID: index.isMultiple(of: 2) ? a : b,
+        speaker: .other, content: "不同的消息 \(index)",
+        occurredAt: Date(timeIntervalSince1970: 1_800_000_000),
+        sourceType: "import"
+      )
+    }
+    XCTAssertEqual(try store.appendConversationsBatch(messages).count, 75)
+    XCTAssertEqual(try store.appendConversationsBatch(messages).count, 0)
+    XCTAssertEqual(try store.conversation(contactID: a).count, 38)
+    XCTAssertEqual(try store.conversation(contactID: b).count, 37)
+  }
+
   func testSecretaryExtractorOnlyCreatesTaskForExplicitTimeAndAction() {
     let explicit = ClawConversationMessage(
       contactID: UUID(),

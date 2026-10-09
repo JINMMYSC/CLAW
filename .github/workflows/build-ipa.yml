@@ -2,7 +2,7 @@ name: Build & Sign GuruIM IPA
 
 on:
   push:
-    branches: [main, work/claw-voice-keyboard-bg, work/claw-productization-20261006]
+    branches: [main, work/claw-voice-keyboard-bg, work/claw-productization-20261006, 'work/claw-ux-*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -86,6 +86,7 @@ jobs:
       github.ref == 'refs/heads/main' ||
       github.ref == 'refs/heads/work/claw-voice-keyboard-bg' ||
       github.ref == 'refs/heads/work/claw-productization-20261006' ||
+      startsWith(github.ref, 'refs/heads/work/claw-ux-') ||
       (github.event_name == 'pull_request' &&
        github.head_ref == 'work/claw-productization-20261006' &&
        github.event.pull_request.head.repo.full_name == github.repository)

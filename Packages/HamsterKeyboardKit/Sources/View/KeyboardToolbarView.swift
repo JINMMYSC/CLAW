@@ -19,6 +19,30 @@ import UIKit
  2. 常用功能视图（ClawTalk 三入口 + 眼睛 + 表情 + 下拉）
  3. 实时 AI 建议条（右侧空余区域）
  */
+/// One source of truth for the mutually exclusive toolbar surfaces.
+/// RIME key updates, panel tab changes and candidate expansion must agree.
+public struct ClawToolbarVisibility: Equatable {
+  public let showsFunctionBar: Bool
+  public let showsCandidateBar: Bool
+  public let showsPanel: Bool
+  public let showsSuggestions: Bool
+
+  public static func resolve(
+    inputIsEmpty: Bool,
+    panelIsOpen: Bool,
+    candidatesAreExpanded: Bool,
+    hasSuggestions: Bool
+  ) -> ClawToolbarVisibility {
+    let candidates = !panelIsOpen && (!inputIsEmpty || candidatesAreExpanded)
+    return ClawToolbarVisibility(
+      showsFunctionBar: !candidates,
+      showsCandidateBar: candidates,
+      showsPanel: panelIsOpen,
+      showsSuggestions: candidates && !candidatesAreExpanded && hasSuggestions
+    )
+  }
+}
+
 class KeyboardToolbarView: NibLessView {
   private let appearance: KeyboardAppearance
   private let actionHandler: KeyboardActionHandler
@@ -292,6 +316,10 @@ class KeyboardToolbarView: NibLessView {
     constructViewHierarchy()
     activateViewConstraints()
     setupAppearance()
+    // Combine may not emit an initial RIME event. Without an initial state,
+    // the legacy candidate row and the new empty-input actions both render.
+    applyToolbarVisibility()
+    updateSuggestionBarVisibility()
   }
 
   override func layoutSubviews() {
@@ -299,11 +327,30 @@ class KeyboardToolbarView: NibLessView {
 
     if userInterfaceStyle != keyboardContext.colorScheme {
       userInterfaceStyle = keyboardContext.colorScheme
+      // setupAppearance already restyles the candidate view once.
       setupAppearance()
-      candidateBarView.setStyle(self.style)
     }
 
     updateSuggestionBarHeight()
+    updateCompactToolbarWidths()
+  }
+
+  /// Keep all three AI entry points on 320pt iPhones without compressing the
+  /// candidate bar or allowing required Auto Layout constraints to collide.
+  private func updateCompactToolbarWidths() {
+    guard bounds.width > 0 else { return }
+    // iPad floating keyboards can be < 320pt. Shrink fixed action widths
+    // by tier to prevent required constraints from pushing dismiss offscreen.
+    let floating = bounds.width < 300
+    let compact = bounds.width < 380
+    let contact: CGFloat = floating ? 38 : (compact ? 54 : 64)
+    guard contactWidthConstraint?.constant != contact else { return }
+    contactWidthConstraint?.constant = contact
+    helpReplyWidthConstraint?.constant = floating ? 40 : (compact ? 52 : 60)
+    superTalkWidthConstraint?.constant = floating ? 40 : (compact ? 52 : 60)
+    aiWidthConstraint?.constant = floating ? 22 : (compact ? 28 : 32)
+    eyeWidthConstraint?.constant = floating ? 18 : (compact ? 24 : 26)
+    emojiWidthConstraint?.constant = floating ? 18 : (compact ? 24 : 26)
   }
 
   // MARK: - 视图层次
@@ -331,6 +378,12 @@ class KeyboardToolbarView: NibLessView {
   /// 候选栏收起时贴在功能行那一条；展开时改为吃掉功能行上方的全部高度。
   private var candidateTopToFunctionBar: NSLayoutConstraint!
   private var candidateTopToPanel: NSLayoutConstraint!
+  private var contactWidthConstraint: NSLayoutConstraint!
+  private var helpReplyWidthConstraint: NSLayoutConstraint!
+  private var superTalkWidthConstraint: NSLayoutConstraint!
+  private var aiWidthConstraint: NSLayoutConstraint!
+  private var eyeWidthConstraint: NSLayoutConstraint!
+  private var emojiWidthConstraint: NSLayoutConstraint!
 
   override func activateViewConstraints() {
     // 面板覆盖层：固定在工具栏顶部，高度随展开/收起变化
@@ -340,6 +393,13 @@ class KeyboardToolbarView: NibLessView {
     commonBarTopConstraint = commonFunctionBar.topAnchor.constraint(equalTo: panelOverlayView.bottomAnchor)
 
     suggestionBarHeightConstraint = suggestionBarView.heightAnchor.constraint(equalToConstant: 0)
+    contactWidthConstraint = contactButton.widthAnchor.constraint(equalToConstant: 64)
+    helpReplyWidthConstraint = helpReplyButton.widthAnchor.constraint(equalToConstant: 60)
+    superTalkWidthConstraint = superTalkButton.widthAnchor.constraint(equalToConstant: 60)
+    aiWidthConstraint = aiButton.widthAnchor.constraint(equalToConstant: 32)
+    eyeWidthConstraint = eyeButton.widthAnchor.constraint(equalToConstant: 26)
+    emojiWidthConstraint = emojiButton.widthAnchor.constraint(equalToConstant: 26)
+    contactButton.titleLabel?.lineBreakMode = .byTruncatingTail
 
     // 候选栏展开时，KeyboardRootView 会把整条工具栏加高（键区高度 + 工具栏高度）。
     // 之前候选栏被钉死在功能行那一条 50pt 内，多出来的高度变成空白，所以只能看到一行。
@@ -376,32 +436,32 @@ class KeyboardToolbarView: NibLessView {
 
       contactButton.leadingAnchor.constraint(equalTo: commonFunctionBar.leadingAnchor, constant: 6),
       contactButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      contactButton.widthAnchor.constraint(equalToConstant: 64),
+      contactWidthConstraint,
       contactButton.heightAnchor.constraint(equalToConstant: 30),
 
       helpReplyButton.leadingAnchor.constraint(equalTo: contactButton.trailingAnchor, constant: 3),
       helpReplyButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      helpReplyButton.widthAnchor.constraint(equalToConstant: 60),
+      helpReplyWidthConstraint,
       helpReplyButton.heightAnchor.constraint(equalToConstant: 30),
 
       superTalkButton.leadingAnchor.constraint(equalTo: helpReplyButton.trailingAnchor, constant: 3),
       superTalkButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      superTalkButton.widthAnchor.constraint(equalToConstant: 60),
+      superTalkWidthConstraint,
       superTalkButton.heightAnchor.constraint(equalToConstant: 30),
 
       aiButton.leadingAnchor.constraint(equalTo: superTalkButton.trailingAnchor, constant: 3),
       aiButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      aiButton.widthAnchor.constraint(equalToConstant: 32),
+      aiWidthConstraint,
       aiButton.heightAnchor.constraint(equalToConstant: 32),
 
       eyeButton.leadingAnchor.constraint(equalTo: aiButton.trailingAnchor, constant: 3),
       eyeButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      eyeButton.widthAnchor.constraint(equalToConstant: 26),
+      eyeWidthConstraint,
       eyeButton.heightAnchor.constraint(equalToConstant: 30),
 
       emojiButton.leadingAnchor.constraint(equalTo: eyeButton.trailingAnchor, constant: 3),
       emojiButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      emojiButton.widthAnchor.constraint(equalToConstant: 26),
+      emojiWidthConstraint,
       emojiButton.heightAnchor.constraint(equalToConstant: 30),
 
       moreButton.leadingAnchor.constraint(equalTo: emojiButton.trailingAnchor, constant: 3),
@@ -510,10 +570,7 @@ class KeyboardToolbarView: NibLessView {
 
   /// 实时建议条显隐：有建议 + 面板收起 + 有输入时显示
   func updateSuggestionBarVisibility() {
-    let hasSuggestions = !ClawSuggestionEngine.shared.suggestions.isEmpty
-    let panelExpanded = keyboardContext.clawPanelTab >= 0
-    let show = hasSuggestions && !panelExpanded && !lastInputEmpty
-    suggestionBarView.isHidden = !show
+    suggestionBarView.isHidden = !toolbarVisibility.showsSuggestions
     updateSuggestionBarHeight()
   }
 
@@ -521,11 +578,30 @@ class KeyboardToolbarView: NibLessView {
   private func updateSuggestionBarHeight() {
     let panelHeight = ClawPanelOverlayView.preferredHeight(for: keyboardContext.clawPanelTab)
     let available = max(0, bounds.height - keyboardContext.heightOfToolbar - panelHeight - 12)
-    let show = !ClawSuggestionEngine.shared.suggestions.isEmpty && keyboardContext.clawPanelTab < 0 && !lastInputEmpty
-    suggestionBarHeightConstraint.constant = show ? min(max(available, 0), 120) : 0
+    let desired = toolbarVisibility.showsSuggestions ? min(available, 120) : 0
+    if abs(suggestionBarHeightConstraint.constant - desired) > 0.5 {
+      suggestionBarHeightConstraint.constant = desired
+    }
   }
 
   // MARK: - 状态联动
+
+  private var toolbarVisibility: ClawToolbarVisibility {
+    ClawToolbarVisibility.resolve(
+      inputIsEmpty: lastInputEmpty,
+      panelIsOpen: keyboardContext.clawPanelTab >= 0,
+      candidatesAreExpanded: !keyboardContext.candidatesViewState.isCollapse(),
+      hasSuggestions: !ClawSuggestionEngine.shared.suggestions.isEmpty
+    )
+  }
+
+  private func applyToolbarVisibility() {
+    let state = toolbarVisibility
+    panelOverlayView.isHidden = !state.showsPanel
+    commonFunctionBar.isHidden = !state.showsFunctionBar
+    candidateBarView.isHidden = !state.showsCandidateBar
+    candidateQuickToolsBar.isHidden = !state.showsCandidateBar
+  }
 
   func combine() {
     // 候选栏展开/收起：切换候选栏的上边界。
@@ -535,9 +611,16 @@ class KeyboardToolbarView: NibLessView {
       .sink { [weak self] state in
         guard let self else { return }
         let expanded = !state.isCollapse()
-        self.candidateTopToFunctionBar?.isActive = !expanded
-        self.candidateTopToPanel?.isActive = expanded
-        self.layoutIfNeeded()
+        if expanded {
+          self.candidateTopToFunctionBar?.isActive = false
+          self.candidateTopToPanel?.isActive = true
+        } else {
+          self.candidateTopToPanel?.isActive = false
+          self.candidateTopToFunctionBar?.isActive = true
+        }
+        self.applyToolbarVisibility()
+        self.updateSuggestionBarVisibility()
+        self.setNeedsLayout()
       }
       .store(in: &subscriptions)
 
@@ -547,9 +630,9 @@ class KeyboardToolbarView: NibLessView {
         guard let self = self else { return }
         let isEmpty = $0.isEmpty
         self.lastInputEmpty = isEmpty
-        self.commonFunctionBar.isHidden = !isEmpty
-        self.candidateBarView.isHidden = isEmpty
-        self.candidateQuickToolsBar.isHidden = isEmpty
+        // Never allow RIME input updates to resurrect an older toolbar on top
+        // of an active AI, Help Reply or Super Talk panel.
+        self.applyToolbarVisibility()
         self.updateSuggestionBarVisibility()
 
         // 检测是否启用内嵌编码
@@ -567,23 +650,14 @@ class KeyboardToolbarView: NibLessView {
       .receive(on: DispatchQueue.main)
       .sink { [weak self] tab in
         guard let self else { return }
-        let expanded = tab >= 0
-        self.panelOverlayView.isHidden = !expanded
-        // 面板展开时功能行保持显示，候选栏不遮挡面板
-        if expanded {
-          self.commonFunctionBar.isHidden = false
-          self.candidateBarView.isHidden = true
-          self.candidateQuickToolsBar.isHidden = true
-        } else {
-          self.commonFunctionBar.isHidden = !self.lastInputEmpty
-          self.candidateBarView.isHidden = self.lastInputEmpty
-          self.candidateQuickToolsBar.isHidden = self.lastInputEmpty
-        }
+        self.applyToolbarVisibility()
         self.updateEntryButtonStates()
         self.updateSuggestionBarVisibility()
         let target = ClawPanelOverlayView.preferredHeight(for: tab)
-        self.panelHeightConstraint.constant = target
-        self.layoutIfNeeded()
+        if abs(self.panelHeightConstraint.constant - target) > 0.5 {
+          self.panelHeightConstraint.constant = target
+        }
+        self.setNeedsLayout()
       }
       .store(in: &subscriptions)
 
@@ -716,7 +790,10 @@ class KeyboardToolbarView: NibLessView {
         on: .url(URL(string: HamsterConstants.appURLForKeyboardSettings), id: "openKeyboardSettings")
       )
     }
-    button.menu = UIMenu(children: [openAssistant, voiceInput, voiceCall, privacy, settings])
+    let emoji = UIAction(title: "表情键盘", image: UIImage(systemName: "face.smiling")) { [weak self] _ in
+      self?.emojiButtonTouchUpAction()
+    }
+    button.menu = UIMenu(children: [openAssistant, emoji, voiceInput, voiceCall, privacy, settings])
   }
 
   @objc private func refreshVoiceMenusOnTouch() {

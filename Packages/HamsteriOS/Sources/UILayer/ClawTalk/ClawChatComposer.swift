@@ -153,17 +153,18 @@ final class ClawChatComposerBar: UIView, UITextViewDelegate {
     trailingWidthConstraint.isActive = true
 
     voiceButton.setImage(Self.icon(.voice), for: .normal)
-    emojiButton.setImage(Self.icon(.emoji), for: .normal)
+    emojiButton.setImage(UIImage(systemName: "plus"), for: .normal)
     trailingButton.setImage(Self.icon(.more), for: .normal)
     voiceButton.accessibilityIdentifier = "claw.composer.voice"
-    emojiButton.accessibilityIdentifier = "claw.composer.emoji"
+    emojiButton.accessibilityIdentifier = "claw.composer.attachments"
+    emojiButton.accessibilityLabel = "更多附件与表情"
     trailingButton.accessibilityIdentifier = "claw.composer.more"
     voiceButton.addTarget(self, action: #selector(toggleVoice), for: .touchUpInside)
-    emojiButton.addTarget(self, action: #selector(toggleEmoji), for: .touchUpInside)
+    emojiButton.addTarget(self, action: #selector(toggleAttachments), for: .touchUpInside)
     trailingButton.addTarget(self, action: #selector(tapTrailing), for: .touchUpInside)
 
     inputShell.backgroundColor = .secondarySystemGroupedBackground
-    inputShell.layer.cornerRadius = 5
+    inputShell.layer.cornerRadius = 12
     inputShell.layer.borderWidth = 0.5
     inputShell.layer.borderColor = UIColor.separator.cgColor
     inputShell.translatesAutoresizingMaskIntoConstraints = false
@@ -256,8 +257,10 @@ final class ClawChatComposerBar: UIView, UITextViewDelegate {
     if mode == .emoji || mode == .more { setMode(.text) }
   }
 
-  @objc private func toggleEmoji() {
-    setMode(mode == .emoji ? .text : .emoji)
+  // Internal for unit tests: exercise the actual action without UIKit's
+  // control event dispatcher, which is unavailable in hostless XCTest.
+  @objc func toggleAttachments() {
+    setMode(mode == .more ? .text : .more)
     if mode == .text { textView.becomeFirstResponder() }
   }
 
@@ -265,9 +268,6 @@ final class ClawChatComposerBar: UIView, UITextViewDelegate {
     if isSendVisible {
       guard !isSending else { return }
       onSend?(textView.text)
-    } else {
-      setMode(mode == .more ? .text : .more)
-      if mode == .text { textView.becomeFirstResponder() }
     }
   }
 
@@ -290,15 +290,19 @@ final class ClawChatComposerBar: UIView, UITextViewDelegate {
     holdButton.setTitleColor(voiceWillCancel ? .systemRed : .label, for: .normal)
     voiceButton.setImage(Self.icon(voice ? .keyboard : .voice), for: .normal)
     let send = isSendVisible
-    trailingWidthConstraint.constant = send ? 52 : 34
+    // The attachment (+) button remains accessible even while text is present.
+    // The trailing button has only one job: send the draft.
+    trailingWidthConstraint.constant = send ? 52 : 0
+    trailingButton.isHidden = !send
     trailingButton.setTitle(send ? "发送" : nil, for: .normal)
-    trailingButton.setImage(send ? nil : Self.icon(.more), for: .normal)
-    trailingButton.accessibilityIdentifier = send ? "claw.composer.send" : "claw.composer.more"
+    trailingButton.setImage(nil, for: .normal)
+    trailingButton.accessibilityIdentifier = "claw.composer.send"
+    trailingButton.accessibilityLabel = "发送消息"
     trailingButton.backgroundColor = send ? UIColor(red: 7/255, green: 193/255, blue: 96/255, alpha: 1) : .clear
     trailingButton.layer.cornerRadius = send ? 5 : 0
     trailingButton.setTitleColor(.white, for: .normal)
     trailingButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
-    trailingButton.isEnabled = !isSending
+    trailingButton.isEnabled = send && !isSending
   }
 
   private func updateHeight() {
@@ -372,10 +376,13 @@ final class ClawChatComposerBar: UIView, UITextViewDelegate {
         layout.addArrangedSubview(row)
       }
     } else {
-      let actions: [(String, String, ClawComposerAction)] = [
+      // A single expandable panel replaces a permanent emoji button.
+      // A nil action is handled locally and opens the existing emoji panel.
+      let actions: [(String, String, ClawComposerAction?)] = [
+        ("表情", "face.smiling", nil),
         ("照片", "photo", .photo), ("文件", "folder", .file),
-        ("剪贴板", "doc.on.clipboard", .clipboard), ("语音通话", "phone", .call),
-        ("语音语言", "globe", .language)
+        ("剪贴板", "doc.on.clipboard", .clipboard),
+        ("语音通话", "phone", .call), ("语音语言", "globe", .language)
       ]
       for start in stride(from: 0, to: actions.count, by: 4) {
         let row = UIStackView()
@@ -390,7 +397,10 @@ final class ClawChatComposerBar: UIView, UITextViewDelegate {
           config.imagePadding = 10
           config.baseForegroundColor = .label
           button.configuration = config
-          button.addAction(UIAction { [weak self] _ in self?.onAction?(action) }, for: .touchUpInside)
+          button.addAction(UIAction { [weak self] _ in
+            if let action { self?.onAction?(action) }
+            else { self?.setMode(.emoji) }
+          }, for: .touchUpInside)
           row.addArrangedSubview(button)
         }
         while row.arrangedSubviews.count < 4 { row.addArrangedSubview(UIView()) }

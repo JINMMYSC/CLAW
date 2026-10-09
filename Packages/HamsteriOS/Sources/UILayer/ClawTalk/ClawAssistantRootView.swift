@@ -1,5 +1,7 @@
+import CryptoKit
 import HamsterKeyboardKit
 import HamsterKit
+import PDFKit
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -28,9 +30,9 @@ struct ClawAssistantRootView: View {
         .tabItem { Label("记忆", systemImage: "brain.head.profile") }
         .tag(ClawAssistantTab.memory)
 
-      ClawTalkRootView(viewModel: viewModel)
-        .tabItem { Label("数据", systemImage: "tray.full.fill") }
-        .tag(ClawAssistantTab.data)
+      ClawSettingsHubView(viewModel: viewModel)
+        .tabItem { Label("设置", systemImage: "gearshape.fill") }
+        .tag(ClawAssistantTab.settings)
     }
     .navigationTitle("CLAW")
     .navigationBarTitleDisplayMode(.inline)
@@ -41,11 +43,8 @@ struct ClawAssistantRootView: View {
         summary: openTasks.first?.title ?? "打开 CLAW 查看今日",
         openTaskCount: openTasks.count
       ))
-      let spotlightRecords = (try? ClawMemoryStore.shared.memoryV2(limit: 25)) ?? []
-      ClawSpotlightIndexer.index(spotlightRecords.compactMap { record in
-        guard let url = URL(string: "hamster://clawTalk?memory=\(record.id.uuidString)") else { return nil }
-        return ClawSpotlightItem(id: record.id.uuidString, title: record.content, description: record.type.rawValue, deepLink: url)
-      })
+      // Never expose personal memory text to system Spotlight by default.
+      ClawSpotlightIndexer.indexSafeMemoryShortcut()
       // Heavy maintenance belongs in the host app, never in Keyboard Extension.
       Task(priority: .utility) {
         await AutoInsightService.shared.runIfNeeded()
@@ -70,7 +69,114 @@ struct ClawAssistantRootView: View {
 }
 
 private enum ClawAssistantTab: Hashable {
-  case assistant, today, people, memory, data
+  case assistant, today, people, memory, settings
+}
+
+/// A single in-app settings destination; raw input records live below Privacy
+/// rather than competing with Assistant/Today/People/Memory for a tab.
+private struct ClawSettingsHubView: View {
+  @ObservedObject var viewModel: ClawTalkViewModel
+  @State private var cannotOpenSettings = false
+
+  private func openCLAWSettings(_ address: String) {
+    guard let url = URL(string: address) else {
+      cannotOpenSettings = true
+      return
+    }
+    UIApplication.shared.open(url, options: [:]) { success in
+      if !success {
+        DispatchQueue.main.async { cannotOpenSettings = true }
+      }
+    }
+  }
+
+  var body: some View {
+    NavigationView {
+      List {
+        Section("键盘与输入") {
+          Button {
+            openCLAWSettings(HamsterConstants.appURLForKeyboardSettings)
+          } label: {
+            Label("输入方案、词库与键盘布局", systemImage: "keyboard")
+          }
+          NavigationLink {
+            List {
+              Text("1. 打开 iPhone「设置」→「通用」→「键盘」→「键盘」。")
+              Text("2. 选择「添加新键盘」，启用 CLAW。")
+              Text("3. 在微信等应用输入框长按地球键，切换到 CLAW。")
+              Text("4. 若需云端 AI，按功能说明检查键盘的网络与完全访问权限。")
+              Text("5. 语音录音需要在 CLAW 主程序内完成，返回聊天后明确点击插入文字。")
+            }
+            .navigationTitle("安装键盘")
+          } label: {
+            Label("键盘安装与启用说明", systemImage: "questionmark.circle")
+          }
+        }
+
+        Section("外观") {
+          Button {
+            openCLAWSettings(HamsterConstants.appURLForKeyboardSettings)
+          } label: {
+            Label("主题、深色模式与候选栏", systemImage: "paintpalette")
+          }
+        }
+
+        Section("AI 与语音") {
+          Button {
+            UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
+          } label: {
+            Label("麦克风、语音识别与相册权限", systemImage: "waveform")
+          }
+          Text("语音识别在主程序进行；键盘只接收经授权的文字，不会自动发送消息。")
+            .font(.footnote).foregroundColor(.secondary)
+        }
+
+        Section("数据与隐私") {
+          NavigationLink {
+            ClawTalkRootView(viewModel: viewModel)
+          } label: {
+            Label("输入记录、剪贴板与隐私设置", systemImage: "lock.doc")
+          }
+          Text("个人记忆及人物档案分别在底部「记忆」「人物」页管理；本机删除不会自动清除外部备份。")
+            .font(.footnote).foregroundColor(.secondary)
+        }
+
+        Section("同步与备份") {
+          Button {
+            openCLAWSettings(HamsterConstants.appURLForMain)
+          } label: {
+            Label("iCloud、备份与数据恢复", systemImage: "icloud")
+          }
+          Text("恢复文件前请确认备份来源，恢复后按提示重新部署 RIME。")
+            .font(.footnote).foregroundColor(.secondary)
+        }
+
+        Section("高级设置") {
+          Button {
+            openCLAWSettings(HamsterConstants.appURLForMain)
+          } label: {
+            Label("RIME 部署、词库与高级选项", systemImage: "slider.horizontal.3")
+          }
+        }
+
+        Section("诊断与兼容性") {
+          Button {
+            openCLAWSettings(HamsterConstants.appURLForMain)
+          } label: {
+            Label("运行日志、设备兼容与旧版设置", systemImage: "stethoscope")
+          }
+          Text("旧设置入口保持可用；iOS 15 不支持 iOS 16.1 才提供的实时活动。")
+            .font(.footnote).foregroundColor(.secondary)
+        }
+      }
+      .navigationTitle("设置")
+      .alert("无法打开设置页面", isPresented: $cannotOpenSettings) {
+        Button("知道了", role: .cancel) {}
+      } message: {
+        Text("请检查 CLAW 主程序是否正确安装，再返回设置重试。")
+      }
+    }
+  }
 }
 
 enum ClawComposerTrailingAction: Equatable {
@@ -81,11 +187,192 @@ enum ClawComposerPresentation {
   static func trailingAction(for text: String) -> ClawComposerTrailingAction {
     text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .more : .send
   }
+
+  /// One-shot dictation is a draft, not an instruction to send a message.
+  /// Preserve unsent text and keep a user review step before submission.
+  static func appendDictation(_ recognized: String, to currentDraft: String) -> String {
+    let text = recognized.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return currentDraft }
+    guard !currentDraft.isEmpty else { return text }
+    return currentDraft + "\n" + text
+  }
+}
+
+
+/// Ephemeral, per-conversation draft isolation. Never store unsent messages
+/// in cross-process UserDefaults or mix them between the global and person tabs.
+enum ClawDraftContext {
+  static func key(_ personID: UUID?) -> String {
+    personID?.uuidString ?? "global"
+  }
+
+  static func switching(
+    currentText: String,
+    from previousPerson: UUID?,
+    to nextPerson: UUID?,
+    cache: inout [String: String]
+  ) -> String {
+    let oldKey = key(previousPerson)
+    let newKey = key(nextPerson)
+    guard oldKey != newKey else { return currentText }
+    cache[oldKey] = currentText
+    return cache[newKey] ?? ""
+  }
+}
+
+/// Bounded, local-only attachment text extraction. PDFKit is provided by
+/// iOS; no third-party document runtime is embedded in the keyboard.
+enum ClawImportedAttachmentReader {
+  static func readText(from url: URL, maxCharacters: Int = 8_000, maxPDFPages: Int = 24) -> String? {
+    let maxCount = max(1, maxCharacters)
+    if url.pathExtension.lowercased() == "pdf" {
+      guard let pdf = PDFDocument(url: url) else { return nil }
+      var text = ""
+      for index in 0..<min(pdf.pageCount, max(1, maxPDFPages)) {
+        guard let pageText = pdf.page(at: index)?.string, !pageText.isEmpty else { continue }
+        if !text.isEmpty, text.count < maxCount { text += "\n" }
+        guard text.count < maxCount else { break }
+        text += String(pageText.prefix(maxCount - text.count))
+      }
+      let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      return cleaned.isEmpty ? nil : cleaned
+    }
+    // Don't load multi-GB files into memory just to attach 8,000 characters.
+    guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+    defer { try? handle.close() }
+    guard let data = try? handle.read(upToCount: maxCount * 4 + 64),
+          !data.isEmpty else { return nil }
+    let text = String(decoding: data, as: UTF8.self)
+    let cleaned = String(text.prefix(maxCount))
+    return cleaned.isEmpty ? nil : cleaned
+  }
+}
+
+private struct ClawScreenshotReviewSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  let preview: ClawScreenshotIngestionResult
+  let profiles: [HeartTargetProfile]
+  let onConfirm: (UUID, [ClawConversationMessage]) throws -> Int
+  let onUseText: (String) -> Void
+  @State private var selectedProfileID: UUID?
+  @State private var reviewedMessages: [ClawConversationMessage]
+  @State private var errorText: String?
+
+  init(
+    preview: ClawScreenshotIngestionResult,
+    profiles: [HeartTargetProfile],
+    onConfirm: @escaping (UUID, [ClawConversationMessage]) throws -> Int,
+    onUseText: @escaping (String) -> Void
+  ) {
+    self.preview = preview
+    self.profiles = profiles
+    self.onConfirm = onConfirm
+    self.onUseText = onUseText
+    _selectedProfileID = State(initialValue: preview.profile?.id)
+    _reviewedMessages = State(initialValue: preview.messages)
+  }
+
+  private var canConfirm: Bool {
+    selectedProfileID != nil && !reviewedMessages.isEmpty &&
+      reviewedMessages.allSatisfy {
+        $0.speaker != .unknown &&
+        !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      }
+  }
+
+  var body: some View {
+    NavigationView {
+      Form {
+        Section {
+          Menu {
+            ForEach(profiles) { profile in
+              Button(profile.displayName) { selectedProfileID = profile.id }
+            }
+          } label: {
+            HStack {
+              Text("聊天对象")
+              Spacer()
+              Text(profiles.first(where: { $0.id == selectedProfileID })?.displayName ?? "请手动选择")
+                .foregroundColor(.secondary)
+            }
+          }
+          if profiles.isEmpty {
+            Text("还没有人物档案。请先在「人物」页新建，再导入截图。")
+              .font(.caption).foregroundColor(.secondary)
+          }
+        } header: {
+          Text("确认归属")
+        } footer: {
+          Text("不会依据截图标题自动创建人物；内容只归档到你确认的对象。")
+        }
+
+        Section("逐条校对") {
+          if reviewedMessages.isEmpty {
+            Text("未识别出独立聊天气泡，可先将 OCR 原文加入草稿。")
+              .font(.footnote).foregroundColor(.secondary)
+          }
+          ForEach($reviewedMessages) { $message in
+            VStack(alignment: .leading, spacing: 8) {
+              Picker("发言者", selection: $message.speaker) {
+                Text("请确认").tag(ClawConversationSpeaker.unknown)
+                Text("我").tag(ClawConversationSpeaker.me)
+                Text("对方").tag(ClawConversationSpeaker.other)
+              }
+              .pickerStyle(.segmented)
+              TextEditor(text: $message.content)
+                .frame(minHeight: 56, maxHeight: 108)
+                .accessibilityLabel("校对消息文字")
+            }
+            .padding(.vertical, 4)
+          }
+        }
+
+        Section {
+          Button("仅把 OCR 原文加入聊天草稿") {
+            onUseText(preview.rawText)
+            dismiss()
+          }
+          .disabled(preview.rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        } footer: {
+          Text("此操作不会创建联系人、任务或长期记忆，也不会保存截图原图。")
+        }
+      }
+      .navigationTitle("核对聊天截图")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .topBarLeading) {
+          Button("取消") { dismiss() }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("确认归档") {
+            guard let id = selectedProfileID else { return }
+            do {
+              _ = try onConfirm(id, reviewedMessages)
+              dismiss()
+            } catch {
+              errorText = error.localizedDescription
+            }
+          }
+          .disabled(!canConfirm)
+        }
+      }
+      .alert("无法归档", isPresented: Binding(
+        get: { errorText != nil },
+        set: { if !$0 { errorText = nil } }
+      )) {
+        Button("知道了", role: .cancel) { errorText = nil }
+      } message: {
+        Text(errorText ?? "")
+      }
+    }
+  }
 }
 
 private struct ClawAssistantChatView: View {
   @ObservedObject private var chat = ClawChatService.shared
   @State private var input = ""
+  @State private var draftsByPerson: [String: String] = [:]
+  @State private var draftPersonID = HeartTargetService.shared.selectedProfile?.id
   @State private var recording = false
   @State private var callActive = false
   @State private var callListening = false
@@ -94,9 +381,13 @@ private struct ClawAssistantChatView: View {
   @State private var selectedProfileName = HeartTargetService.shared.selectedProfile?.displayName
   @State private var searchText = ""
   @State private var showingSearch = false
+  @State private var showingNewConversationConfirmation = false
   @State private var showingPhotoAttachment = false
   @State private var showingFileAttachment = false
   @State private var attachmentStatus = ""
+  @State private var lastScreenshotReceipt: ClawScreenshotImportReceipt?
+  @State private var pendingScreenshotReview: ClawScreenshotIngestionResult?
+  @State private var showingScreenshotReview = false
   @State private var quickPrompts = ClawQuickPromptStore(
     defaults: UserDefaults(suiteName: HamsterConstants.appGroupName) ?? .standard
   ).prompts
@@ -177,6 +468,25 @@ private struct ClawAssistantChatView: View {
           }
         }
       }
+      if let receipt = lastScreenshotReceipt {
+        HStack {
+          Text("最近一次截图已归档 \(receipt.messageIDs.count) 条")
+            .font(.caption).foregroundColor(.secondary)
+          Spacer()
+          Button("撤销本次导入") {
+            do {
+              let removed = try ClawScreenshotIngestionService().undo(receipt)
+              attachmentStatus = "已撤销本次导入的 \(removed) 条截图记录"
+              lastScreenshotReceipt = nil
+            } catch {
+              attachmentStatus = "无法撤销：\(error.localizedDescription)"
+            }
+          }
+          .font(.caption)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
+      }
       Divider()
       if let id = keyboardDictationID {
         HStack(spacing: 12) {
@@ -212,7 +522,11 @@ private struct ClawAssistantChatView: View {
     }
     .background(Color(.systemGroupedBackground))
     .onAppear {
+      if ClawVoiceDictationHandoff.shared.failStalePending() {
+        voiceHint = "上一次语音录音中断，请从键盘重试"
+      }
       let profile = HeartTargetService.shared.selectedProfile
+      switchDraft(to: profile?.id)
       selectedProfileName = profile?.displayName
       chat.switchContext(contactID: profile?.id)
 #if DEBUG
@@ -241,6 +555,15 @@ private struct ClawAssistantChatView: View {
         startHandsFreeCall()
       }
     }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+      // iOS can suspend microphone work without a final Speech callback.
+      // Leave an explicit failure for the keyboard instead of a stuck
+      // "pending" request that prevents the user from retrying.
+      if recording || keyboardDictationID != nil {
+        cancelPendingVoice(preserveKeyboardFailure: true)
+      }
+      if callActive { stopHandsFreeCall() }
+    }
     .onDisappear {
       cancelPendingVoice()
       stopHandsFreeCall()
@@ -259,14 +582,49 @@ private struct ClawAssistantChatView: View {
         ingestScreenshot(image)
       }
     }
+    .sheet(isPresented: $showingScreenshotReview, onDismiss: {
+      pendingScreenshotReview = nil
+    }) {
+      if let preview = pendingScreenshotReview {
+        ClawScreenshotReviewSheet(
+          preview: preview,
+          profiles: HeartTargetService.shared.profiles,
+          onConfirm: { id, reviewed in
+            guard let profile = HeartTargetService.shared.profile(id: id) else {
+              throw ClawScreenshotReviewError.missingPerson
+            }
+            let receipt = try ClawScreenshotIngestionService().confirmReviewedWithReceipt(
+              messages: reviewed, for: profile
+            )
+            let count = receipt.messageIDs.count
+            if count > 0 { lastScreenshotReceipt = receipt }
+            attachmentStatus = count == 0
+              ? "截图消息已经归档，无需重复导入"
+              : "已审核并归档 \(count) 条截图消息到 \(profile.displayName)"
+            if count > 0 {
+              input = [input, "已确认归档 \(count) 条截图消息，请结合这些内容回答。"]
+                .filter { !$0.isEmpty }.joined(separator: "\n")
+            }
+            return count
+          },
+          onUseText: { text in
+            input = [input, text].filter { !$0.isEmpty }.joined(separator: "\n")
+            attachmentStatus = "截图文字已加入草稿，未写入长期记忆"
+          }
+        )
+      }
+    }
     .fileImporter(isPresented: $showingFileAttachment, allowedContentTypes: [.plainText, .text, .pdf], allowsMultipleSelection: false) { result in
       guard case .success(let urls) = result, let url = urls.first else { return }
       let scoped = url.startAccessingSecurityScopedResource()
       defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-      if let text = try? String(contentsOf: url), !text.isEmpty {
-        input = [input, "文件：\(url.lastPathComponent)\n\(String(text.prefix(8_000)))"].filter { !$0.isEmpty }.joined(separator: "\n")
+      if let text = ClawImportedAttachmentReader.readText(from: url) {
+        input = [input, "文件：\(url.lastPathComponent)\n\(text)"].filter { !$0.isEmpty }.joined(separator: "\n")
+        attachmentStatus = "文件文字已加入草稿，可检查后发送"
       } else {
-        attachmentStatus = "无法读取这个文件"
+        attachmentStatus = url.pathExtension.lowercased() == "pdf"
+          ? "PDF 无可提取文字；扫描版请使用截图识别"
+          : "无法读取这个文件"
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: .clawVoiceCallRequested)) { _ in
@@ -279,6 +637,19 @@ private struct ClawAssistantChatView: View {
     }
     .onReceive(NotificationCenter.default.publisher(for: .heartTargetProfilesDidChange)) { _ in
       let profile = HeartTargetService.shared.selectedProfile
+      if draftPersonID != profile?.id {
+        // A transcript started for person A must not be sent under person B.
+        // UUID invalidation also stops late Speech authorization callbacks.
+        if recording || voiceGesture.isRecording || oneShotFinalizing || keyboardDictationID != nil {
+          cancelPendingVoice(preserveKeyboardFailure: keyboardDictationID != nil)
+          voiceHint = "已切换聊天对象，原会话语音输入已取消"
+        } else {
+          voiceAuthorizationRequestID = UUID()
+          holdVoiceRequestID = UUID()
+        }
+        if callActive { stopHandsFreeCall() }
+      }
+      switchDraft(to: profile?.id)
       selectedProfileName = profile?.displayName
       chat.switchContext(contactID: profile?.id)
     }
@@ -339,17 +710,38 @@ private struct ClawAssistantChatView: View {
       Button { showingSearch.toggle(); if !showingSearch { searchText = "" } } label: {
         Image(systemName: showingSearch ? "xmark.circle.fill" : "magnifyingglass")
       }
+      .accessibilityLabel(showingSearch ? "关闭对话搜索" : "搜索当前对话")
       if chat.isSending {
         Button("停止") { chat.stopGenerating() }.font(.caption.weight(.semibold)).foregroundColor(.red)
-      } else if chat.messages.contains(where: { $0.role == "assistant" && !$0.excludeFromContext }) {
-        Button("重生成") { chat.regenerateLastResponse() }.font(.caption.weight(.semibold))
       }
-      Button("新对话") { chat.clearHistory() }
-        .font(.caption.weight(.semibold))
+      Menu {
+        if !chat.isSending && chat.messages.contains(where: { $0.role == "assistant" && !$0.excludeFromContext }) {
+          Button { chat.regenerateLastResponse() } label: {
+            Label("重新生成回复", systemImage: "arrow.clockwise")
+          }
+        }
+        Button {
+          if chat.messages.isEmpty { chat.clearHistory() }
+          else { showingNewConversationConfirmation = true }
+        } label: {
+          Label("新对话", systemImage: "square.and.pencil")
+        }
+      } label: {
+        Image(systemName: "ellipsis.circle")
+          .frame(minWidth: 40, minHeight: 40)
+          .contentShape(Rectangle())
+      }
+      .accessibilityLabel("对话选项")
     }
     .padding(.horizontal, 14)
     .padding(.vertical, 9)
     .background(Color(.secondarySystemGroupedBackground))
+    .confirmationDialog("开启新对话？", isPresented: $showingNewConversationConfirmation, titleVisibility: .visible) {
+      Button("清空当前对话", role: .destructive) { chat.clearHistory() }
+      Button("取消", role: .cancel) {}
+    } message: {
+      Text("当前会话的聊天历史会被清空，人物档案和长期记忆不会删除。")
+    }
   }
 
   private var emptyAssistant: some View {
@@ -430,10 +822,19 @@ private struct ClawAssistantChatView: View {
     .frame(height: composerHeight)
   }
 
+  private func switchDraft(to personID: UUID?) {
+    input = ClawDraftContext.switching(
+      currentText: input, from: draftPersonID, to: personID, cache: &draftsByPerson
+    )
+    draftPersonID = personID
+  }
+
   private func send(_ text: String) {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
     input = ""
+    // A sent draft must not be restored when switching back to this person.
+    draftsByPerson[ClawDraftContext.key(draftPersonID)] = ""
     chat.send(trimmed)
   }
 
@@ -495,8 +896,13 @@ private struct ClawAssistantChatView: View {
           }
           switch result {
           case .success(let text):
-            voiceHint = ""
-            send(text)
+            let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleaned.isEmpty {
+              voiceHint = "没有识别到文字，请重试"
+            } else {
+              input = ClawComposerPresentation.appendDictation(cleaned, to: input)
+              voiceHint = "已转成文字，可检查或编辑后发送"
+            }
           case .failure(let error):
             voiceHint = "语音识别失败：\(error.localizedDescription)"
           }
@@ -548,9 +954,13 @@ private struct ClawAssistantChatView: View {
     voiceHint = discardVoiceResult ? "已取消" : "正在完成识别…"
   }
 
-  private func cancelPendingVoice() {
+  private func cancelPendingVoice(preserveKeyboardFailure: Bool = false) {
     if let keyboardID = keyboardDictationID {
-      ClawVoiceDictationHandoff.shared.cancel(id: keyboardID)
+      if preserveKeyboardFailure {
+        _ = ClawVoiceDictationHandoff.shared.fail(id: keyboardID, reason: "语音因应用切换而中断，请重试")
+      } else {
+        ClawVoiceDictationHandoff.shared.cancel(id: keyboardID)
+      }
       keyboardDictationID = nil
     }
     keyboardDictationFinalizing = false
@@ -579,22 +989,32 @@ private struct ClawAssistantChatView: View {
 
   private func ingestScreenshot(_ image: UIImage) {
     attachmentStatus = "正在本地识别截图…"
-    let sourceRef = image.jpegData(compressionQuality: 0.88).flatMap { ClawScreenshotEvidenceStore.shared.saveJPEG($0) }
+    // A stable, local-only digest permits idempotent re-import without
+    // persisting the underlying screenshot (or paying for a new framework).
+    let digestSource = image.jpegData(compressionQuality: 0.8).map { data -> String in
+      "screenshot-digest:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
     VisionOCRService.shared.recognizeLines(in: image) { result in
       DispatchQueue.main.async {
         switch result {
-        case .failure(let error): attachmentStatus = "截图识别失败：\(error.localizedDescription)"
+        case .failure(let error):
+          attachmentStatus = "截图识别失败：\(error.localizedDescription)"
         case .success(let lines):
           do {
-            let ingestion = try ClawScreenshotIngestionService().ingest(lines: lines, selectedProfile: HeartTargetService.shared.selectedProfile, sourceRef: sourceRef)
-            if ingestion.requiresReview {
-              input = [input, "待确认的截图文字：\n\(ingestion.rawText)"].filter { !$0.isEmpty }.joined(separator: "\n")
-              attachmentStatus = "人物或发言方置信度不足，请检查文字后再发送"
-            } else {
-              input = [input, "已导入 \(ingestion.messages.count) 条截图消息，请结合这些内容回答。"].filter { !$0.isEmpty }.joined(separator: "\n")
-              attachmentStatus = "截图已归档到当前人物时间线"
-            }
-          } catch { attachmentStatus = "截图导入失败：\(error.localizedDescription)" }
+            // OCR is a preview only. No new person, conversation, task, memory
+            // or evidence file is created until the user explicitly confirms.
+            let preview = try ClawScreenshotIngestionService().ingest(
+              lines: lines,
+              selectedProfile: HeartTargetService.shared.selectedProfile,
+              sourceRef: digestSource,
+              requireUserReview: true
+            )
+            pendingScreenshotReview = preview
+            showingScreenshotReview = true
+            attachmentStatus = "请核对人物、发言者与文字，再决定是否归档"
+          } catch {
+            attachmentStatus = "截图识别失败：\(error.localizedDescription)"
+          }
         }
       }
     }
@@ -605,6 +1025,10 @@ private struct ClawAssistantChatView: View {
     if callActive { stopHandsFreeCall() }
     guard !recording, !oneShotFinalizing else { return }
     let handoff = ClawVoiceDictationHandoff.shared
+    if handoff.snapshot.state == .failed {
+      voiceHint = handoff.snapshot.error ?? "语音输入未完成，请重试"
+      return
+    }
     if handoff.snapshot.state == .pending {
       keyboardDictationID = handoff.snapshot.id
       completedKeyboardDictationText = nil
@@ -703,8 +1127,10 @@ private struct ClawAssistantChatView: View {
         DispatchQueue.main.async {
           callListening = false
           if callActive {
-            voiceHint = "通话中断：\(error.localizedDescription)"
-            callActive = false
+            let errorMessage = "通话中断：\(error.localizedDescription)"
+            // Explicitly close the mic/TTS and Live Activity on error.
+            stopHandsFreeCall()
+            voiceHint = errorMessage
           }
         }
       }
@@ -999,6 +1425,50 @@ private struct ClawTaskDetailView: View {
   }
 }
 
+/// No local deletion occurs without a second, typed-name confirmation.
+/// External archives and cloud copies are explicitly outside this operation.
+private struct ClawPersonEraseReview: View {
+  @Environment(\.dismiss) private var dismiss
+  let profile: HeartTargetProfile
+  let onErase: () -> Bool
+  @State private var typedName = ""
+  @State private var errorText: String?
+
+  var body: some View {
+    NavigationView {
+      Form {
+        Section("准备清除的对象") {
+          Text(profile.displayName).font(.headline)
+          Text("会删除此人物的本机聊天记录、长期记忆、待办和关联证据。不能撤销。本操作不修改其他人物，也不会自动删除你此前导出的备份或云端副本。")
+            .foregroundColor(.secondary)
+        }
+        Section("再次确认") {
+          TextField("输入此人物的完整名称", text: $typedName)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+          Button("永久清除本机关联资料", role: .destructive) {
+            if onErase() { dismiss() }
+            else { errorText = "清除失败，人物档案保留，请检查存储状态后重试" }
+          }
+          .disabled(typedName != profile.displayName)
+        }
+      }
+      .navigationTitle("清除人物资料")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("取消") { dismiss() }
+        }
+      }
+      .alert("无法清除", isPresented: Binding(
+        get: { errorText != nil },
+        set: { if !$0 { errorText = nil } }
+      )) {
+        Button("知道了", role: .cancel) { errorText = nil }
+      } message: { Text(errorText ?? "") }
+    }
+  }
+}
+
 private struct ClawPeopleView: View {
   let onUseProfile: () -> Void
   @State private var profiles = HeartTargetService.shared.profiles
@@ -1007,6 +1477,7 @@ private struct ClawPeopleView: View {
   @State private var editingProfile: HeartTargetProfile?
   @State private var filter = ClawPeopleFilter.all
   @State private var pendingDelete: HeartTargetProfile?
+  @State private var pendingEraseProfile: HeartTargetProfile?
   @State private var mergingProfile: HeartTargetProfile?
 
   private var filteredProfiles: [HeartTargetProfile] {
@@ -1119,14 +1590,26 @@ private struct ClawPeopleView: View {
         }
       }
       .alert(item: $pendingDelete) { profile in
-        Alert(
-          title: Text("删除 \(profile.displayName)？"),
-          message: Text("人物档案会删除；关联记忆、待办和聊天记录会保留并转为全局记录。"),
-          primaryButton: .destructive(Text("删除")) {
-            ClawPeopleWorkflowService.shared.deleteProfilePreservingRecords(profile.id)
+        let hasRecords = (try? ClawMemoryStore.shared.hasContactReferences(id: profile.id)) ?? true
+        return Alert(
+          title: Text(hasRecords ? "该人物含有关联记录" : "删除 \(profile.displayName)？"),
+          message: Text(hasRecords
+            ? "不能只删除档案，否则私密记忆可能失去归属。若确实要清除本机该人物及其记录，请进入二次核对。备份和云端副本不会自动删除。"
+            : "该人物没有关联记录。删除档案不会影响其他人物。"),
+          primaryButton: .destructive(Text(hasRecords ? "核对后清除…" : "删除档案")) {
+            if hasRecords {
+              pendingEraseProfile = profile
+            } else {
+              _ = ClawPeopleWorkflowService.shared.deleteProfilePreservingRecords(profile.id)
+            }
           },
           secondaryButton: .cancel()
         )
+      }
+      .sheet(item: $pendingEraseProfile) { profile in
+        ClawPersonEraseReview(profile: profile) {
+          ClawPeopleWorkflowService.shared.deleteProfileAndLocalRecords(profile.id)
+        }
       }
       .confirmationDialog(
         "将 \(mergingProfile?.displayName ?? "此人物") 合并到",

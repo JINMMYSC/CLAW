@@ -5,9 +5,22 @@ on:
       - main
       - work/claw-voice-keyboard-bg
       - work/claw-productization-20261006
+      - 'work/claw-ux-*'
   pull_request:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      stress_100k:
+        description: 'Run opt-in 100,000-record memory stress gate (slow)'
+        type: boolean
+        required: false
+        default: false
+      stress_250k:
+        description: 'Run opt-in 250,000 conversation rows / 500 people benchmark'
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -43,6 +56,9 @@ jobs:
         run: xcodebuild -version && swift --version
 
       - name: Run HamsterKit unit tests
+        env:
+          TEST_RUNNER_CLAW_STRESS_TEST: ${{ ((github.event_name == 'workflow_dispatch' && inputs.stress_100k) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[claw-stress]'))) && '1' || '0' }}
+          TEST_RUNNER_CLAW_CONVERSATION_STRESS: ${{ ((github.event_name == 'workflow_dispatch' && inputs.stress_250k) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[claw-stress]'))) && '1' || '0' }}
         run: |
           set -euo pipefail
           SIMULATOR_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(d["udid"] for runtime in data["devices"].values() for d in runtime if d["name"].startswith("iPhone")))')

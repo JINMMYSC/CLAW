@@ -289,11 +289,13 @@ public struct ClawEvolutionFeedback: Codable, Identifiable, Equatable {
 
 public enum ClawMemoryStoreError: Error, LocalizedError {
   case databaseUnavailable
+  case scopePromotionForbidden
   case sqlite(message: String)
 
   public var errorDescription: String? {
     switch self {
     case .databaseUnavailable: return "CLAW Memory database is unavailable"
+    case .scopePromotionForbidden: return "不能将人物私密记录直接转换为全局记忆"
     case .sqlite(let message): return message
     }
   }
@@ -521,6 +523,30 @@ public final class ClawMemoryStore {
       """
     ]
     for statement in statements { try? execute(statement) }
+    // Older versions deleted FTS rows by an UNINDEXED text column on every
+    // write, causing O(N²)-like behavior at scale. Migrate once to make the
+    // FTS rowid match the indexed memory_v2 rowid.
+    try? upgradeFTSRowIDIndex()
+  }
+
+  private func upgradeFTSRowIDIndex() throws {
+    let stmt = try prepare("PRAGMA user_version;")
+    let version = sqlite3_step(stmt) == SQLITE_ROW ? sqlite3_column_int(stmt, 0) : 0
+    sqlite3_finalize(stmt)
+    guard version < 1 else { return }
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      try executeUnlocked("DELETE FROM memory_v2_fts;")
+      try executeUnlocked("""
+        INSERT INTO memory_v2_fts (rowid,id,content,normalized_key)
+        SELECT rowid,id,content,normalized_key FROM memory_v2;
+      """)
+      try executeUnlocked("PRAGMA user_version = 1;")
+      try executeUnlocked("COMMIT;")
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
   }
 
   private func requireDB() throws -> OpaquePointer {
@@ -765,14 +791,41 @@ public final class ClawMemoryStore {
 
   @discardableResult
   public func appendConversation(_ message: ClawConversationMessage) throws -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    return try appendConversationUnlocked(message)
+  }
+
+  /// Import long conversation timelines in one transaction. A failure rolls
+  /// back all rows, and duplicates are omitted from the returned collection.
+  @discardableResult
+  public func appendConversationsBatch(_ messages: [ClawConversationMessage]) throws -> [ClawConversationMessage] {
+    guard !messages.isEmpty else { return [] }
+    lock.lock(); defer { lock.unlock() }
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      var inserted: [ClawConversationMessage] = []
+      for message in messages {
+        if try appendConversationUnlocked(message) {
+          inserted.append(message)
+        }
+      }
+      try executeUnlocked("COMMIT;")
+      return inserted
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
+  }
+
+  private func appendConversationUnlocked(_ message: ClawConversationMessage) throws -> Bool {
     let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return false }
-    lock.lock(); defer { lock.unlock() }
     let fingerprint = Self.fingerprint(
       contactID: message.contactID,
       speaker: message.speaker,
       content: trimmed,
-      occurredAt: message.occurredAt
+      occurredAt: message.occurredAt,
+      sourceRef: message.sourceRef
     )
     let sql = "INSERT OR IGNORE INTO conversation_messages (id,contact_id,speaker,sender_name,content,occurred_at,source_type,source_ref,confidence,fingerprint) VALUES (?,?,?,?,?,?,?,?,?,?);"
     let statement = try prepare(sql); defer { sqlite3_finalize(statement) }
@@ -790,6 +843,145 @@ public final class ClawMemoryStore {
       throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
     }
     return sqlite3_changes(try requireDB()) > 0
+  }
+
+  /// Commit screenshot bubbles, extracted memories and tasks in ONE SQLite
+  /// transaction. A task/evidence/FTS failure must not leave orphaned chat
+  /// rows that cannot be undone using an import receipt.
+  @discardableResult
+  public func commitScreenshotImport(
+    _ messages: [ClawConversationMessage], personID: UUID
+  ) throws -> [ClawConversationMessage] {
+    guard !messages.isEmpty else { return [] }
+    guard messages.allSatisfy({
+      $0.contactID == personID && $0.sourceType == "screenshot" &&
+        $0.speaker != .unknown && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }) else {
+      throw ClawMemoryStoreError.sqlite(message: "无法归档未经确认的截图消息")
+    }
+    lock.lock(); defer { lock.unlock() }
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      var inserted: [ClawConversationMessage] = []
+      for message in messages {
+        if try appendConversationUnlocked(message) { inserted.append(message) }
+      }
+      if !inserted.isEmpty {
+        let flush = MemoryFlushService().extract(
+          sessionID: UUID(), messages: inserted, personID: personID
+        )
+        let sdk = DefaultMemorySDK(store: self)
+        for record in flush.records {
+          let payload = try JSONEncoder().encode(record)
+          try upsertMemoryV2Row(record, payload: payload)
+          try insertMemoryVersion(record, payload: payload)
+          try replaceMemoryEvidence(record)
+          try insertMemoryLineage(record)
+          try upsertMemoryUnlocked(sdk.legacyProjection(record))
+        }
+        for task in flush.tasks { try upsertTask(task) }
+      }
+      try executeUnlocked("COMMIT;")
+      return inserted
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
+  }
+
+  /// Undo an explicitly approved screenshot import using its inserted-ID
+  /// receipt. Validate *every* message belongs to this person and was imported
+  /// from a screenshot before removing any row. Associated task and inferred
+  /// memory rows are rolled back in the same transaction.
+  @discardableResult
+  public func undoScreenshotImport(messageIDs: [UUID], personID: UUID) throws -> Int {
+    guard !messageIDs.isEmpty, messageIDs.count <= 500,
+          Set(messageIDs).count == messageIDs.count else { return 0 }
+    lock.lock(); defer { lock.unlock() }
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      try executeUnlocked("CREATE TEMP TABLE IF NOT EXISTS claw_undo_messages(id TEXT PRIMARY KEY);")
+      try executeUnlocked("CREATE TEMP TABLE IF NOT EXISTS claw_undo_memories(id TEXT PRIMARY KEY);")
+      try executeUnlocked("CREATE TEMP TABLE IF NOT EXISTS claw_undo_raw(id TEXT PRIMARY KEY);")
+      for table in ["claw_undo_messages", "claw_undo_memories", "claw_undo_raw"] {
+        try executeUnlocked("DELETE FROM \(table);")
+      }
+      for messageID in messageIDs {
+        let stmt = try prepare("""
+          SELECT 1 FROM conversation_messages
+          WHERE id = ? AND contact_id = ? AND source_type = 'screenshot' LIMIT 1;
+        """)
+        bindText(messageID.uuidString, at: 1, in: stmt)
+        bindText(personID.uuidString, at: 2, in: stmt)
+        let match = sqlite3_step(stmt) == SQLITE_ROW
+        sqlite3_finalize(stmt)
+        guard match else {
+          throw ClawMemoryStoreError.sqlite(message: "截图导入记录已改变，撤销已取消")
+        }
+        let insert = try prepare("INSERT INTO claw_undo_messages(id) VALUES (?);")
+        bindText(messageID.uuidString, at: 1, in: insert)
+        let rc = sqlite3_step(insert)
+        sqlite3_finalize(insert)
+        guard rc == SQLITE_DONE else {
+          throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+        }
+      }
+      let related = try prepare("""
+        INSERT OR IGNORE INTO claw_undo_memories(id)
+        SELECT m.id FROM memory_v2 m
+        JOIN memory_evidence e ON e.memory_id = m.id
+        WHERE m.person_id = ?
+          AND e.locator IN (SELECT id FROM claw_undo_messages);
+      """)
+      bindText(personID.uuidString, at: 1, in: related)
+      let r = sqlite3_step(related)
+      sqlite3_finalize(related)
+      guard r == SQLITE_DONE else {
+        throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+      }
+      try executeUnlocked("""
+        INSERT OR IGNORE INTO claw_undo_raw
+        SELECT raw_event_id FROM memory_evidence
+        WHERE memory_id IN (SELECT id FROM claw_undo_memories);
+      """)
+      try executeUnlocked("""
+        DELETE FROM memory_v2_fts WHERE rowid IN
+        (SELECT rowid FROM memory_v2 WHERE id IN (SELECT id FROM claw_undo_memories));
+      """)
+      for table in ["memory_evidence", "memory_versions", "memory_audit"] {
+        try executeUnlocked("DELETE FROM \(table) WHERE memory_id IN (SELECT id FROM claw_undo_memories);")
+      }
+      try executeUnlocked("""
+        DELETE FROM memory_lineage WHERE memory_id IN (SELECT id FROM claw_undo_memories)
+          OR parent_memory_id IN (SELECT id FROM claw_undo_memories)
+          OR source_memory_id IN (SELECT id FROM claw_undo_memories);
+      """)
+      try executeUnlocked("DELETE FROM memory_v2 WHERE id IN (SELECT id FROM claw_undo_memories);")
+      try executeUnlocked("DELETE FROM memory_items WHERE id IN (SELECT id FROM claw_undo_memories);")
+      let personStmt = try prepare("""
+        DELETE FROM secretary_tasks WHERE contact_id = ? AND source_type = 'screenshot'
+          AND source_ref IN (SELECT id FROM claw_undo_messages);
+      """)
+      bindText(personID.uuidString, at: 1, in: personStmt)
+      let taskRC = sqlite3_step(personStmt)
+      sqlite3_finalize(personStmt)
+      guard taskRC == SQLITE_DONE else {
+        throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+      }
+      try executeUnlocked("DELETE FROM conversation_messages WHERE id IN (SELECT id FROM claw_undo_messages);")
+      try executeUnlocked("""
+        DELETE FROM raw_events WHERE id IN (SELECT id FROM claw_undo_raw)
+          AND id NOT IN (SELECT raw_event_id FROM memory_evidence);
+      """)
+      for table in ["claw_undo_raw", "claw_undo_memories", "claw_undo_messages"] {
+        try executeUnlocked("DELETE FROM \(table);")
+      }
+      try executeUnlocked("COMMIT;")
+      return messageIDs.count
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
   }
 
   public func conversation(contactID: UUID?, limit: Int = 80) throws -> [ClawConversationMessage] {
@@ -879,12 +1071,34 @@ public final class ClawMemoryStore {
   }
 
   public func tasks(status: ClawTaskStatus? = .open, limit: Int = 100) throws -> [ClawSecretaryTask] {
+    try queryTasks(status: status, contactID: nil, contextOnly: false, limit: limit)
+  }
+
+  /// Apply person privacy constraints *before* LIMIT. Filtering after fetching
+  /// the first 40 tasks may hide global/current-person tasks beneath unrelated
+  /// people's deadlines, even when the final in-memory filter is safe.
+  public func contextTasks(contactID: UUID?, limit: Int = 40) throws -> [ClawSecretaryTask] {
+    try queryTasks(status: .open, contactID: contactID, contextOnly: true, limit: limit)
+  }
+
+  private func queryTasks(
+    status: ClawTaskStatus?, contactID: UUID?, contextOnly: Bool, limit: Int
+  ) throws -> [ClawSecretaryTask] {
     lock.lock(); defer { lock.unlock() }
-    let whereClause = status == nil ? "" : " WHERE status = ?"
+    var conditions: [String] = []
+    if status != nil { conditions.append("status = ?") }
+    if contextOnly {
+      conditions.append(contactID == nil ? "contact_id IS NULL" : "(contact_id IS NULL OR contact_id = ?)")
+    }
+    let whereClause = conditions.isEmpty ? "" : " WHERE " + conditions.joined(separator: " AND ")
     let sql = "SELECT id,kind,status,title,details,contact_id,due_at,created_at,source_type,source_ref FROM secretary_tasks\(whereClause) ORDER BY CASE WHEN due_at IS NULL THEN 1 ELSE 0 END, due_at ASC, created_at DESC LIMIT ?;"
     let statement = try prepare(sql); defer { sqlite3_finalize(statement) }
     var index: Int32 = 1
     if let status { bindText(status.rawValue, at: index, in: statement); index += 1 }
+    if contextOnly, let contactID {
+      bindText(contactID.uuidString, at: index, in: statement)
+      index += 1
+    }
     sqlite3_bind_int(statement, index, Int32(max(1, limit)))
     var result: [ClawSecretaryTask] = []
     while sqlite3_step(statement) == SQLITE_ROW {
@@ -933,9 +1147,174 @@ public final class ClawMemoryStore {
     return sqlite3_changes(try requireDB()) > 0
   }
 
-  /// Reassigns every contact-bound record atomically. Passing `nil` preserves
-  /// the records as global data when a profile is deleted.
+  /// A person cannot be removed if any dependent data still references the
+  /// person. Detaching such records into global scope would expose private
+  /// context to unrelated chats. Check V2/legacy SQLite, standing intents and
+  /// the chat history held in App Group UserDefaults.
+  public func hasContactReferences(id: UUID) throws -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    let columns: [(String, String)] = [
+      ("memory_items", "subject_id"),
+      ("conversation_messages", "contact_id"),
+      ("secretary_tasks", "contact_id"),
+      ("evolution_feedback", "contact_id"),
+      ("memory_v2", "person_id"),
+    ]
+    for (table, column) in columns {
+      // Names are constants defined above, never arbitrary user input.
+      let stmt = try prepare("SELECT 1 FROM \(table) WHERE \(column) = ? LIMIT 1;")
+      bindText(id.uuidString, at: 1, in: stmt)
+      let outcome = sqlite3_step(stmt)
+      sqlite3_finalize(stmt)
+      if outcome == SQLITE_ROW { return true }
+      if outcome != SQLITE_DONE {
+        throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+      }
+    }
+    // Standing intents are stored as Codable payloads, not in a person_id
+    // index. Even cancelled/expired intents remain associated with the person.
+    if try standingIntents().contains(where: { $0.personID == id }) { return true }
+    let historyKey = "claw_chat_history_v2_contact_\(id.uuidString)"
+    if UserDefaults(suiteName: HamsterConstants.appGroupName)?.object(forKey: historyKey) != nil {
+      return true
+    }
+    return false
+  }
+
+  /// Irreversible local erase for one Memory V2 record, including all
+  /// historical versions, evidence and stored audit snapshots. An archived
+  /// memory is reversible; full deletion is deliberately not reversible.
+  /// External exports and iCloud backups are outside this SQLite operation.
+  public func purgeMemoryV2(id: UUID) throws {
+    lock.lock(); defer { lock.unlock() }
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      func step(_ sql: String, _ value: String) throws {
+        let stmt = try prepare(sql)
+        defer { sqlite3_finalize(stmt) }
+        bindText(value, at: 1, in: stmt)
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+          throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+        }
+      }
+      try executeUnlocked("CREATE TEMP TABLE IF NOT EXISTS claw_forget_raw (id TEXT PRIMARY KEY);")
+      try executeUnlocked("DELETE FROM claw_forget_raw;")
+      try step("""
+        INSERT OR IGNORE INTO claw_forget_raw(id)
+        SELECT raw_event_id FROM memory_evidence WHERE memory_id = ?;
+      """, id.uuidString)
+      try step("""
+        DELETE FROM memory_v2_fts
+        WHERE rowid = (SELECT rowid FROM memory_v2 WHERE id = ?);
+      """, id.uuidString)
+      for table in ["memory_evidence", "memory_versions", "memory_audit"] {
+        try step("DELETE FROM \(table) WHERE memory_id = ?;", id.uuidString)
+      }
+      for column in ["memory_id", "parent_memory_id", "source_memory_id"] {
+        try step("DELETE FROM memory_lineage WHERE \(column) = ?;", id.uuidString)
+      }
+      try step("DELETE FROM memory_v2 WHERE id = ?;", id.uuidString)
+      try step("DELETE FROM memory_items WHERE id = ?;", id.uuidString)
+      try executeUnlocked("""
+        DELETE FROM raw_events WHERE id IN (SELECT id FROM claw_forget_raw)
+        AND id NOT IN (SELECT raw_event_id FROM memory_evidence);
+      """)
+      try executeUnlocked("DELETE FROM claw_forget_raw;")
+      try executeUnlocked("COMMIT;")
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
+  }
+
+  /// Explicitly erase one person's live on-device records without promoting
+  /// anything to global. Dependent history, evidence, FTS, versions and audits
+  /// are removed in one SQLite transaction. This does not erase user-exported
+  /// archives, backups, files stored by other apps or synced cloud copies.
+  public func purgePersonLocalRecords(id: UUID) throws {
+    lock.lock(); defer { lock.unlock() }
+    let intentIDs = try standingIntents().filter { $0.personID == id }.map(\.id)
+    let conflicts = try memoryConflicts(includeResolved: true)
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      try executeUnlocked("CREATE TEMP TABLE IF NOT EXISTS claw_person_purge_ids (id TEXT PRIMARY KEY);")
+      try executeUnlocked("DELETE FROM claw_person_purge_ids;")
+      func step(_ sql: String, _ value: String) throws {
+        let statement = try prepare(sql)
+        defer { sqlite3_finalize(statement) }
+        bindText(value, at: 1, in: statement)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+          throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+        }
+      }
+      try step("INSERT OR IGNORE INTO claw_person_purge_ids SELECT id FROM memory_v2 WHERE person_id = ?;", id.uuidString)
+      try step("INSERT OR IGNORE INTO claw_person_purge_ids SELECT id FROM memory_items WHERE subject_id = ?;", id.uuidString)
+      for intentID in intentIDs {
+        try step("INSERT OR IGNORE INTO claw_person_purge_ids(id) VALUES (?);", intentID.uuidString)
+      }
+      let select = try prepare("SELECT id FROM claw_person_purge_ids;")
+      var deletedIDs = Set<String>()
+      while sqlite3_step(select) == SQLITE_ROW {
+        if let value = text(select, 0) { deletedIDs.insert(value) }
+      }
+      sqlite3_finalize(select)
+      try executeUnlocked("CREATE TEMP TABLE IF NOT EXISTS claw_person_purge_raw(id TEXT PRIMARY KEY);")
+      try executeUnlocked("DELETE FROM claw_person_purge_raw;")
+      try executeUnlocked("""
+        INSERT OR IGNORE INTO claw_person_purge_raw
+        SELECT raw_event_id FROM memory_evidence
+        WHERE memory_id IN (SELECT id FROM claw_person_purge_ids);
+      """)
+      try executeUnlocked("""
+        DELETE FROM memory_v2_fts WHERE rowid IN
+          (SELECT rowid FROM memory_v2 WHERE id IN (SELECT id FROM claw_person_purge_ids));
+      """)
+      try executeUnlocked("DELETE FROM memory_evidence WHERE memory_id IN (SELECT id FROM claw_person_purge_ids);")
+      try executeUnlocked("DELETE FROM memory_versions WHERE memory_id IN (SELECT id FROM claw_person_purge_ids);")
+      try executeUnlocked("DELETE FROM memory_audit WHERE memory_id IN (SELECT id FROM claw_person_purge_ids);")
+      try executeUnlocked("""
+        DELETE FROM memory_lineage
+        WHERE memory_id IN (SELECT id FROM claw_person_purge_ids)
+           OR parent_memory_id IN (SELECT id FROM claw_person_purge_ids)
+           OR source_memory_id IN (SELECT id FROM claw_person_purge_ids);
+      """)
+      try executeUnlocked("DELETE FROM memory_v2 WHERE id IN (SELECT id FROM claw_person_purge_ids);")
+      try step("DELETE FROM memory_items WHERE subject_id = ?;", id.uuidString)
+      for (table, column) in [
+        ("conversation_messages", "contact_id"),
+        ("secretary_tasks", "contact_id"),
+        ("evolution_feedback", "contact_id")
+      ] {
+        try step("DELETE FROM \(table) WHERE \(column) = ?;", id.uuidString)
+      }
+      for intentID in intentIDs {
+        try step("DELETE FROM standing_intents WHERE id = ?;", intentID.uuidString)
+      }
+      for conflict in conflicts where deletedIDs.contains(conflict.existingMemoryID.uuidString)
+          || deletedIDs.contains(conflict.incomingMemoryID.uuidString) {
+        try step("DELETE FROM memory_conflicts WHERE id = ?;", conflict.id.uuidString)
+      }
+      // Delete raw events only when no other person's evidence references them.
+      try executeUnlocked("""
+        DELETE FROM raw_events WHERE id IN (SELECT id FROM claw_person_purge_raw)
+          AND id NOT IN (SELECT raw_event_id FROM memory_evidence);
+      """)
+      try executeUnlocked("DELETE FROM claw_person_purge_raw;")
+      try executeUnlocked("DELETE FROM claw_person_purge_ids;")
+      try executeUnlocked("COMMIT;")
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
+  }
+
+  /// Reassigns every contact-bound record atomically. Only use non-nil
+  /// destinations for explicitly confirmed merges. Never promote person
+  /// memories to global when removing a profile.
   public func reassignContactReferences(from sourceID: UUID, to destinationID: UUID?) throws {
+    // A non-nil destination is mandatory: public API callers must not bypass
+    // the safe profile deletion gate by promoting records to global scope.
+    guard let destinationID else { throw ClawMemoryStoreError.scopePromotionForbidden }
     guard sourceID != destinationID else { return }
     lock.lock(); defer { lock.unlock() }
     try executeUnlocked("BEGIN IMMEDIATE;")
@@ -1133,6 +1512,38 @@ public final class ClawMemoryStore {
     }
   }
 
+  /// Commit a batch of memories and all their derived records atomically.
+  /// The single transaction reduces fsync overhead versus a transaction for
+  /// each memory. A conflict in any member rolls back the entire batch.
+  @discardableResult
+  public func saveMemoryV2Batch(
+    _ records: [MemoryV2Record],
+    rawEvents: [RawMemoryEvent] = [],
+    legacyProjections: [UUID: ClawMemoryItem] = [:]
+  ) throws -> [MemoryV2Record] {
+    guard !records.isEmpty else { return [] }
+    lock.lock(); defer { lock.unlock() }
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      try insertRawEvents(rawEvents)
+      for record in records {
+        let payload = try JSONEncoder().encode(record)
+        try upsertMemoryV2Row(record, payload: payload)
+        try insertMemoryVersion(record, payload: payload)
+        try replaceMemoryEvidence(record)
+        try insertMemoryLineage(record)
+        if let legacy = legacyProjections[record.id] {
+          try upsertMemoryUnlocked(legacy)
+        }
+      }
+      try executeUnlocked("COMMIT;")
+      return records
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
+  }
+
   /// 按 id 读取一条 V2 记忆。
   public func memoryV2(id: UUID) throws -> MemoryV2Record? {
     lock.lock(); defer { lock.unlock() }
@@ -1143,6 +1554,78 @@ public final class ClawMemoryStore {
           let blob = sqlite3_column_blob(statement, 0) else { return nil }
     let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0)))
     return try? JSONDecoder().decode(MemoryV2Record.self, from: data)
+  }
+
+  /// Query V2 identity for the bounded legacy candidates in one indexed
+  /// batch. A stale legacy projection must never resurrect an invalidated,
+  /// expired or moved V2 record omitted by the recent-record LIMIT.
+  public func memoryV2ExistingIDs(_ ids: Set<UUID>) throws -> Set<UUID> {
+    guard !ids.isEmpty else { return [] }
+    lock.lock(); defer { lock.unlock() }
+    let ordered = Array(ids)
+    var found = Set<UUID>()
+    for start in stride(from: 0, to: ordered.count, by: 400) {
+      let batch = Array(ordered[start..<min(start + 400, ordered.count)])
+      let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ",")
+      let statement = try prepare("SELECT id FROM memory_v2 WHERE id IN (\(placeholders));")
+      defer { sqlite3_finalize(statement) }
+      for (offset, id) in batch.enumerated() {
+        bindText(id.uuidString, at: Int32(offset + 1), in: statement)
+      }
+      while true {
+        let rc = sqlite3_step(statement)
+        if rc == SQLITE_DONE { break }
+        guard rc == SQLITE_ROW else {
+          throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+        }
+        if let identifier = text(statement, 0).flatMap(UUID.init(uuidString:)) {
+          found.insert(identifier)
+        }
+      }
+    }
+    return found
+  }
+
+  /// Context-only V2 read. Enforce ownership, active state and expiry in
+  /// SQLite BEFORE LIMIT; stale/private rows must not displace usable context.
+  public func activeContextMemoryV2(
+    scope: MemoryScope, personID: UUID? = nil,
+    limit: Int = 80, now: Date = Date()
+  ) throws -> [MemoryV2Record] {
+    guard scope == .global || personID != nil else { return [] }
+    lock.lock(); defer { lock.unlock() }
+    let owner = scope == .global ? "person_id IS NULL" : "person_id = ?"
+    let sql = """
+      SELECT payload FROM memory_v2
+      WHERE scope = ? AND state IN ('active','confirmed')
+        AND (expires_at IS NULL OR expires_at > ?) AND \(owner)
+      ORDER BY updated_at DESC LIMIT ?;
+    """
+    let statement = try prepare(sql)
+    defer { sqlite3_finalize(statement) }
+    bindText(scope.rawValue, at: 1, in: statement)
+    sqlite3_bind_double(statement, 2, now.timeIntervalSince1970)
+    var limitIndex: Int32 = 3
+    if scope != .global, let personID {
+      bindText(personID.uuidString, at: limitIndex, in: statement)
+      limitIndex += 1
+    }
+    sqlite3_bind_int(statement, limitIndex, Int32(max(1, limit)))
+    var result: [MemoryV2Record] = []
+    while true {
+      let rc = sqlite3_step(statement)
+      if rc == SQLITE_DONE { break }
+      guard rc == SQLITE_ROW else {
+        throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+      }
+      if let blob = sqlite3_column_blob(statement, 0) {
+        let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0)))
+        if let record = try? JSONDecoder().decode(MemoryV2Record.self, from: data) {
+          result.append(record)
+        }
+      }
+    }
+    return result
   }
 
   /// 按作用域/人物/状态筛选 V2 记忆，按最近更新排序。
@@ -1201,7 +1684,9 @@ public final class ClawMemoryStore {
   /// FTS5-backed candidate collection. The router performs scope guards and
   /// final hybrid ranking. Empty or tokenization-incompatible queries fall back
   /// to the full recent set so CJK and punctuation-heavy input remain usable.
-  public func searchMemoryV2(query: String, limit: Int = 200) throws -> [MemoryV2Record] {
+  public func searchMemoryV2(
+    query: String, limit: Int = 200, includeRecentUnmatched: Bool = true
+  ) throws -> [MemoryV2Record] {
     lock.lock(); defer { lock.unlock() }
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return try memoryV2(limit: limit) }
@@ -1222,12 +1707,34 @@ public final class ClawMemoryStore {
       if let record = try? JSONDecoder().decode(MemoryV2Record.self, from: data) { result.append(record) }
     }
     if result.isEmpty {
-      result = try memoryV2(limit: limit).filter { $0.content.localizedCaseInsensitiveContains(trimmed) || ($0.normalizedKey?.localizedCaseInsensitiveContains(trimmed) ?? false) }
+      // FTS5's default tokenizer does not reliably match a substring inside
+      // an unspaced Chinese phrase. Search the full V2 table rather than only
+      // the newest records; otherwise old but relevant facts disappear.
+      // This bounded fallback runs only on an FTS miss.
+      let fallback = try prepare("""
+        SELECT payload FROM memory_v2
+        WHERE instr(lower(content), lower(?)) > 0
+           OR instr(lower(COALESCE(normalized_key, '')), lower(?)) > 0
+        ORDER BY updated_at DESC LIMIT ?;
+        """)
+      defer { sqlite3_finalize(fallback) }
+      bindText(trimmed, at: 1, in: fallback)
+      bindText(trimmed, at: 2, in: fallback)
+      sqlite3_bind_int(fallback, 3, Int32(max(1, limit)))
+      while sqlite3_step(fallback) == SQLITE_ROW, let blob = sqlite3_column_blob(fallback, 0) {
+        let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(fallback, 0)))
+        if let record = try? JSONDecoder().decode(MemoryV2Record.self, from: data) {
+          result.append(record)
+        }
+      }
     }
-    // Include recent non-matches for global defaults; ranking will put matches first.
-    let recent = try memoryV2(limit: limit)
-    let ids = Set(result.map(\.id))
-    result.append(contentsOf: recent.filter { !ids.contains($0.id) })
+    // Recall uses broad recent candidates for global defaults and ranking.
+    // Index regression tests can request strict FTS/sub-string matches instead.
+    if includeRecentUnmatched {
+      let recent = try memoryV2(limit: limit)
+      let ids = Set(result.map(\.id))
+      result.append(contentsOf: recent.filter { !ids.contains($0.id) })
+    }
     return Array(result.prefix(max(1, limit)))
   }
 
@@ -1455,24 +1962,37 @@ public final class ClawMemoryStore {
     guard sqlite3_step(statement) == SQLITE_DONE else {
       throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
     }
-    try? syncMemoryFTS(record)
+    try syncMemoryFTS(record)
   }
 
   private func syncMemoryFTS(_ record: MemoryV2Record) throws {
-    let removeFTS = try prepare("DELETE FROM memory_v2_fts WHERE id = ?;")
-    bindText(record.id.uuidString, at: 1, in: removeFTS)
-    _ = sqlite3_step(removeFTS)
-    sqlite3_finalize(removeFTS)
-    let insertFTS = try prepare("INSERT INTO memory_v2_fts (id,content,normalized_key) VALUES (?,?,?);")
-    bindText(record.id.uuidString, at: 1, in: insertFTS)
-    bindText(record.content, at: 2, in: insertFTS)
-    bindText(record.normalizedKey, at: 3, in: insertFTS)
-    guard sqlite3_step(insertFTS) == SQLITE_DONE else {
-      let message = String(cString: sqlite3_errmsg(try requireDB()))
-      sqlite3_finalize(insertFTS)
-      throw ClawMemoryStoreError.sqlite(message: message)
+    let lookup = try prepare("SELECT rowid FROM memory_v2 WHERE id = ? LIMIT 1;")
+    bindText(record.id.uuidString, at: 1, in: lookup)
+    guard sqlite3_step(lookup) == SQLITE_ROW else {
+      sqlite3_finalize(lookup)
+      throw ClawMemoryStoreError.sqlite(message: "Memory rowid is missing")
     }
-    sqlite3_finalize(insertFTS)
+    let rowID = sqlite3_column_int64(lookup, 0)
+    sqlite3_finalize(lookup)
+    // FTS5's id column is UNINDEXED. Deleting by id scanned every FTS row on
+    // each insertion; its rowid B-tree is indexed and stable for the V2 row.
+    let remove = try prepare("DELETE FROM memory_v2_fts WHERE rowid = ?;")
+    sqlite3_bind_int64(remove, 1, rowID)
+    let removed = sqlite3_step(remove)
+    sqlite3_finalize(remove)
+    guard removed == SQLITE_DONE else {
+      throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+    }
+    let insert = try prepare("INSERT INTO memory_v2_fts (rowid,id,content,normalized_key) VALUES (?,?,?,?);")
+    sqlite3_bind_int64(insert, 1, rowID)
+    bindText(record.id.uuidString, at: 2, in: insert)
+    bindText(record.content, at: 3, in: insert)
+    bindText(record.normalizedKey, at: 4, in: insert)
+    let result = sqlite3_step(insert)
+    sqlite3_finalize(insert)
+    guard result == SQLITE_DONE else {
+      throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+    }
   }
 
   private func insertMemoryVersion(_ record: MemoryV2Record, payload: Data) throws {
@@ -1596,8 +2116,20 @@ public final class ClawMemoryStore {
     }
   }
 
-  private static func fingerprint(contactID: UUID?, speaker: ClawConversationSpeaker, content: String, occurredAt: Date) -> String {
-    // 截图往往没有精确时间。以分钟粒度 + 正文去重，避免连续截图重复写入。
+  private static func fingerprint(
+    contactID: UUID?,
+    speaker: ClawConversationSpeaker,
+    content: String,
+    occurredAt: Date,
+    sourceRef: String?
+  ) -> String {
+    // OCR rows carry a stable screenshot hash + row index. Identical imports
+    // have the same fingerprint even when their capture timestamps differ.
+    // Keep the person ID in the key; never deduplicate across people.
+    if let sourceRef, sourceRef.hasPrefix("screenshot-digest:"), sourceRef.contains("#row=") {
+      return "\(contactID?.uuidString ?? "global")|\(sourceRef)"
+    }
+    // Other conversations retain the existing minute-granularity behavior.
     let minute = Int(occurredAt.timeIntervalSince1970 / 60)
     let normalized = content.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
     return "\(contactID?.uuidString ?? "global")|\(speaker.rawValue)|\(minute)|\(normalized)"

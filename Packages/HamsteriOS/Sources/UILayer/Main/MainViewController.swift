@@ -33,6 +33,9 @@ open class MainViewController: UISplitViewController {
   private let mainViewModel: MainViewModel
   private let subViewControllerFactory: SubViewControllerFactory
   private let settingsViewController: SettingsViewController
+  // Legacy settings are opened only as a secondary destination, not a second home.
+  private lazy var legacySettingsDestination: SettingsViewController =
+    subViewControllerFactory.makeSettingsViewController()
 
   private lazy var inputSchemaViewController: InputSchemaViewController
     = subViewControllerFactory.makeInputSchemaViewController()
@@ -89,7 +92,9 @@ open class MainViewController: UISplitViewController {
   }()
 
   private lazy var secondaryNavigationViewController: UINavigationController = {
-    let vc = UINavigationController(rootViewController: aboutViewController)
+    // CLAW is the app's main surface, not an extra page inside legacy settings.
+    // The primary column retains all existing RIME and advanced-settings routes.
+    let vc = UINavigationController(rootViewController: clawTalkViewController)
     return vc
   }()
 
@@ -104,7 +109,9 @@ open class MainViewController: UISplitViewController {
     self.delegate = self
     // primary 视图始终可见
     self.presentsWithGesture = false
-    self.preferredDisplayMode = .twoBesideSecondary
+    // Show one CLAW home on both iPhone and iPad. Do not tile the legacy
+    // Settings column beside the new five-tab experience.
+    self.preferredDisplayMode = .secondaryOnly
     self.preferredSplitBehavior = .tile
     self.displayModeButtonVisibility = .never
     self.showsSecondaryOnlyButton = false
@@ -123,6 +130,11 @@ open class MainViewController: UISplitViewController {
 extension MainViewController {
   override open func viewDidLoad() {
     super.viewDidLoad()
+
+    // The assistant is now the initial screen on iPhone and iPad. The legacy
+    // Settings viewDidAppear no longer fires on cold launch, so explicitly
+    // run the shared RIME/first-launch bootstrap before keyboard use.
+    settingsViewController.startAppDataBootstrapIfNeeded()
 
     /// 动态控制导航
     mainViewModel.subViewPublished
@@ -154,8 +166,9 @@ extension MainViewController {
 
 extension MainViewController: UISplitViewControllerDelegate {
   public func splitViewController(_ svc: UISplitViewController, topColumnForCollapsingToProposedTopColumn proposedTopColumn: UISplitViewController.Column) -> UISplitViewController.Column {
-    /// 首选显示 primary 列
-    return .primary
+    // On iPhone, show the same assistant-first home as the iPad detail column.
+    // All preexisting primary-column settings remain accessible through URLs.
+    return .secondary
   }
 }
 
@@ -204,7 +217,9 @@ extension MainViewController {
   }
 
   func presentMainViewController() {
-    primaryNavigationViewController.popToRootViewController(animated: false)
+    // Old "main" links remain available without replacing or duplicating the
+    // five-tab CLAW home. Back returns to the exact assistant tab state.
+    presentViewController(legacySettingsDestination)
   }
 
   func presentInputSchemaViewController() {
@@ -248,8 +263,14 @@ extension MainViewController {
   }
 
   func presentClawTalkViewController() {
-    if primaryNavigationViewController.topViewController === clawTalkViewController ||
-       secondaryNavigationViewController.topViewController === clawTalkViewController {
+    // CLAW is already the secondary navigation root. Reuse that controller
+    // rather than attempting to push the same instance twice on iPhone.
+    if secondaryNavigationViewController.viewControllers.contains(where: { $0 === clawTalkViewController }) {
+      secondaryNavigationViewController.popToViewController(clawTalkViewController, animated: true)
+      return
+    }
+    if primaryNavigationViewController.viewControllers.contains(where: { $0 === clawTalkViewController }) {
+      primaryNavigationViewController.popToViewController(clawTalkViewController, animated: true)
       return
     }
     presentViewController(clawTalkViewController)
@@ -277,11 +298,14 @@ extension MainViewController {
   }
 
   private func presentViewController(_ vc: UIViewController) {
-    primaryNavigationViewController.popToRootViewController(animated: false)
-    if isCollapsed {
-      primaryNavigationViewController.pushViewController(vc, animated: true)
-      return
+    // Never replace the assistant's navigation root with a legacy screen on
+    // iPad or iPhone; otherwise the old screen can take over the new UI.
+    let navigation = secondaryNavigationViewController
+    if navigation.topViewController === vc { return }
+    if navigation.viewControllers.contains(where: { $0 === vc }) {
+      navigation.popToViewController(vc, animated: true)
+    } else {
+      navigation.pushViewController(vc, animated: true)
     }
-    secondaryNavigationViewController.viewControllers = [vc]
   }
 }

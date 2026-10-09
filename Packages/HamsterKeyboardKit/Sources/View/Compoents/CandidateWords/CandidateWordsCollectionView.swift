@@ -269,13 +269,14 @@ extension CandidateWordsCollectionView: UICollectionViewDelegateFlowLayout {
     // 为 cell 内容增加左右间距, 对应 cell 的 leading, trailing 的约束
     let intrinsicHorizontalMargin: CGFloat = 14
 
-    // 60 为下拉状态按钮宽度, 220 是 横屏时需要减去全面屏两侧的宽度(注意：这里忽略的非全面屏)
-    let maxWidth: CGFloat = UIScreen.main.bounds.width - ((self.window?.screen.interfaceOrientation == .portrait) ? 60 : 220)
+    // The collection view already excludes the candidate toolbar's right-hand
+    // controls. Use its actual available width for split view, floating iPad,
+    // rotation and narrow iPhones; never subtract the dismiss button twice.
+    let availableWidth = bounds.width > 0 ? bounds.width : UIScreen.main.bounds.width
+    let maxWidth = max(CGFloat(48), availableWidth - 8)
 
     let attributeString = candidate.attributeString(showIndex: showIndex, showComment: showComment, style: style)
-
-    // 60 是下拉箭头按键的宽度，垂直滑动的 label 在超出宽度时，文字折叠
-    let targetWidth: CGFloat = maxWidth - (isVerticalLayout ? 60 : 0)
+    let targetWidth = maxWidth
 
     var titleLabelSize = UILabel.estimatedAttributeSize(attributeString, targetSize: CGSize(width: targetWidth, height: 0))
 

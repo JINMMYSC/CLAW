@@ -60,6 +60,37 @@ final class MemorySDKTests: XCTestCase {
     XCTAssertEqual(try store.memoryV2(id: original.id)?.version, 3)
   }
 
+  func testFTSRowIDUpdateReplacesOldTermsAndPreservesOtherPeople() throws {
+    let alice = UUID(), bob = UUID()
+    var first = makeRecord(content: "第一人的旧关键词", scope: .person, personID: alice)
+    let second = makeRecord(content: "第二人的保留词", scope: .person, personID: bob)
+    try sdk.remember(first)
+    try sdk.remember(second)
+    first.content = "第一人的新关键词"
+    first.version += 1
+    try sdk.remember(first)
+    XCTAssertTrue(try store.searchMemoryV2(query: "新关键词", includeRecentUnmatched: false).contains { $0.id == first.id })
+    XCTAssertFalse(try store.searchMemoryV2(query: "旧关键词", includeRecentUnmatched: false).contains { $0.id == first.id })
+    XCTAssertTrue(try store.searchMemoryV2(query: "保留词", includeRecentUnmatched: false).contains { $0.id == second.id })
+  }
+
+  func testFullDeleteDoesNotRetainVersionOrAuditSnapshots() throws {
+    let raw = RawMemoryEvent(kind: "chat", content: "必须真正删除的证据")
+    let evidence = MemoryEvidence(rawEventID: raw.id, excerpt: raw.content)
+    let sensitive = makeRecord(content: "本机需要擦除的保密内容", evidence: [evidence])
+    try store.saveMemoryV2(sensitive, rawEvents: [raw])
+    let keep = makeRecord(content: "其他人的记录要保留")
+    try sdk.remember(keep)
+    let forget = MemoryForgetEngine(sdk: sdk, store: store)
+    try forget.forget(id: sensitive.id, mode: .fullDelete)
+    XCTAssertNil(try store.memoryV2(id: sensitive.id))
+    XCTAssertEqual(try store.memoryV2VersionCount(id: sensitive.id), 0)
+    XCTAssertTrue(try store.rawEvents(ids: [raw.id]).isEmpty)
+    XCTAssertNil(try store.memory(id: sensitive.id))
+    XCTAssertEqual(try store.memoryV2(id: keep.id)?.content, keep.content)
+    XCTAssertThrowsError(try sdk.forget(id: sensitive.id, mode: .fullDelete))
+  }
+
   func testRepeatedSaveOfSameVersionIsIdempotent() throws {
     let record = makeRecord(content: "只保存一个版本")
     try sdk.remember(record)
@@ -67,6 +98,33 @@ final class MemorySDKTests: XCTestCase {
 
     XCTAssertEqual(try store.memoryV2Count(), 1)
     XCTAssertEqual(try store.memoryV2VersionCount(id: record.id), 1)
+  }
+
+  func testFlushBatchWritesAllVersionsLegacyAndEvidence() throws {
+    let sessionID = UUID()
+    let raw = RawMemoryEvent(kind: "chat", content: "双方确认")
+    let records = (0..<30).map { i in
+      makeRecord(content: "batch \(i)", evidence: [
+        MemoryEvidence(rawEventID: raw.id, excerpt: raw.content)
+      ])
+    }
+    let session = MemoryFlushSession(sessionID: sessionID, records: records, rawEvents: [raw])
+    try sdk.flush(session)
+    XCTAssertEqual(try store.memoryV2Count(), 30)
+    XCTAssertEqual(try store.memories(limit: 100).count, 30)
+    XCTAssertEqual(try store.memoryV2(id: records[0].id)?.sessionID, sessionID)
+    XCTAssertEqual(try store.memoryV2(id: records[29].id)?.evidence.count, 1)
+  }
+
+  func testBatchRollsBackEverythingWhenEvidenceConflicts() throws {
+    let evidenceID = UUID()
+    let a = makeRecord(content: "batch first",
+      evidence: [MemoryEvidence(id: evidenceID, rawEventID: UUID())])
+    let b = makeRecord(content: "batch conflict",
+      evidence: [MemoryEvidence(id: evidenceID, rawEventID: UUID())])
+    XCTAssertThrowsError(try store.saveMemoryV2Batch([a,b]))
+    XCTAssertEqual(try store.memoryV2Count(), 0)
+    XCTAssertNil(try store.memoryV2(id: a.id))
   }
 
   func testV2AndLegacyProjectionRollbackTogetherWhenEvidenceConflicts() throws {

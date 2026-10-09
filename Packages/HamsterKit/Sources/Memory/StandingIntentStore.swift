@@ -44,8 +44,12 @@ public struct MemoryFlushService {
       let evidence = [MemoryEvidence(rawEventID: event.id, locator: message.id.uuidString, excerpt: message.content)]
       // Treat explicit commitments and delivery/reminder language as actionable
       // tasks while leaving ordinary conversational messages as timeline-only.
-      let taskMarkers = ["答应", "要", "截止", "提交", "交付", "完成", "提醒"]
-      if taskMarkers.contains(where: message.content.contains) {
+      let taskMarkers = ["答应", "截止", "提交", "交付", "完成", "提醒", "必须", "需要"]
+      // "不要" contains the single word "要"; that was previously creating
+      // a bogus task from a simple preference or refusal. An opt-out is not a
+      // promise to deliver work, even if it mentions the word "提醒".
+      let isOptOut = message.content.contains("不要") || message.content.contains("不需要")
+      if !isOptOut && taskMarkers.contains(where: message.content.contains) {
         tasks.append(ClawSecretaryTask(kind: .commitment, title: message.content, contactID: personID, sourceType: message.sourceType, sourceRef: message.id.uuidString))
         records.append(record(type: .task, content: message.content, sessionID: sessionID, personID: personID, evidence: evidence))
       }
