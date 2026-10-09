@@ -75,25 +75,59 @@ private enum ClawAssistantTab: Hashable {
 /// rather than competing with Assistant/Today/People/Memory for a tab.
 private struct ClawSettingsHubView: View {
   @ObservedObject var viewModel: ClawTalkViewModel
-  @State private var cannotOpenKeyboardSettings = false
+  @State private var cannotOpenSettings = false
+
+  private func openCLAWSettings(_ address: String) {
+    guard let url = URL(string: address) else {
+      cannotOpenSettings = true
+      return
+    }
+    UIApplication.shared.open(url, options: [:]) { success in
+      if !success {
+        DispatchQueue.main.async { cannotOpenSettings = true }
+      }
+    }
+  }
 
   var body: some View {
     NavigationView {
       List {
         Section("键盘与输入") {
           Button {
-            guard let url = URL(string: HamsterConstants.appURLForKeyboardSettings) else {
-              cannotOpenKeyboardSettings = true
-              return
-            }
-            UIApplication.shared.open(url, options: [:]) { success in
-              if !success {
-                DispatchQueue.main.async { cannotOpenKeyboardSettings = true }
-              }
-            }
+            openCLAWSettings(HamsterConstants.appURLForKeyboardSettings)
           } label: {
-            Label("键盘、输入方案与外观", systemImage: "keyboard")
+            Label("输入方案、词库与键盘布局", systemImage: "keyboard")
           }
+          NavigationLink {
+            List {
+              Text("1. 打开 iPhone「设置」→「通用」→「键盘」→「键盘」。")
+              Text("2. 选择「添加新键盘」，启用 CLAW。")
+              Text("3. 在微信等应用输入框长按地球键，切换到 CLAW。")
+              Text("4. 若需云端 AI，按功能说明检查键盘的网络与完全访问权限。")
+              Text("5. 语音录音需要在 CLAW 主程序内完成，返回聊天后明确点击插入文字。")
+            }
+            .navigationTitle("安装键盘")
+          } label: {
+            Label("键盘安装与启用说明", systemImage: "questionmark.circle")
+          }
+        }
+
+        Section("外观") {
+          Button {
+            openCLAWSettings(HamsterConstants.appURLForKeyboardSettings)
+          } label: {
+            Label("主题、深色模式与候选栏", systemImage: "paintpalette")
+          }
+        }
+
+        Section("AI 与语音") {
+          Button {
+            UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
+          } label: {
+            Label("麦克风、语音识别与相册权限", systemImage: "waveform")
+          }
+          Text("语音识别在主程序进行；键盘只接收经授权的文字，不会自动发送消息。")
+            .font(.footnote).foregroundColor(.secondary)
         }
 
         Section("数据与隐私") {
@@ -102,41 +136,43 @@ private struct ClawSettingsHubView: View {
           } label: {
             Label("输入记录、剪贴板与隐私设置", systemImage: "lock.doc")
           }
-          Text("长期记忆、人物档案与技能分别在「记忆」和「人物」页管理。")
-            .font(.footnote)
-            .foregroundColor(.secondary)
+          Text("个人记忆及人物档案分别在底部「记忆」「人物」页管理；本机删除不会自动清除外部备份。")
+            .font(.footnote).foregroundColor(.secondary)
         }
 
-        Section("同步、备份与高级设置") {
+        Section("同步与备份") {
           Button {
-            guard let url = URL(string: HamsterConstants.appURLForMain) else {
-              cannotOpenKeyboardSettings = true
-              return
-            }
-            UIApplication.shared.open(url, options: [:]) { success in
-              if !success {
-                DispatchQueue.main.async { cannotOpenKeyboardSettings = true }
-              }
-            }
+            openCLAWSettings(HamsterConstants.appURLForMain)
           } label: {
-            Label("查看原有完整设置", systemImage: "slider.horizontal.3")
+            Label("iCloud、备份与数据恢复", systemImage: "icloud")
           }
-          Text("iCloud、词库、RIME 部署、外观与诊断功能保留在原有设置中，迁移期间不会丢失入口。")
-            .font(.footnote)
-            .foregroundColor(.secondary)
+          Text("恢复文件前请确认备份来源，恢复后按提示重新部署 RIME。")
+            .font(.footnote).foregroundColor(.secondary)
         }
 
-        Section("使用说明") {
-          Text("语音识别由 CLAW 主程序完成，第三方键盘不直接录音。")
-            .font(.footnote)
-            .foregroundColor(.secondary)
+        Section("高级设置") {
+          Button {
+            openCLAWSettings(HamsterConstants.appURLForMain)
+          } label: {
+            Label("RIME 部署、词库与高级选项", systemImage: "slider.horizontal.3")
+          }
+        }
+
+        Section("诊断与兼容性") {
+          Button {
+            openCLAWSettings(HamsterConstants.appURLForMain)
+          } label: {
+            Label("运行日志、设备兼容与旧版设置", systemImage: "stethoscope")
+          }
+          Text("旧设置入口保持可用；iOS 15 不支持 iOS 16.1 才提供的实时活动。")
+            .font(.footnote).foregroundColor(.secondary)
         }
       }
       .navigationTitle("设置")
-      .alert("无法打开键盘设置", isPresented: $cannotOpenKeyboardSettings) {
+      .alert("无法打开设置页面", isPresented: $cannotOpenSettings) {
         Button("知道了", role: .cancel) {}
       } message: {
-        Text("请返回 CLAW 主程序的设置页面，检查键盘入口是否可用。")
+        Text("请检查 CLAW 主程序是否正确安装，再返回设置重试。")
       }
     }
   }
