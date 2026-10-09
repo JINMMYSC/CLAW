@@ -171,6 +171,14 @@ public final class ClawChatService: NSObject, ObservableObject {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, !isSending else { return }
 
+    // Local opt-in self-test command: no LLM request, no personal Memory write.
+    // This intentionally does not collect system permissions or user chat text.
+    if trimmed == "/自检" || trimmed.lowercased() == "/diagnose" {
+      messages.append(ClawChatMessage(role: "user", content: trimmed, excludeFromContext: true))
+      postAssistant(ClawDiagnosticInspector.report())
+      return
+    }
+
     let selectedContactID = HeartTargetService.shared.selectedProfile?.id
     if activeContextID != selectedContactID {
       switchContext(contactID: selectedContactID)

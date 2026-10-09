@@ -55,6 +55,7 @@ public final class ClawVoiceInputService: NSObject {
   private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
   private var recognitionTask: SFSpeechRecognitionTask?
   private var sessionGeneration: UInt = 0
+  private var diagnosticTraceID = UUID()
   /// Keep the best partial result until Speech finishes after endAudio().
   /// Some devices never deliver isFinal, so the stop watchdog must complete once.
   private var oneShotPartialText = ""
@@ -140,6 +141,19 @@ public final class ClawVoiceInputService: NSObject {
     Bundle.main.bundleURL.pathExtension.lowercased() == "appex"
   }
 
+  // Compiler callsite, system error domain/code and one trace per recording.
+  // Never forward transcribed speech or NSError.localizedDescription.
+  private func diagnostic(
+    _ action: String, severity: String = "info", error: Error? = nil,
+    file: String = #fileID, function: String = #function, line: UInt = #line
+  ) {
+    ClawDiagnosticsCore.shared.record(
+      module: "voice", action: action, severity: severity,
+      traceID: diagnosticTraceID, error: error,
+      file: file, function: function, line: line
+    )
+  }
+
   /// 开始录音；停止后通过 completion 返回最终识别文本
   /// 键盘扩展同样走这条路：前提是主程序已经授权麦克风与语音识别，
   /// 并且键盘已开启「允许完全访问」。扩展里不能弹权限框，所以授权必须在主程序完成。
@@ -149,8 +163,10 @@ public final class ClawVoiceInputService: NSObject {
       return
     }
     let generation = resetForNewSession()
+    diagnostic("recording_requested")
     guard let recognizer = makeRecognizer(), recognizer.isAvailable else {
       LogService.shared.log(.voiceRecognizerUnavailable)
+      diagnostic("recognizer_unavailable", severity: "error")
       completion(.failure(ClawVoiceError.recognizerUnavailable))
       return
     }
@@ -165,6 +181,7 @@ public final class ClawVoiceInputService: NSObject {
       try activateMicrophoneSession()
     } catch {
       LogService.shared.log(.voiceSessionStartFailed)
+      diagnostic("audio_session_or_engine_failed", severity: "error", error: error)
       completion(.failure(error))
       return
     }
@@ -173,6 +190,7 @@ public final class ClawVoiceInputService: NSObject {
     guard format.sampleRate > 0 else {
       try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
       LogService.shared.log(.voiceAudioUnavailable)
+      diagnostic("input_format_unavailable", severity: "error")
       completion(.failure(ClawVoiceError.audioUnavailable))
       return
     }
@@ -207,6 +225,7 @@ public final class ClawVoiceInputService: NSObject {
           let callback = self.oneShotCompletion
           self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
           LogService.shared.log(.voiceRecognitionFailed)
+          self.diagnostic("recognition_failed", severity: "error", error: error)
           if stopped && !partial.isEmpty {
             callback?(.success(partial))
           } else {
@@ -220,9 +239,11 @@ public final class ClawVoiceInputService: NSObject {
       audioEngine.prepare()
       try audioEngine.start()
       isRecording = true
+      diagnostic("audio_engine_running")
     } catch {
       finishSession(generation, cancelTask: true, clearStreamingCallbacks: true)
       LogService.shared.log(.voiceSessionStartFailed)
+      diagnostic("audio_session_or_engine_failed", severity: "error", error: error)
       completion(.failure(error))
     }
   }
@@ -241,6 +262,7 @@ public final class ClawVoiceInputService: NSObject {
       return
     }
     let generation = resetForNewSession()
+    diagnostic("recording_requested")
     streamingPartial = onPartial
     streamingSegment = onSegment
     streamingError = onError
@@ -248,6 +270,7 @@ public final class ClawVoiceInputService: NSObject {
     guard let recognizer = makeRecognizer(), recognizer.isAvailable else {
       clearStreamingCallbacks()
       LogService.shared.log(.voiceRecognizerUnavailable)
+      diagnostic("recognizer_unavailable", severity: "error")
       onError(ClawVoiceError.recognizerUnavailable)
       return
     }
@@ -264,6 +287,7 @@ public final class ClawVoiceInputService: NSObject {
     } catch {
       clearStreamingCallbacks()
       LogService.shared.log(.voiceSessionStartFailed)
+      diagnostic("audio_session_or_engine_failed", severity: "error", error: error)
       onError(error)
       return
     }
@@ -273,6 +297,7 @@ public final class ClawVoiceInputService: NSObject {
       try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
       clearStreamingCallbacks()
       LogService.shared.log(.voiceAudioUnavailable)
+      diagnostic("input_format_unavailable", severity: "error")
       onError(ClawVoiceError.audioUnavailable)
       return
     }
@@ -299,6 +324,7 @@ self.streamingPartial?(text)
         let onError = self.streamingError
         self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
         LogService.shared.log(.voiceRecognitionFailed)
+        self.diagnostic("recognition_failed", severity: "error", error: error)
         onError?(error)
       }
     }
@@ -307,10 +333,12 @@ self.streamingPartial?(text)
       audioEngine.prepare()
       try audioEngine.start()
       isRecording = true
+      diagnostic("audio_engine_running")
     } catch {
       let callback = streamingError
       finishSession(generation, cancelTask: true, clearStreamingCallbacks: true)
       LogService.shared.log(.voiceSessionStartFailed)
+      diagnostic("audio_session_or_engine_failed", severity: "error", error: error)
       callback?(error)
     }
   }
@@ -416,6 +444,7 @@ self.streamingPartial?(text)
   @discardableResult
   private func resetForNewSession() -> UInt {
     sessionGeneration &+= 1
+    diagnosticTraceID = UUID()
     teardown(cancelTask: true, clearStreamingCallbacks: true)
     return sessionGeneration
   }
