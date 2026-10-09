@@ -91,6 +91,40 @@ final class ClawPeopleWorkflowTests: XCTestCase {
                   "A standing intent must prevent unsafe person deletion")
   }
 
+  func testPurgePersonRemovesLocalLineageButLeavesOtherPersonIntact() throws {
+    let person = UUID(), other = UUID()
+    let sdk = DefaultMemorySDK(store: store)
+    let event = RawMemoryEvent(kind: "chat", content: "第一人的私密证据")
+    let evidence = MemoryEvidence(rawEventID: event.id, excerpt: event.content)
+    let record = MemoryV2Record(type: .preference, state: .active, scope: .person,
+      content: "第一人的私人喜好", personID: person,
+      provenance: .init(originType: .userExplicit, ingestionMethod: "test"),
+      evidence: [evidence])
+    try store.saveMemoryV2(record, rawEvents: [event])
+    let otherRecord = MemoryV2Record(type: .preference, state: .active, scope: .person,
+      content: "另一个人的私人喜好", personID: other,
+      provenance: .init(originType: .userExplicit, ingestionMethod: "test"))
+    try sdk.remember(otherRecord)
+    try store.appendConversation(ClawConversationMessage(contactID: person,
+      speaker: .other, content: "私密聊天", sourceType: "test"))
+    try store.upsertTask(ClawSecretaryTask(title: "私密事项",
+      contactID: person, sourceType: "test"))
+    try store.saveStandingIntent(StandingIntent(trigger: "记住", personID: person,
+      context: "测试", condition: "下次", action: "联系",
+      provenance: .init(originType: .userExplicit, ingestionMethod: "test")))
+
+    XCTAssertTrue(try store.hasContactReferences(id: person))
+    try store.purgePersonLocalRecords(id: person)
+    XCTAssertFalse(try store.hasContactReferences(id: person))
+    XCTAssertNil(try store.memoryV2(id: record.id))
+    XCTAssertEqual(try store.memoryV2VersionCount(id: record.id), 0)
+    XCTAssertTrue(try store.rawEvents(ids: [event.id]).isEmpty)
+    XCTAssertTrue(try store.conversation(contactID: person).isEmpty)
+    XCTAssertTrue(try store.tasks().filter { $0.contactID == person }.isEmpty)
+    XCTAssertTrue(try store.standingIntents().filter { $0.personID == person }.isEmpty)
+    XCTAssertEqual(try store.memoryV2(id: otherRecord.id)?.content, "另一个人的私人喜好")
+  }
+
   func testMergePreservesDestinationAndAddsSourceIdentity() {
     let source = HeartTargetProfile(
       name: "Alice",

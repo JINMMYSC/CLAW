@@ -1301,6 +1301,50 @@ private struct ClawTaskDetailView: View {
   }
 }
 
+/// No local deletion occurs without a second, typed-name confirmation.
+/// External archives and cloud copies are explicitly outside this operation.
+private struct ClawPersonEraseReview: View {
+  @Environment(\.dismiss) private var dismiss
+  let profile: HeartTargetProfile
+  let onErase: () -> Bool
+  @State private var typedName = ""
+  @State private var errorText: String?
+
+  var body: some View {
+    NavigationView {
+      Form {
+        Section("准备清除的对象") {
+          Text(profile.displayName).font(.headline)
+          Text("会删除此人物的本机聊天记录、长期记忆、待办和关联证据。不能撤销。本操作不修改其他人物，也不会自动删除你此前导出的备份或云端副本。")
+            .foregroundColor(.secondary)
+        }
+        Section("再次确认") {
+          TextField("输入此人物的完整名称", text: $typedName)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+          Button("永久清除本机关联资料", role: .destructive) {
+            if onErase() { dismiss() }
+            else { errorText = "清除失败，人物档案保留，请检查存储状态后重试" }
+          }
+          .disabled(typedName != profile.displayName)
+        }
+      }
+      .navigationTitle("清除人物资料")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("取消") { dismiss() }
+        }
+      }
+      .alert("无法清除", isPresented: Binding(
+        get: { errorText != nil },
+        set: { if !$0 { errorText = nil } }
+      )) {
+        Button("知道了", role: .cancel) { errorText = nil }
+      } message: { Text(errorText ?? "") }
+    }
+  }
+}
+
 private struct ClawPeopleView: View {
   let onUseProfile: () -> Void
   @State private var profiles = HeartTargetService.shared.profiles
@@ -1309,6 +1353,7 @@ private struct ClawPeopleView: View {
   @State private var editingProfile: HeartTargetProfile?
   @State private var filter = ClawPeopleFilter.all
   @State private var pendingDelete: HeartTargetProfile?
+  @State private var pendingEraseProfile: HeartTargetProfile?
   @State private var mergingProfile: HeartTargetProfile?
 
   private var filteredProfiles: [HeartTargetProfile] {
@@ -1423,17 +1468,24 @@ private struct ClawPeopleView: View {
       .alert(item: $pendingDelete) { profile in
         let hasRecords = (try? ClawMemoryStore.shared.hasContactReferences(id: profile.id)) ?? true
         return Alert(
-          title: Text(hasRecords ? "无法直接删除 \(profile.displayName)" : "删除 \(profile.displayName)？"),
+          title: Text(hasRecords ? "该人物含有关联记录" : "删除 \(profile.displayName)？"),
           message: Text(hasRecords
-            ? "该人物关联着私密聊天、记忆或任务。为防止这些资料暴露为全局记忆，暂不删除。可先将人物合并到正确对象，或在数据管理中处理关联资料。"
+            ? "不能只删除档案，否则私密记忆可能失去归属。若确实要清除本机该人物及其记录，请进入二次核对。备份和云端副本不会自动删除。"
             : "该人物没有关联记录。删除档案不会影响其他人物。"),
-          primaryButton: .default(Text(hasRecords ? "知道了" : "确认删除")) {
-            if !hasRecords {
+          primaryButton: .destructive(Text(hasRecords ? "核对后清除…" : "删除档案")) {
+            if hasRecords {
+              pendingEraseProfile = profile
+            } else {
               _ = ClawPeopleWorkflowService.shared.deleteProfilePreservingRecords(profile.id)
             }
           },
           secondaryButton: .cancel()
         )
+      }
+      .sheet(item: $pendingEraseProfile) { profile in
+        ClawPersonEraseReview(profile: profile) {
+          ClawPeopleWorkflowService.shared.deleteProfileAndLocalRecords(profile.id)
+        }
       }
       .confirmationDialog(
         "将 \(mergingProfile?.displayName ?? "此人物") 合并到",

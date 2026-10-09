@@ -994,6 +994,84 @@ public final class ClawMemoryStore {
     return false
   }
 
+  /// Explicitly erase one person's live on-device records without promoting
+  /// anything to global. Dependent history, evidence, FTS, versions and audits
+  /// are removed in one SQLite transaction. This does not erase user-exported
+  /// archives, backups, files stored by other apps or synced cloud copies.
+  public func purgePersonLocalRecords(id: UUID) throws {
+    lock.lock(); defer { lock.unlock() }
+    let intentIDs = try standingIntents().filter { $0.personID == id }.map(\.id)
+    let conflicts = try memoryConflicts(includeResolved: true)
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      try executeUnlocked("CREATE TEMP TABLE IF NOT EXISTS claw_person_purge_ids (id TEXT PRIMARY KEY);")
+      try executeUnlocked("DELETE FROM claw_person_purge_ids;")
+      func step(_ sql: String, _ value: String) throws {
+        let statement = try prepare(sql)
+        defer { sqlite3_finalize(statement) }
+        bindText(value, at: 1, in: statement)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+          throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+        }
+      }
+      try step("INSERT OR IGNORE INTO claw_person_purge_ids SELECT id FROM memory_v2 WHERE person_id = ?;", id.uuidString)
+      try step("INSERT OR IGNORE INTO claw_person_purge_ids SELECT id FROM memory_items WHERE subject_id = ?;", id.uuidString)
+      for intentID in intentIDs {
+        try step("INSERT OR IGNORE INTO claw_person_purge_ids(id) VALUES (?);", intentID.uuidString)
+      }
+      let select = try prepare("SELECT id FROM claw_person_purge_ids;")
+      var deletedIDs = Set<String>()
+      while sqlite3_step(select) == SQLITE_ROW {
+        if let value = text(select, 0) { deletedIDs.insert(value) }
+      }
+      sqlite3_finalize(select)
+      try executeUnlocked("CREATE TEMP TABLE IF NOT EXISTS claw_person_purge_raw(id TEXT PRIMARY KEY);")
+      try executeUnlocked("DELETE FROM claw_person_purge_raw;")
+      try executeUnlocked("""
+        INSERT OR IGNORE INTO claw_person_purge_raw
+        SELECT raw_event_id FROM memory_evidence
+        WHERE memory_id IN (SELECT id FROM claw_person_purge_ids);
+      """)
+      try executeUnlocked("DELETE FROM memory_v2_fts WHERE id IN (SELECT id FROM claw_person_purge_ids);")
+      try executeUnlocked("DELETE FROM memory_evidence WHERE memory_id IN (SELECT id FROM claw_person_purge_ids);")
+      try executeUnlocked("DELETE FROM memory_versions WHERE memory_id IN (SELECT id FROM claw_person_purge_ids);")
+      try executeUnlocked("DELETE FROM memory_audit WHERE memory_id IN (SELECT id FROM claw_person_purge_ids);")
+      try executeUnlocked("""
+        DELETE FROM memory_lineage
+        WHERE memory_id IN (SELECT id FROM claw_person_purge_ids)
+           OR parent_memory_id IN (SELECT id FROM claw_person_purge_ids)
+           OR source_memory_id IN (SELECT id FROM claw_person_purge_ids);
+      """)
+      try executeUnlocked("DELETE FROM memory_v2 WHERE id IN (SELECT id FROM claw_person_purge_ids);")
+      try step("DELETE FROM memory_items WHERE subject_id = ?;", id.uuidString)
+      for (table, column) in [
+        ("conversation_messages", "contact_id"),
+        ("secretary_tasks", "contact_id"),
+        ("evolution_feedback", "contact_id")
+      ] {
+        try step("DELETE FROM \(table) WHERE \(column) = ?;", id.uuidString)
+      }
+      for intentID in intentIDs {
+        try step("DELETE FROM standing_intents WHERE id = ?;", intentID.uuidString)
+      }
+      for conflict in conflicts where deletedIDs.contains(conflict.existingMemoryID.uuidString)
+          || deletedIDs.contains(conflict.incomingMemoryID.uuidString) {
+        try step("DELETE FROM memory_conflicts WHERE id = ?;", conflict.id.uuidString)
+      }
+      // Delete raw events only when no other person's evidence references them.
+      try executeUnlocked("""
+        DELETE FROM raw_events WHERE id IN (SELECT id FROM claw_person_purge_raw)
+          AND id NOT IN (SELECT raw_event_id FROM memory_evidence);
+      """)
+      try executeUnlocked("DELETE FROM claw_person_purge_raw;")
+      try executeUnlocked("DELETE FROM claw_person_purge_ids;")
+      try executeUnlocked("COMMIT;")
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
+  }
+
   /// Reassigns every contact-bound record atomically. Only use non-nil
   /// destinations for explicitly confirmed merges. Never promote person
   /// memories to global when removing a profile.

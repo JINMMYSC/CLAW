@@ -153,8 +153,13 @@ public class HeartTargetService {
   }
 
   public func delete(id: UUID) {
+    // Preserve the selected person's identity, not the array index after a
+    // deletion; never silently switch private keyboard context to a stranger.
+    let currentID = selectedProfile?.id
     profiles.removeAll { $0.id == id }
-    if selectedIndex >= profiles.count { selectedIndex = profiles.isEmpty ? -1 : profiles.count - 1 }
+    selectedIndex = currentID == id
+      ? -1
+      : (profiles.firstIndex(where: { $0.id == currentID }) ?? -1)
     persist()
   }
 

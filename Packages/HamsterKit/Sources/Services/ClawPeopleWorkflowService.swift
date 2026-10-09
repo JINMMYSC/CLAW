@@ -52,6 +52,23 @@ public final class ClawPeopleWorkflowService {
     }
   }
 
+  /// Called only after a separate typed-name confirmation in the host app.
+  /// Other people and global memories are never changed. Backups are outside
+  /// this local purge and must be managed separately by the user.
+  @discardableResult
+  public func deleteProfileAndLocalRecords(_ id: UUID) -> Bool {
+    guard profiles.profile(id: id) != nil else { return false }
+    do {
+      try store.purgePersonLocalRecords(id: id)
+      UserDefaults(suiteName: HamsterConstants.appGroupName)?
+        .removeObject(forKey: "claw_chat_history_v2_contact_\(id.uuidString)")
+      profiles.delete(id: id)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   public func splitCopy(of profile: HeartTargetProfile) -> HeartTargetProfile {
     HeartTargetProfile(
       name: profile.name + "（拆分）",
