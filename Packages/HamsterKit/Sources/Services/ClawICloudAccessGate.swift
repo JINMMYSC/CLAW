@@ -31,7 +31,15 @@ public struct ClawICloudAccessGate {
   }
 
   public func documentsURL() throws -> URL {
-    // Compiling RED checkpoint: deliberately lacks capability validation.
-    URL(fileURLWithPath: "/claw-icloud-unimplemented", isDirectory: true)
+    guard let capability = readCapability() else {
+      throw ClawICloudAccessError.unknownSigningCapability
+    }
+    guard capability else {
+      throw ClawICloudAccessError.missingSigningCapability
+    }
+    guard let container = resolveContainer(HamsterConstants.iCloudID) else {
+      throw ClawICloudAccessError.containerUnavailable
+    }
+    return container.appendingPathComponent("Documents", isDirectory: true)
   }
 }
