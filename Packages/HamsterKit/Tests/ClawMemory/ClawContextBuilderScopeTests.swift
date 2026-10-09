@@ -70,6 +70,29 @@ final class ClawContextBuilderScopeTests: XCTestCase {
     }
   }
 
+  func testTaskVisibilityIsAppliedBeforeFortyRowLimit() throws {
+    let current = HeartTargetProfile(name: "当前对象")
+    let other = HeartTargetProfile(name: "其他对象")
+    try store.upsertTask(ClawSecretaryTask(title: "全局重要事项", sourceType: "test"))
+    try store.upsertTask(ClawSecretaryTask(title: "当前对象的待办", contactID: current.id, sourceType: "test"))
+    for index in 0..<55 {
+      try store.upsertTask(ClawSecretaryTask(
+        title: "其他人的截止日期\(index)", contactID: other.id,
+        dueAt: Date(timeIntervalSince1970: Double(1_000 + index)),
+        sourceType: "test"
+      ))
+    }
+
+    let contextBuilder = builder(profiles: [current, other])
+    let global = contextBuilder.build(contactID: nil, query: "今天的全局计划")
+    XCTAssertEqual(global.openTasks.map(\.title), ["全局重要事项"])
+    let personal = contextBuilder.build(contactID: current.id)
+    XCTAssertEqual(Set(personal.openTasks.map(\.title)), Set(["全局重要事项", "当前对象的待办"]))
+    XCTAssertFalse(personal.openTasks.contains { $0.title.hasPrefix("其他人的截止日期") })
+    XCTAssertEqual(try store.tasks(status: .open, limit: 40).count, 40,
+                   "The unscoped task list retains its existing semantics")
+  }
+
   func testRelationshipWordsAloneNeverSelectAPerson() {
     let profiles = [
       HeartTargetProfile(name: "王一", relationship: "客户"),

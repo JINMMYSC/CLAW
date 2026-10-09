@@ -1071,12 +1071,34 @@ public final class ClawMemoryStore {
   }
 
   public func tasks(status: ClawTaskStatus? = .open, limit: Int = 100) throws -> [ClawSecretaryTask] {
+    try queryTasks(status: status, contactID: nil, contextOnly: false, limit: limit)
+  }
+
+  /// Apply person privacy constraints *before* LIMIT. Filtering after fetching
+  /// the first 40 tasks may hide global/current-person tasks beneath unrelated
+  /// people's deadlines, even when the final in-memory filter is safe.
+  public func contextTasks(contactID: UUID?, limit: Int = 40) throws -> [ClawSecretaryTask] {
+    try queryTasks(status: .open, contactID: contactID, contextOnly: true, limit: limit)
+  }
+
+  private func queryTasks(
+    status: ClawTaskStatus?, contactID: UUID?, contextOnly: Bool, limit: Int
+  ) throws -> [ClawSecretaryTask] {
     lock.lock(); defer { lock.unlock() }
-    let whereClause = status == nil ? "" : " WHERE status = ?"
+    var conditions: [String] = []
+    if status != nil { conditions.append("status = ?") }
+    if contextOnly {
+      conditions.append(contactID == nil ? "contact_id IS NULL" : "(contact_id IS NULL OR contact_id = ?)")
+    }
+    let whereClause = conditions.isEmpty ? "" : " WHERE " + conditions.joined(separator: " AND ")
     let sql = "SELECT id,kind,status,title,details,contact_id,due_at,created_at,source_type,source_ref FROM secretary_tasks\(whereClause) ORDER BY CASE WHEN due_at IS NULL THEN 1 ELSE 0 END, due_at ASC, created_at DESC LIMIT ?;"
     let statement = try prepare(sql); defer { sqlite3_finalize(statement) }
     var index: Int32 = 1
     if let status { bindText(status.rawValue, at: index, in: statement); index += 1 }
+    if contextOnly, let contactID {
+      bindText(contactID.uuidString, at: index, in: statement)
+      index += 1
+    }
     sqlite3_bind_int(statement, index, Int32(max(1, limit)))
     var result: [ClawSecretaryTask] = []
     while sqlite3_step(statement) == SQLITE_ROW {
