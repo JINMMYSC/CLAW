@@ -93,10 +93,41 @@ public enum ClawDiagnosticsCaptureService {
     )
   }
 
+  /// Bound lifetime of exported *diagnostic* ZIPs. Keep in-progress shares
+  /// for at least an hour; never delete arbitrary temp directories or user files.
+  static func pruneOldExports(
+    in root: URL, now: Date = Date(), maxAge: TimeInterval = 24 * 3_600,
+    keepLatest: Int = 5
+  ) {
+    let fm = FileManager.default
+    guard let entries = try? fm.contentsOfDirectory(
+      at: root, includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey]
+    ) else { return }
+    let candidates: [(url: URL, timestamp: Date)] = entries.compactMap { url in
+      let name = url.lastPathComponent
+      guard name.hasPrefix("claw-report-"),
+            UUID(uuidString: String(name.dropFirst("claw-report-".count))) != nil,
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
+            fm.fileExists(atPath: url.appendingPathComponent("CLAW-Diagnostics.zip").path)
+      else { return nil }
+      let attributes = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+      let modified = attributes?.contentModificationDate ?? now
+      return (url, modified)
+    }.sorted { $0.timestamp > $1.timestamp }
+    for (index, candidate) in candidates.enumerated() {
+      let age = now.timeIntervalSince(candidate.timestamp)
+      guard age > maxAge || (index >= max(1, keepLatest) && age > 3_600) else {
+        continue
+      }
+      try? fm.removeItem(at: candidate.url)
+    }
+  }
+
   /// Must only be invoked from an explicit share action in the Host App.
   /// The zip has no raw speech, input or clipboard payloads; contains only
   /// field-whitelisted events, metadata, and source availability warnings.
   public static func exportZip(capture: ClawDiagnosticCapture = captureCurrent()) throws -> URL {
+    pruneOldExports(in: FileManager.default.temporaryDirectory)
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("claw-report-" + UUID().uuidString, isDirectory: true)
     let staged = root.appendingPathComponent("claw-diagnostics", isDirectory: true)
