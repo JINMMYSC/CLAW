@@ -95,12 +95,12 @@ public final class ClawScreenshotIngestionService {
     let result = ClawScreenshotIngestionResult(profile: resolution.profile, messages: parsed.messages, requiresReview: requiresReview, rawText: parsed.rawText)
     guard !requiresReview else { return result }
 
-    for message in parsed.messages {
-      _ = try store.appendConversation(message)
+    // Auto-approved screenshots still share the same idempotent write
+    // boundary as user-reviewed imports: only *new* bubbles derive memory
+    // and tasks. Never persist an unowned screenshot to global context.
+    if let profile = resolution.profile {
+      _ = try confirmReviewed(messages: parsed.messages, for: profile)
     }
-    let flush = MemoryFlushService().extract(sessionID: UUID(), messages: parsed.messages, personID: resolution.profile?.id)
-    for record in flush.records { try sdk.remember(record, evidence: record.evidence) }
-    for task in flush.tasks { try sdk.createTask(task) }
     return result
   }
 

@@ -780,8 +780,10 @@ public final class ClawMemoryStore {
     try executeUnlocked("BEGIN IMMEDIATE;")
     do {
       var inserted: [ClawConversationMessage] = []
-      for message in messages where try appendConversationUnlocked(message) {
-        inserted.append(message)
+      for message in messages {
+        if try appendConversationUnlocked(message) {
+          inserted.append(message)
+        }
       }
       try executeUnlocked("COMMIT;")
       return inserted

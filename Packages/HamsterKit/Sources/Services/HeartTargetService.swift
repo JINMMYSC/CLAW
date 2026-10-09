@@ -159,7 +159,7 @@ public class HeartTargetService {
     profiles.removeAll { $0.id == id }
     selectedIndex = currentID == id
       ? -1
-      : (profiles.firstIndex(where: { $0.id == currentID }) ?? -1)
+      : (currentID.flatMap { selected in profiles.firstIndex(where: { $0.id == selected }) } ?? -1)
     persist()
   }
 
