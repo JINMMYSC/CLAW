@@ -4,8 +4,8 @@ import XCTest
 
 final class ClawDiagnosticsCaptureTests: XCTestCase {
   func testMergesBothProcessesInTimestampOrderWithoutDeclaringMissingKeyboardHealthy() throws {
-    let host = ClawDiagnosticsCore(storageURL: nil, processName: "host")
-    let keyboard = ClawDiagnosticsCore(storageURL: nil, processName: "keyboard")
+    let host = ClawDiagnosticsCore(storageURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString), processName: "host")
+    let keyboard = ClawDiagnosticsCore(storageURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString), processName: "keyboard")
     host.record(module: "ui", action: "assistant_appeared")
     keyboard.record(module: "keyboard", action: "candidate_expanded")
     let capture = ClawDiagnosticsCaptureService.capture(
@@ -29,7 +29,7 @@ final class ClawDiagnosticsCaptureTests: XCTestCase {
   }
 
   func testExportContainsOnlyRedactedEvents() throws {
-    let logger = ClawDiagnosticsCore(storageURL: nil, processName: "host")
+    let logger = ClawDiagnosticsCore(storageURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString), processName: "host")
     logger.record(
       module: "voice", action: "session_failed", severity: "error",
       error: NSError(domain: "AVAudioSessionErrorDomain", code: 1,

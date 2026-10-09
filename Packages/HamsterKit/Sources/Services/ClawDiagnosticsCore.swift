@@ -81,7 +81,9 @@ public final class ClawDiagnosticsCore {
     queue.async { [self] in
       buffer.append(event)
       if buffer.count > Self.maxEvents { buffer.removeFirst(buffer.count - Self.maxEvents) }
-      if level != "info" { persist() }
+      // Periodic snapshots retain pre-error context even after an abrupt
+      // Keyboard Extension termination. All writes stay on the utility queue.
+      if level != "info" || buffer.count % 25 == 0 { persist() }
       if level == "error" {
         logger.error("\(event.module, privacy: .public):\(event.action, privacy: .public) code=\(event.errorCode ?? 0, privacy: .public)")
       } else {
