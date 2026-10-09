@@ -131,6 +131,16 @@ private struct ClawSettingsHubView: View {
             .font(.footnote).foregroundColor(.secondary)
         }
 
+        Section("微信 AI 助手") {
+          NavigationLink {
+            ClawWeChatLocalSettingsView()
+          } label: {
+            Label("微信 ClawBot · 本机连接", systemImage: "message.badge.waveform")
+          }
+          Text("本机连接尚未开放扫码授权。不会在后台假装常驻，也不会主动读取其他微信聊天。")
+            .font(.footnote).foregroundColor(.secondary)
+        }
+
         Section("数据与隐私") {
           NavigationLink {
             ClawTalkRootView(viewModel: viewModel)
@@ -258,21 +268,29 @@ enum ClawImportedAttachmentReader {
 private struct ClawScreenshotReviewSheet: View {
   @Environment(\.dismiss) private var dismiss
   let preview: ClawScreenshotIngestionResult
+  let screenshot: UIImage?
   let profiles: [HeartTargetProfile]
+  @State private var availableProfiles: [HeartTargetProfile]
   let onConfirm: (UUID, [ClawConversationMessage]) throws -> Int
   let onUseText: (String) -> Void
   @State private var selectedProfileID: UUID?
   @State private var reviewedMessages: [ClawConversationMessage]
   @State private var errorText: String?
+  @State private var showingNewProfile = false
+  @State private var newProfileName = ""
+  @State private var newProfileRelationship = ""
 
   init(
     preview: ClawScreenshotIngestionResult,
+    screenshot: UIImage?,
     profiles: [HeartTargetProfile],
     onConfirm: @escaping (UUID, [ClawConversationMessage]) throws -> Int,
     onUseText: @escaping (String) -> Void
   ) {
     self.preview = preview
+    self.screenshot = screenshot
     self.profiles = profiles
+    _availableProfiles = State(initialValue: profiles)
     self.onConfirm = onConfirm
     self.onUseText = onUseText
     _selectedProfileID = State(initialValue: preview.profile?.id)
@@ -290,21 +308,36 @@ private struct ClawScreenshotReviewSheet: View {
   var body: some View {
     NavigationView {
       Form {
+        if let screenshot {
+          Section {
+            Image(uiImage: screenshot)
+              .resizable()
+              .scaledToFit()
+              .frame(maxWidth: .infinity, maxHeight: 250)
+              .accessibilityLabel("原始聊天截图预览")
+          } header: {
+            Text("原始截图（仅供本次核对）")
+          } footer: {
+            Text("请对照原图确认聊天气泡。退出审核后不保留这张临时预览；不会自动将原图保存为人物记忆。")
+          }
+        }
         Section {
           Menu {
-            ForEach(profiles) { profile in
+            ForEach(availableProfiles) { profile in
               Button(profile.displayName) { selectedProfileID = profile.id }
             }
+            Button("＋ 新建聊天对象") { showingNewProfile = true }
           } label: {
             HStack {
               Text("聊天对象")
               Spacer()
-              Text(profiles.first(where: { $0.id == selectedProfileID })?.displayName ?? "请手动选择")
+              Text(availableProfiles.first(where: { $0.id == selectedProfileID })?.displayName ?? "请手动选择")
                 .foregroundColor(.secondary)
             }
           }
-          if profiles.isEmpty {
-            Text("还没有人物档案。请先在「人物」页新建，再导入截图。")
+          if availableProfiles.isEmpty {
+            Button("立即新建聊天对象") { showingNewProfile = true }
+            Text("可以在这里创建人物，不必退出当前截图审核；保存画像仍需确认消息和发言者。")
               .font(.caption).foregroundColor(.secondary)
           }
         } header: {
@@ -331,6 +364,9 @@ private struct ClawScreenshotReviewSheet: View {
                 .accessibilityLabel("校对消息文字")
             }
             .padding(.vertical, 4)
+          }
+          .onDelete { offsets in
+            reviewedMessages.remove(atOffsets: offsets)
           }
         }
 
@@ -363,6 +399,35 @@ private struct ClawScreenshotReviewSheet: View {
           .disabled(!canConfirm)
         }
       }
+      .sheet(isPresented: $showingNewProfile) {
+        NavigationView {
+          Form {
+            TextField("姓名或聊天昵称", text: $newProfileName)
+              .textInputAutocapitalization(.never)
+            TextField("关系（选填，例如朋友、客户）", text: $newProfileRelationship)
+          }
+          .navigationTitle("新建聊天对象")
+          .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+              Button("取消") { showingNewProfile = false }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+              Button("保存并选择") {
+                let name = newProfileName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return }
+                let profile = HeartTargetService.shared.upsert(HeartTargetProfile(
+                  name: name,
+                  relationship: newProfileRelationship.trimmingCharacters(in: .whitespacesAndNewlines)
+                ))
+                availableProfiles = HeartTargetService.shared.profiles
+                selectedProfileID = profile.id
+                showingNewProfile = false
+              }
+              .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+          }
+        }
+      }
       .alert("无法归档", isPresented: Binding(
         get: { errorText != nil },
         set: { if !$0 { errorText = nil } }
@@ -388,12 +453,14 @@ private struct ClawAssistantChatView: View {
   @State private var selectedProfileName = HeartTargetService.shared.selectedProfile?.displayName
   @State private var searchText = ""
   @State private var showingSearch = false
+  @State private var isAtChatBottom = true
   @State private var showingNewConversationConfirmation = false
   @State private var showingPhotoAttachment = false
   @State private var showingFileAttachment = false
   @State private var attachmentStatus = ""
   @State private var lastScreenshotReceipt: ClawScreenshotImportReceipt?
   @State private var pendingScreenshotReview: ClawScreenshotIngestionResult?
+  @State private var pendingScreenshotImage: UIImage?
   @State private var showingScreenshotReview = false
   @State private var quickPrompts = ClawQuickPromptStore(
     defaults: UserDefaults(suiteName: HamsterConstants.appGroupName) ?? .standard
@@ -449,17 +516,31 @@ private struct ClawAssistantChatView: View {
               }
               .padding(.horizontal)
             }
+            // A lazy bottom anchor tracks whether the user is reading older
+            // content. Incoming messages must not steal their scroll position.
+            Color.clear
+              .frame(height: 1)
+              .id("claw-chat-bottom")
+              .onAppear { isAtChatBottom = true }
+              .onDisappear { isAtChatBottom = false }
           }
           .padding(.vertical, 12)
         }
         .onChange(of: chat.messages.count) { _ in
-          if let id = chat.messages.last?.id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
+          guard ClawChatScrollPolicy.shouldFollow(
+            isAtBottom: isAtChatBottom, isSearching: showingSearch
+          ) else { return }
+          withAnimation { proxy.scrollTo("claw-chat-bottom", anchor: .bottom) }
         }
         .overlay(alignment: .bottomTrailing) {
-          if chat.messages.count > 5, let latest = chat.messages.last?.id {
-            Button { withAnimation { proxy.scrollTo(latest, anchor: .bottom) } } label: {
+          if chat.messages.count > 5 && !isAtChatBottom {
+            Button {
+              isAtChatBottom = true
+              withAnimation { proxy.scrollTo("claw-chat-bottom", anchor: .bottom) }
+            } label: {
               Image(systemName: "arrow.down.circle.fill").font(.title2)
             }
+            .accessibilityLabel("跳到最新消息")
             .padding(10)
           }
         }
@@ -591,10 +672,12 @@ private struct ClawAssistantChatView: View {
     }
     .sheet(isPresented: $showingScreenshotReview, onDismiss: {
       pendingScreenshotReview = nil
+      pendingScreenshotImage = nil
     }) {
       if let preview = pendingScreenshotReview {
         ClawScreenshotReviewSheet(
           preview: preview,
+          screenshot: pendingScreenshotImage,
           profiles: HeartTargetService.shared.profiles,
           onConfirm: { id, reviewed in
             guard let profile = HeartTargetService.shared.profile(id: id) else {
@@ -1017,6 +1100,7 @@ private struct ClawAssistantChatView: View {
               requireUserReview: true
             )
             pendingScreenshotReview = preview
+            pendingScreenshotImage = image
             showingScreenshotReview = true
             attachmentStatus = "请核对人物、发言者与文字，再决定是否归档"
           } catch {
@@ -1526,7 +1610,7 @@ private struct ClawPeopleView: View {
           ForEach(filteredProfiles) { profile in
             HStack(spacing: 8) {
               NavigationLink {
-                ClawContactDetailView(profile: profile)
+                ClawContactDetailView(profile: profile, onUseProfile: onUseProfile)
               } label: {
                 HStack(spacing: 10) {
                   Group {
@@ -1742,7 +1826,9 @@ private struct ClawContactEditorView: View {
 }
 
 private struct ClawContactDetailView: View {
+  @Environment(\.dismiss) private var dismiss
   let profile: HeartTargetProfile
+  let onUseProfile: () -> Void
   @State private var timeline: [ClawConversationMessage] = []
   @State private var memories: [ClawMemoryItem] = []
   @State private var tasks: [ClawSecretaryTask] = []
@@ -1754,10 +1840,12 @@ private struct ClawContactDetailView: View {
         Button {
           HeartTargetService.shared.select(id: profile.id)
           isSelected = true
+          dismiss()
+          onUseProfile()
         } label: {
-          Label(isSelected ? "当前助手人物" : "设为当前助手人物", systemImage: isSelected ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")
+          Label("与此人对话", systemImage: "message.fill")
         }
-        .disabled(isSelected)
+        .accessibilityHint("设为当前人物并打开 CLAW 助手")
       }
       Section {
         if profile.autoCreated {

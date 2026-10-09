@@ -72,6 +72,90 @@ final class MemoryRouterTests: XCTestCase {
                   "Chinese substring lookup must not be limited to recent V2 records")
   }
 
+  func testOtherPeopleCannotDisplaceOldSelectedMemoryBeforeCandidateLimit() throws {
+    let selected = UUID(), other = UUID()
+    let wanted = record("只有选中人物的历史偏好", scope: .person, personID: selected)
+    try sdk.remember(wanted)
+    for index in 0..<110 {
+      try sdk.remember(record("其他人的偏好记录\(index)", scope: .person, personID: other))
+    }
+    let result = try MemoryRouter(store: store).recall(
+      MemoryRecallRequest(query: "历史偏好", personID: selected, scope: .person, limit: 1)
+    )
+    XCTAssertEqual(result.first?.id, wanted.id)
+  }
+
+  func testExpiredAndInactiveCannotDisplaceOlderActiveMemory() throws {
+    let selected = UUID()
+    let wanted = record("长久有效的聊天习惯", scope: .person, personID: selected)
+    try sdk.remember(wanted)
+    for index in 0..<95 {
+      var invalid = record("过期聊天习惯\(index)", scope: .person, personID: selected)
+      invalid.state = index.isMultiple(of: 2) ? .candidate : .active
+      invalid.expiresAt = Date().addingTimeInterval(-100)
+      try sdk.remember(invalid)
+    }
+    let result = try MemoryRouter(store: store).recall(
+      MemoryRecallRequest(query: "聊天习惯", personID: selected, scope: .person, limit: 1)
+    )
+    XCTAssertEqual(result.first?.id, wanted.id)
+  }
+
+  func testCloudDeniedRowsCannotDisplaceOlderAllowedContext() throws {
+    let wanted = record("可以分享的个人交流偏好", scope: .global)
+    try sdk.remember(wanted)
+    for index in 0..<100 {
+      var denied = record("本地机密偏好\(index)", scope: .global)
+      denied.cloudPermission = .neverSend
+      try sdk.remember(denied)
+    }
+    let context = try sdk.context(MemoryContextRequest(
+      recall: MemoryRecallRequest(query: "交流偏好", scope: .global, limit: 1)
+    ))
+    XCTAssertEqual(context.records.first?.id, wanted.id)
+  }
+
+  func testOwnerTaggedGlobalRecordNeverEntersUnscopedRecall() throws {
+    let personID = UUID()
+    let wanted = record("无归属全局信息", scope: .global)
+    try sdk.remember(wanted)
+    var owned = record("有归属的全局信息", scope: .global)
+    owned.personID = personID
+    try sdk.remember(owned)
+    let global = try MemoryRouter(store: store).recall(
+      MemoryRecallRequest(query: "信息", scope: .global, limit: 10)
+    )
+    XCTAssertEqual(global.map(\.id), [wanted.id])
+  }
+
+
+  func testRecencyUsesProvidedClockAndCapsFutureDates() {
+    let now = Date(timeIntervalSince1970: 2_100_000_000)
+    let day: TimeInterval = 86_400
+    XCTAssertEqual(MemoryRouter.recencyFactor(updatedAt: now, now: now), 1, accuracy: 0.00001)
+    XCTAssertEqual(MemoryRouter.recencyFactor(updatedAt: now.addingTimeInterval(365 * day), now: now), 1, accuracy: 0.00001)
+    XCTAssertEqual(MemoryRouter.recencyFactor(updatedAt: now.addingTimeInterval(-90 * day), now: now), 0.5, accuracy: 0.00001)
+    XCTAssertEqual(MemoryRouter.recencyFactor(updatedAt: now.addingTimeInterval(-365 * day), now: now), 0, accuracy: 0.00001)
+  }
+
+  func testRecallRanksAgainstInjectedClockRatherThanWallClock() throws {
+    let now = Date(timeIntervalSince1970: 2_100_000_000)
+    let day: TimeInterval = 86_400
+    var oldImportant = record("优先级高的历史记录", scope: .global)
+    oldImportant.updatedAt = now.addingTimeInterval(-400 * day)
+    oldImportant.importance = 0.95
+    var recentLowPriority = record("优先级低的近期记录", scope: .global)
+    recentLowPriority.updatedAt = now.addingTimeInterval(-10 * day)
+    recentLowPriority.importance = 0.55
+    try sdk.remember(oldImportant)
+    try sdk.remember(recentLowPriority)
+
+    let result = try MemoryRouter(store: store).recall(
+      MemoryRecallRequest(query: "", scope: .global, limit: 1), now: now
+    )
+    XCTAssertEqual(result.first?.id, oldImportant.id)
+  }
+
   private func record(
     _ content: String,
     scope: MemoryScope,

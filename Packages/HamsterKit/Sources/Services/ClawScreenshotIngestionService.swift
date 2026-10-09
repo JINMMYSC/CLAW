@@ -79,7 +79,9 @@ public final class ClawScreenshotIngestionService {
     selectedProfile: HeartTargetProfile?,
     capturedAt: Date = Date(),
     sourceRef: String? = nil,
-    requireUserReview: Bool = false
+    // Kept for existing callers. A false value is no longer permission to
+    // write screenshot-derived memories or tasks without explicit approval.
+    requireUserReview: Bool = true
   ) throws -> ClawScreenshotIngestionResult {
     let preview = parser.parse(lines: lines, contactID: selectedProfile?.id, contactName: selectedProfile?.displayName, capturedAt: capturedAt, sourceRef: sourceRef)
     let resolution = selectedProfile.map { ClawContactResolution(profile: $0, confidence: 1, created: false, reason: "selected") }
@@ -88,28 +90,16 @@ public final class ClawScreenshotIngestionService {
       // a person explicitly. Avoid changing the current person as a side effect.
       ?? ClawContactIdentityResolver.shared.resolve(displayTitle: preview.detectedTitle, allowCreate: false)
     let parsed = parser.parse(lines: lines, contactID: resolution.profile?.id, contactName: resolution.profile?.displayName, capturedAt: capturedAt, sourceRef: sourceRef)
-    let hasUnknownSpeaker = parsed.messages.contains { $0.speaker == .unknown }
-    let weakOCR = parsed.messages.contains { $0.confidence < 0.70 }
-    let requiresReview: Bool
-    if selectedProfile != nil {
-      // A user-selected person is an explicit routing decision. Preserve OCR
-      // confidence on each message for later review, but import the timeline
-      // directly as long as at least one bubble was recognized.
-      requiresReview = requireUserReview || hasUnknownSpeaker || weakOCR || parsed.messages.isEmpty
-    } else {
-      // Fuzzy title matches (0.82) are suggestions, not verified identities.
-      requiresReview = requireUserReview || resolution.profile == nil || resolution.confidence < 0.90 || hasUnknownSpeaker || weakOCR || parsed.messages.isEmpty
-    }
-    let result = ClawScreenshotIngestionResult(profile: resolution.profile, messages: parsed.messages, requiresReview: requiresReview, rawText: parsed.rawText)
-    guard !requiresReview else { return result }
-
-    // Auto-approved screenshots still share the same idempotent write
-    // boundary as user-reviewed imports: only *new* bubbles derive memory
-    // and tasks. Never persist an unowned screenshot to global context.
-    if let profile = resolution.profile {
-      _ = try confirmReviewed(messages: parsed.messages, for: profile)
-    }
-    return result
+    // OCR confidence and even an explicitly selected person do not constitute
+    // consent to save private conversations, derive tasks or build a profile.
+    // This API is preview-only. Persistence is exclusively performed by the
+    // explicit confirmReviewed* methods after per-message speaker review.
+    // The legacy requireUserReview flag is intentionally ignored for safety.
+    _ = requireUserReview
+    return ClawScreenshotIngestionResult(
+      profile: resolution.profile, messages: parsed.messages,
+      requiresReview: true, rawText: parsed.rawText
+    )
   }
 
   /// Explicit user-approved import. An uncertain parse never writes to memory

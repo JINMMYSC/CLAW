@@ -138,7 +138,7 @@ public final class DefaultMemorySDK: MemorySDK {
   }
 
   public func context(_ request: MemoryContextRequest) throws -> MemoryContext {
-    let recalled = try recall(request.recall)
+    let recalled = try MemoryRouter(store: store).recall(request.recall, cloudEligibleOnly: true)
     let records = MemoryGuard().evaluate(
       recalled,
       personID: request.recall.personID,

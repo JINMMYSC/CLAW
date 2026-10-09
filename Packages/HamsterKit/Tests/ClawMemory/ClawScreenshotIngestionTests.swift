@@ -173,7 +173,7 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     XCTAssertEqual(try store.conversation(contactID: result.profile?.id, limit: 10).count, 0)
   }
 
-  func testHighConfidenceMessagesPersistAndCreateTasks() throws {
+  func testHighConfidenceScreenshotRequiresExplicitReviewBeforeSaving() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("screenshot-ingest-\(UUID())")
     defer { try? FileManager.default.removeItem(at: root) }
     let store = ClawMemoryStore(databaseURL: root.appendingPathComponent("memory.sqlite"))
@@ -183,10 +183,27 @@ final class ClawScreenshotIngestionTests: XCTestCase {
       VisionOCRService.OCRLine(text: "周五提交方案", boundingBox: .init(x: 0.1, y: 0.5, width: 0.25, height: 0.04), confidence: 0.95),
     ]
 
-    let result = try ClawScreenshotIngestionService(store: store).ingest(lines: lines, selectedProfile: profile, sourceRef: "test")
+    let service = ClawScreenshotIngestionService(store: store)
+    let result = try service.ingest(lines: lines, selectedProfile: profile, sourceRef: "test")
 
-    XCTAssertFalse(result.requiresReview)
-    XCTAssertEqual(try store.conversation(contactID: profile.id, limit: 10).count, 1)
+    XCTAssertTrue(result.requiresReview)
+    XCTAssertEqual(try store.conversation(contactID: profile.id, limit: 10).count, 0)
+    XCTAssertTrue(try store.tasks(status: .open, limit: 10).isEmpty)
+    XCTAssertEqual(try store.memoryV2Count(), 0)
+
+    // Even a legacy caller opting out of the review flag cannot persist OCR.
+    let legacy = try service.ingest(
+      lines: lines, selectedProfile: profile, sourceRef: "test",
+      requireUserReview: false
+    )
+    XCTAssertTrue(legacy.requiresReview)
+    XCTAssertTrue(try store.conversation(contactID: profile.id).isEmpty)
+    XCTAssertTrue(try store.tasks(status: .open).isEmpty)
+
+    XCTAssertFalse(result.messages.isEmpty)
+    let inserted = try service.confirmReviewed(messages: result.messages, for: profile)
+    XCTAssertEqual(inserted, result.messages.count)
+    XCTAssertEqual(try store.conversation(contactID: profile.id, limit: 10).count, inserted)
     XCTAssertFalse(try store.tasks(status: .open, limit: 10).isEmpty)
   }
 }

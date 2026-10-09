@@ -43,6 +43,46 @@ public struct ClawToolbarVisibility: Equatable {
   }
 }
 
+/// Enlarges only the vertical hit area; horizontal expansion would overlap
+/// adjacent controls in compact layouts and cause unintended actions.
+private final class ClawToolbarTouchButton: UIButton {
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    bounds.insetBy(dx: 0, dy: -7).contains(point)
+  }
+}
+
+/// A small keyboard cannot fit eight 44pt-wide buttons. Preserve typing and
+/// all three AI entry points; route emoji and the privacy switch through More.
+public enum ClawToolbarCompactPolicy {
+  public struct Widths: Equatable {
+    public let contact: CGFloat
+    public let reply: CGFloat
+    public let rewrite: CGFloat
+    public let ai: CGFloat
+    public let eye: CGFloat
+    public let emoji: CGFloat
+    public let more: CGFloat
+    public let dismiss: CGFloat
+    public let hidesSecondary: Bool
+  }
+
+  public static func widths(for availableWidth: CGFloat) -> Widths {
+    if availableWidth < 330 {
+      return Widths(contact: 40, reply: 45, rewrite: 45, ai: 32,
+                    eye: 0, emoji: 0, more: 34, dismiss: 34,
+                    hidesSecondary: true)
+    }
+    if availableWidth < 380 {
+      return Widths(contact: 54, reply: 60, rewrite: 60, ai: 38,
+                    eye: 0, emoji: 0, more: 34, dismiss: 34,
+                    hidesSecondary: true)
+    }
+    return Widths(contact: 64, reply: 60, rewrite: 60, ai: 32,
+                  eye: 26, emoji: 26, more: 26, dismiss: 26,
+                  hidesSecondary: false)
+  }
+}
+
 class KeyboardToolbarView: NibLessView {
   private let appearance: KeyboardAppearance
   private let actionHandler: KeyboardActionHandler
@@ -69,7 +109,7 @@ class KeyboardToolbarView: NibLessView {
 
   /// 当前聊天对象。全局模式只使用用户全局记忆，不混合多个联系人。
   lazy var contactButton: UIButton = {
-    let button = UIButton(type: .custom)
+    let button = ClawToolbarTouchButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
     button.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
     // 胶囊按钮统一常态配色：与「帮你回」「超会说」保持一致，选中态才换成强调色底。
@@ -105,7 +145,7 @@ class KeyboardToolbarView: NibLessView {
 
   /// 帮你回入口（胶囊）
   lazy var helpReplyButton: UIButton = {
-    let button = UIButton(type: .custom)
+    let button = ClawToolbarTouchButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
     button.setTitle("帮你回", for: .normal)
     button.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
@@ -122,7 +162,7 @@ class KeyboardToolbarView: NibLessView {
 
   /// 超会说入口（胶囊）
   lazy var superTalkButton: UIButton = {
-    let button = UIButton(type: .custom)
+    let button = ClawToolbarTouchButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
     button.setTitle("超会说", for: .normal)
     button.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
@@ -139,7 +179,7 @@ class KeyboardToolbarView: NibLessView {
 
   /// 眼睛按钮：隐私采集开关（原长按 AI 更多页，现移到功能行、表情按钮之前）
   lazy var eyeButton: UIButton = {
-    let button = UIButton(type: .custom)
+    let button = ClawToolbarTouchButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
     button.setImage(UIImage(systemName: "eye"), for: .normal)
     button.setPreferredSymbolConfiguration(.init(font: .systemFont(ofSize: 18), scale: .default), forImageIn: .normal)
@@ -154,7 +194,7 @@ class KeyboardToolbarView: NibLessView {
 
   /// 表情按钮：打开表情键盘（表情按钮之前为眼睛按钮）
   lazy var emojiButton: UIButton = {
-    let button = UIButton(type: .custom)
+    let button = ClawToolbarTouchButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
     button.setImage(UIImage(systemName: "face.smiling"), for: .normal)
     button.setPreferredSymbolConfiguration(.init(font: .systemFont(ofSize: 18), scale: .default), forImageIn: .normal)
@@ -169,7 +209,7 @@ class KeyboardToolbarView: NibLessView {
 
   /// 下拉按钮：收起键盘（功能行最右）
   lazy var dismissKeyboardButton: UIButton = {
-    let button = UIButton(type: .custom)
+    let button = ClawToolbarTouchButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
     button.setImage(UIImage(systemName: "chevron.down.circle"), for: .normal)
     button.setPreferredSymbolConfiguration(.init(font: .systemFont(ofSize: 18), scale: .default), forImageIn: .normal)
@@ -184,7 +224,7 @@ class KeyboardToolbarView: NibLessView {
 
   /// 常驻“…”入口：保留低频但重要的 CLAW/语音/设置动作。
   lazy var moreButton: UIButton = {
-    let button = UIButton(type: .custom)
+    let button = ClawToolbarTouchButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
     button.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
     button.setPreferredSymbolConfiguration(.init(font: .systemFont(ofSize: 18), scale: .default), forImageIn: .normal)
@@ -199,7 +239,7 @@ class KeyboardToolbarView: NibLessView {
   /// 候选词出现时仍常驻右侧的“…”入口，避免必须先退出候选再操作。
   /// 眼睛/表情/收起这三个动作和上方功能行重复，不再在候选区重复一遍。
   lazy var candidateEyeButton: UIButton = {
-    let button = UIButton(type: .custom)
+    let button = ClawToolbarTouchButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
     button.setImage(UIImage(systemName: "eye"), for: .normal)
     button.tintColor = ClawPanelPalette.deepBlue
@@ -208,7 +248,7 @@ class KeyboardToolbarView: NibLessView {
   }()
 
   lazy var candidateEmojiButton: UIButton = {
-    let button = UIButton(type: .custom)
+    let button = ClawToolbarTouchButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
     button.setImage(UIImage(systemName: "face.smiling"), for: .normal)
     button.tintColor = ClawPanelPalette.deepBlue
@@ -217,7 +257,7 @@ class KeyboardToolbarView: NibLessView {
   }()
 
   lazy var candidateDismissButton: UIButton = {
-    let button = UIButton(type: .custom)
+    let button = ClawToolbarTouchButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
     button.setImage(UIImage(systemName: "chevron.down.circle"), for: .normal)
     button.tintColor = ClawPanelPalette.deepBlue
@@ -226,7 +266,7 @@ class KeyboardToolbarView: NibLessView {
   }()
 
   lazy var candidateMoreButton: UIButton = {
-    let button = UIButton(type: .custom)
+    let button = ClawToolbarTouchButton(type: .custom)
     button.translatesAutoresizingMaskIntoConstraints = false
     button.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
     button.tintColor = ClawPanelPalette.deepBlue
@@ -335,22 +375,21 @@ class KeyboardToolbarView: NibLessView {
     updateCompactToolbarWidths()
   }
 
-  /// Keep all three AI entry points on 320pt iPhones without compressing the
-  /// candidate bar or allowing required Auto Layout constraints to collide.
+  /// Secondary emoji/privacy actions remain available in the More menu
+  /// instead of becoming untappable 18pt targets on compact screens.
   private func updateCompactToolbarWidths() {
     guard bounds.width > 0 else { return }
-    // iPad floating keyboards can be < 320pt. Shrink fixed action widths
-    // by tier to prevent required constraints from pushing dismiss offscreen.
-    let floating = bounds.width < 300
-    let compact = bounds.width < 380
-    let contact: CGFloat = floating ? 38 : (compact ? 54 : 64)
-    guard contactWidthConstraint?.constant != contact else { return }
-    contactWidthConstraint?.constant = contact
-    helpReplyWidthConstraint?.constant = floating ? 40 : (compact ? 52 : 60)
-    superTalkWidthConstraint?.constant = floating ? 40 : (compact ? 52 : 60)
-    aiWidthConstraint?.constant = floating ? 22 : (compact ? 28 : 32)
-    eyeWidthConstraint?.constant = floating ? 18 : (compact ? 24 : 26)
-    emojiWidthConstraint?.constant = floating ? 18 : (compact ? 24 : 26)
+    let widths = ClawToolbarCompactPolicy.widths(for: bounds.width)
+    contactWidthConstraint?.constant = widths.contact
+    helpReplyWidthConstraint?.constant = widths.reply
+    superTalkWidthConstraint?.constant = widths.rewrite
+    aiWidthConstraint?.constant = widths.ai
+    eyeWidthConstraint?.constant = widths.eye
+    emojiWidthConstraint?.constant = widths.emoji
+    moreWidthConstraint?.constant = widths.more
+    dismissWidthConstraint?.constant = widths.dismiss
+    eyeButton.isHidden = widths.hidesSecondary
+    emojiButton.isHidden = widths.hidesSecondary
   }
 
   // MARK: - 视图层次
@@ -384,6 +423,8 @@ class KeyboardToolbarView: NibLessView {
   private var aiWidthConstraint: NSLayoutConstraint!
   private var eyeWidthConstraint: NSLayoutConstraint!
   private var emojiWidthConstraint: NSLayoutConstraint!
+  private var moreWidthConstraint: NSLayoutConstraint!
+  private var dismissWidthConstraint: NSLayoutConstraint!
 
   override func activateViewConstraints() {
     // 面板覆盖层：固定在工具栏顶部，高度随展开/收起变化
@@ -399,6 +440,8 @@ class KeyboardToolbarView: NibLessView {
     aiWidthConstraint = aiButton.widthAnchor.constraint(equalToConstant: 32)
     eyeWidthConstraint = eyeButton.widthAnchor.constraint(equalToConstant: 26)
     emojiWidthConstraint = emojiButton.widthAnchor.constraint(equalToConstant: 26)
+    moreWidthConstraint = moreButton.widthAnchor.constraint(equalToConstant: 26)
+    dismissWidthConstraint = dismissKeyboardButton.widthAnchor.constraint(equalToConstant: 26)
     contactButton.titleLabel?.lineBreakMode = .byTruncatingTail
 
     // 候选栏展开时，KeyboardRootView 会把整条工具栏加高（键区高度 + 工具栏高度）。
@@ -466,14 +509,14 @@ class KeyboardToolbarView: NibLessView {
 
       moreButton.leadingAnchor.constraint(equalTo: emojiButton.trailingAnchor, constant: 3),
       moreButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      moreButton.widthAnchor.constraint(equalToConstant: 26),
+      moreWidthConstraint,
       moreButton.heightAnchor.constraint(equalToConstant: 30),
     ])
 
     NSLayoutConstraint.activate([
       dismissKeyboardButton.leadingAnchor.constraint(equalTo: moreButton.trailingAnchor, constant: 3),
       dismissKeyboardButton.centerYAnchor.constraint(equalTo: commonFunctionBar.centerYAnchor),
-      dismissKeyboardButton.widthAnchor.constraint(equalToConstant: 26),
+      dismissWidthConstraint,
       dismissKeyboardButton.heightAnchor.constraint(equalToConstant: 30),
       dismissKeyboardButton.trailingAnchor.constraint(lessThanOrEqualTo: commonFunctionBar.trailingAnchor, constant: -4),
     ])
