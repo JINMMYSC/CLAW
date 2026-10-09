@@ -316,6 +316,10 @@ class KeyboardToolbarView: NibLessView {
     constructViewHierarchy()
     activateViewConstraints()
     setupAppearance()
+    // Combine may not emit an initial RIME event. Without an initial state,
+    // the legacy candidate row and the new empty-input actions both render.
+    applyToolbarVisibility()
+    updateSuggestionBarVisibility()
   }
 
   override func layoutSubviews() {
@@ -607,8 +611,13 @@ class KeyboardToolbarView: NibLessView {
       .sink { [weak self] state in
         guard let self else { return }
         let expanded = !state.isCollapse()
-        self.candidateTopToFunctionBar?.isActive = !expanded
-        self.candidateTopToPanel?.isActive = expanded
+        if expanded {
+          self.candidateTopToFunctionBar?.isActive = false
+          self.candidateTopToPanel?.isActive = true
+        } else {
+          self.candidateTopToPanel?.isActive = false
+          self.candidateTopToFunctionBar?.isActive = true
+        }
         self.applyToolbarVisibility()
         self.updateSuggestionBarVisibility()
         self.setNeedsLayout()
