@@ -618,6 +618,10 @@ class KeyboardToolbarView: NibLessView {
           self.candidateTopToPanel?.isActive = false
           self.candidateTopToFunctionBar?.isActive = true
         }
+        ClawDiagnosticsCore.shared.record(
+          module: "keyboard",
+          action: expanded ? "candidates_expanded" : "candidates_collapsed"
+        )
         self.applyToolbarVisibility()
         self.updateSuggestionBarVisibility()
         self.setNeedsLayout()
@@ -650,6 +654,9 @@ class KeyboardToolbarView: NibLessView {
       .receive(on: DispatchQueue.main)
       .sink { [weak self] tab in
         guard let self else { return }
+        ClawDiagnosticsCore.shared.record(
+          module: "keyboard", action: tab >= 0 ? "ai_panel_opened" : "ai_panel_closed"
+        )
         self.applyToolbarVisibility()
         self.updateEntryButtonStates()
         self.updateSuggestionBarVisibility()
