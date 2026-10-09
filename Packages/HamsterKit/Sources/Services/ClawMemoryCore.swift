@@ -1556,6 +1556,36 @@ public final class ClawMemoryStore {
     return try? JSONDecoder().decode(MemoryV2Record.self, from: data)
   }
 
+  /// Query V2 identity for the bounded legacy candidates in one indexed
+  /// batch. A stale legacy projection must never resurrect an invalidated,
+  /// expired or moved V2 record omitted by the recent-record LIMIT.
+  public func memoryV2ExistingIDs(_ ids: Set<UUID>) throws -> Set<UUID> {
+    guard !ids.isEmpty else { return [] }
+    lock.lock(); defer { lock.unlock() }
+    let ordered = Array(ids)
+    var found = Set<UUID>()
+    for start in stride(from: 0, to: ordered.count, by: 400) {
+      let batch = Array(ordered[start..<min(start + 400, ordered.count)])
+      let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ",")
+      let statement = try prepare("SELECT id FROM memory_v2 WHERE id IN (\(placeholders));")
+      defer { sqlite3_finalize(statement) }
+      for (offset, id) in batch.enumerated() {
+        bindText(id.uuidString, at: Int32(offset + 1), in: statement)
+      }
+      while true {
+        let rc = sqlite3_step(statement)
+        if rc == SQLITE_DONE { break }
+        guard rc == SQLITE_ROW else {
+          throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+        }
+        if let identifier = text(statement, 0).flatMap(UUID.init(uuidString:)) {
+          found.insert(identifier)
+        }
+      }
+    }
+    return found
+  }
+
   /// 按作用域/人物/状态筛选 V2 记忆，按最近更新排序。
   public func memoryV2(
     scope: MemoryScope? = nil,

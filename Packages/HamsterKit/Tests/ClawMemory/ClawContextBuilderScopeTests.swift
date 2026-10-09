@@ -120,6 +120,40 @@ final class ClawContextBuilderScopeTests: XCTestCase {
       .contains { $0.id == record.id })
   }
 
+  func testInvalidatedV2OutsideTopNCanNeverResurrectViaNewerLegacyProjection() throws {
+    let person = HeartTargetProfile(name: "失效记录范围测试")
+    let sdk = DefaultMemorySDK(store: store)
+    let stale = MemoryV2Record(
+      type: .preference, state: .active, scope: .person,
+      content: "已失效的私人偏好", personID: person.id,
+      provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    )
+    try sdk.remember(stale)
+    var invalidated = stale
+    invalidated.state = .invalidated
+    invalidated.version += 1
+    try store.saveMemoryV2(invalidated)
+    // Legacy observation timestamp may be much newer than the V2 row. The
+    // V2 LIMIT below excludes stale, but the legacy LIMIT includes it.
+    try store.upsertMemory(ClawMemoryItem(
+      id: stale.id, kind: .fact, scope: "contact", subjectID: person.id,
+      content: "已失效的私人偏好", sourceType: "test",
+      lastObservedAt: Date().addingTimeInterval(3600)
+    ))
+    let fresh = MemoryV2Record(
+      type: .preference, state: .active, scope: .person,
+      content: "新近确认的私人偏好", personID: person.id,
+      provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    )
+    try sdk.remember(fresh)
+
+    XCTAssertEqual(try store.memoryV2(scope: .person, personID: person.id, limit: 1).map(\.id), [fresh.id])
+    XCTAssertEqual(try store.memories(scope: "contact", subjectID: person.id, limit: 1).map(\.id), [stale.id])
+    let visible = try sdk.contextualMemories(scope: "contact", personID: person.id, limit: 1)
+    XCTAssertEqual(visible.map(\.id), [fresh.id])
+    XCTAssertFalse(visible.contains { $0.content.contains("已失效") })
+  }
+
   func testOlderPersonMemoryRemainsVisibleAmongManyOtherPeople() throws {
     let alice = HeartTargetProfile(name: "艾丽")
     let bob = HeartTargetProfile(name: "贝贝")
