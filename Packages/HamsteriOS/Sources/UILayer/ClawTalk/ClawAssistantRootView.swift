@@ -160,6 +160,13 @@ private struct ClawSettingsHubView: View {
         }
 
         Section("诊断与兼容性") {
+#if DEBUG
+          NavigationLink {
+            ClawDeveloperDiagnosticsView()
+          } label: {
+            Label("开发者诊断与导出", systemImage: "stethoscope")
+          }
+#endif
           Button {
             openCLAWSettings(HamsterConstants.appURLForMain)
           } label: {

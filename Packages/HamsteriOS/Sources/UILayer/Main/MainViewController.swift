@@ -6,6 +6,7 @@
 //
 
 import Combine
+import HamsterKit
 import HamsterUIKit
 import UIKit
 
@@ -135,6 +136,7 @@ extension MainViewController {
     // Settings viewDidAppear no longer fires on cold launch, so explicitly
     // run the shared RIME/first-launch bootstrap before keyboard use.
     settingsViewController.startAppDataBootstrapIfNeeded()
+    ClawDiagnosticsCore.shared.record(module: "ui", action: "main_navigation_initialized")
 
     /// 动态控制导航
     mainViewModel.subViewPublished
@@ -176,6 +178,8 @@ extension MainViewController: UISplitViewControllerDelegate {
 
 extension MainViewController {
   func navigationResponse(to subView: SettingsSubView) {
+    // Only enum route identifier, not URL, view text, or private user data.
+    ClawDiagnosticsCore.shared.record(module: "ui", action: "navigate_\(subView.rawValue)")
     switch subView {
     case .inputSchema:
       presentInputSchemaViewController()

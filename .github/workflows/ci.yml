@@ -55,6 +55,19 @@ jobs:
       - name: Show toolchain
         run: xcodebuild -version && swift --version
 
+      - name: Validate and generate Code-Aware source manifest
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tools/tests -p 'test_*.py'
+          python3 tools/generate_claw_source_manifest.py --repo . --out "$RUNNER_TEMP/claw-code-aware.json"
+
+      - name: Archive Code-Aware source manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: claw-code-aware-index
+          path: ${{ runner.temp }}/claw-code-aware.json
+          if-no-files-found: error
+
       - name: Run HamsterKit unit tests
         env:
           TEST_RUNNER_CLAW_STRESS_TEST: ${{ ((github.event_name == 'workflow_dispatch' && inputs.stress_100k) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[claw-stress]'))) && '1' || '0' }}
