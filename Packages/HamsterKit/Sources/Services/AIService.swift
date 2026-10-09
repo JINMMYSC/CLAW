@@ -373,32 +373,35 @@ public class AIService {
     req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
     let log = LogService.shared
+    let traceID = UUID()
+    ClawDiagnosticsCore.shared.record(module: "ai", action: "request_started", traceID: traceID)
     log.log("→ \(provider.rawValue) \(model) \(urlString) msgs=\(messages.count)", tag: "AI")
 
     let task = URLSession.shared.dataTask(with: req) { data, response, error in
       let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+      ClawDiagnosticsCore.shared.record(module: "ai", action: "response_http_\(status)", traceID: traceID)
       if let error = error {
-        log.log("✗ network error: \(error.localizedDescription)", level: .error, tag: "AI")
+        log.log("✗ network request failed (details in redacted diagnostics)", level: .error, tag: "AI")
+        ClawDiagnosticsCore.shared.record(module: "ai", action: "network_failed", severity: "error", traceID: traceID, error: error)
         DispatchQueue.main.async { completion(.failure(error)) }; return
       }
       guard let data else {
         log.log("✗ empty response (HTTP \(status))", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.emptyResponse)) }; return
       }
-      let rawBody = String(data: data, encoding: .utf8) ?? "<binary>"
-      guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-        log.log("✗ parse error (HTTP \(status)) body=\(rawBody.prefix(400))", level: .error, tag: "AI")
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        log.log("✗ parse error (HTTP \(status)) body=[redacted]", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.parseError)) }; return
       }
       if let errObj = json["error"] as? [String: Any], let msg = errObj["message"] as? String {
-        log.log("✗ API error (HTTP \(status)): \(msg) | raw=\(rawBody.prefix(400))", level: .error, tag: "AI")
+        log.log("✗ API error (HTTP \(status)): \(msg) | body=[redacted]", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.apiError(msg))) }; return
       }
       guard let choices = json["choices"] as? [[String: Any]],
             let message = choices.first?["message"] as? [String: Any],
             let content = message["content"] as? String
       else {
-        log.log("✗ unexpected JSON (HTTP \(status)) body=\(rawBody.prefix(400))", level: .error, tag: "AI")
+        log.log("✗ unexpected JSON (HTTP \(status)) body=[redacted]", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.parseError)) }; return
       }
       var usage: AIUsage?
@@ -410,6 +413,7 @@ public class AIService {
       } else {
         log.log("✓ OK HTTP \(status) (no usage info)", tag: "AI")
       }
+      ClawDiagnosticsCore.shared.record(module: "ai", action: "request_succeeded_http_\(status)", traceID: traceID)
       DispatchQueue.main.async { completion(.success((content, usage))) }
     }
     task.resume()
@@ -444,31 +448,34 @@ public class AIService {
     req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
     let log = LogService.shared
+    let traceID = UUID()
+    ClawDiagnosticsCore.shared.record(module: "ai", action: "request_started", traceID: traceID)
     log.log("→ Claude \(model) \(urlString) msgs=\(messages.count)", tag: "AI")
 
     let task = URLSession.shared.dataTask(with: req) { data, response, error in
       let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+      ClawDiagnosticsCore.shared.record(module: "ai", action: "response_http_\(status)", traceID: traceID)
       if let error = error {
-        log.log("✗ network error: \(error.localizedDescription)", level: .error, tag: "AI")
+        log.log("✗ network request failed (details in redacted diagnostics)", level: .error, tag: "AI")
+        ClawDiagnosticsCore.shared.record(module: "ai", action: "network_failed", severity: "error", traceID: traceID, error: error)
         DispatchQueue.main.async { completion(.failure(error)) }; return
       }
       guard let data else {
         log.log("✗ empty response (HTTP \(status))", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.emptyResponse)) }; return
       }
-      let rawBody = String(data: data, encoding: .utf8) ?? "<binary>"
-      guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-        log.log("✗ parse error (HTTP \(status)) body=\(rawBody.prefix(400))", level: .error, tag: "AI")
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        log.log("✗ parse error (HTTP \(status)) body=[redacted]", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.parseError)) }; return
       }
       if let errObj = json["error"] as? [String: Any], let msg = errObj["message"] as? String {
-        log.log("✗ API error (HTTP \(status)): \(msg) | raw=\(rawBody.prefix(400))", level: .error, tag: "AI")
+        log.log("✗ API error (HTTP \(status)): \(msg) | body=[redacted]", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.apiError(msg))) }; return
       }
       guard let content = json["content"] as? [[String: Any]],
             let text = content.first(where: { $0["type"] as? String == "text" })?["text"] as? String
       else {
-        log.log("✗ unexpected JSON (HTTP \(status)) body=\(rawBody.prefix(400))", level: .error, tag: "AI")
+        log.log("✗ unexpected JSON (HTTP \(status)) body=[redacted]", level: .error, tag: "AI")
         DispatchQueue.main.async { completion(.failure(AIError.parseError)) }; return
       }
       var usage: AIUsage?
@@ -480,6 +487,7 @@ public class AIService {
       } else {
         log.log("✓ OK HTTP \(status) (no usage info)", tag: "AI")
       }
+      ClawDiagnosticsCore.shared.record(module: "ai", action: "request_succeeded_http_\(status)", traceID: traceID)
       DispatchQueue.main.async { completion(.success((text, usage))) }
     }
     task.resume()
