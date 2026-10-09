@@ -60,6 +60,20 @@ final class MemorySDKTests: XCTestCase {
     XCTAssertEqual(try store.memoryV2(id: original.id)?.version, 3)
   }
 
+  func testFTSRowIDUpdateReplacesOldTermsAndPreservesOtherPeople() throws {
+    let alice = UUID(), bob = UUID()
+    var first = makeRecord(content: "第一人的旧关键词", scope: .person, personID: alice)
+    let second = makeRecord(content: "第二人的保留词", scope: .person, personID: bob)
+    try sdk.remember(first)
+    try sdk.remember(second)
+    first.content = "第一人的新关键词"
+    first.version += 1
+    try sdk.remember(first)
+    XCTAssertTrue(try store.searchMemoryV2(query: "新关键词").contains { $0.id == first.id })
+    XCTAssertFalse(try store.searchMemoryV2(query: "旧关键词").contains { $0.id == first.id })
+    XCTAssertTrue(try store.searchMemoryV2(query: "保留词").contains { $0.id == second.id })
+  }
+
   func testRepeatedSaveOfSameVersionIsIdempotent() throws {
     let record = makeRecord(content: "只保存一个版本")
     try sdk.remember(record)

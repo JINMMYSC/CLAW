@@ -523,6 +523,30 @@ public final class ClawMemoryStore {
       """
     ]
     for statement in statements { try? execute(statement) }
+    // Older versions deleted FTS rows by an UNINDEXED text column on every
+    // write, causing O(N²)-like behavior at scale. Migrate once to make the
+    // FTS rowid match the indexed memory_v2 rowid.
+    try? upgradeFTSRowIDIndex()
+  }
+
+  private func upgradeFTSRowIDIndex() throws {
+    let stmt = try prepare("PRAGMA user_version;")
+    let version = sqlite3_step(stmt) == SQLITE_ROW ? sqlite3_column_int(stmt, 0) : 0
+    sqlite3_finalize(stmt)
+    guard version < 1 else { return }
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      try executeUnlocked("DELETE FROM memory_v2_fts;")
+      try executeUnlocked("""
+        INSERT INTO memory_v2_fts (rowid,id,content,normalized_key)
+        SELECT rowid,id,content,normalized_key FROM memory_v2;
+      """)
+      try executeUnlocked("PRAGMA user_version = 1;")
+      try executeUnlocked("COMMIT;")
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
   }
 
   private func requireDB() throws -> OpaquePointer {
@@ -1034,7 +1058,10 @@ public final class ClawMemoryStore {
         SELECT raw_event_id FROM memory_evidence
         WHERE memory_id IN (SELECT id FROM claw_person_purge_ids);
       """)
-      try executeUnlocked("DELETE FROM memory_v2_fts WHERE id IN (SELECT id FROM claw_person_purge_ids);")
+      try executeUnlocked("""
+        DELETE FROM memory_v2_fts WHERE rowid IN
+          (SELECT rowid FROM memory_v2 WHERE id IN (SELECT id FROM claw_person_purge_ids));
+      """)
       try executeUnlocked("DELETE FROM memory_evidence WHERE memory_id IN (SELECT id FROM claw_person_purge_ids);")
       try executeUnlocked("DELETE FROM memory_versions WHERE memory_id IN (SELECT id FROM claw_person_purge_ids);")
       try executeUnlocked("DELETE FROM memory_audit WHERE memory_id IN (SELECT id FROM claw_person_purge_ids);")
@@ -1651,24 +1678,37 @@ public final class ClawMemoryStore {
     guard sqlite3_step(statement) == SQLITE_DONE else {
       throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
     }
-    try? syncMemoryFTS(record)
+    try syncMemoryFTS(record)
   }
 
   private func syncMemoryFTS(_ record: MemoryV2Record) throws {
-    let removeFTS = try prepare("DELETE FROM memory_v2_fts WHERE id = ?;")
-    bindText(record.id.uuidString, at: 1, in: removeFTS)
-    _ = sqlite3_step(removeFTS)
-    sqlite3_finalize(removeFTS)
-    let insertFTS = try prepare("INSERT INTO memory_v2_fts (id,content,normalized_key) VALUES (?,?,?);")
-    bindText(record.id.uuidString, at: 1, in: insertFTS)
-    bindText(record.content, at: 2, in: insertFTS)
-    bindText(record.normalizedKey, at: 3, in: insertFTS)
-    guard sqlite3_step(insertFTS) == SQLITE_DONE else {
-      let message = String(cString: sqlite3_errmsg(try requireDB()))
-      sqlite3_finalize(insertFTS)
-      throw ClawMemoryStoreError.sqlite(message: message)
+    let lookup = try prepare("SELECT rowid FROM memory_v2 WHERE id = ? LIMIT 1;")
+    bindText(record.id.uuidString, at: 1, in: lookup)
+    guard sqlite3_step(lookup) == SQLITE_ROW else {
+      sqlite3_finalize(lookup)
+      throw ClawMemoryStoreError.sqlite(message: "Memory rowid is missing")
     }
-    sqlite3_finalize(insertFTS)
+    let rowID = sqlite3_column_int64(lookup, 0)
+    sqlite3_finalize(lookup)
+    // FTS5's id column is UNINDEXED. Deleting by id scanned every FTS row on
+    // each insertion; its rowid B-tree is indexed and stable for the V2 row.
+    let remove = try prepare("DELETE FROM memory_v2_fts WHERE rowid = ?;")
+    sqlite3_bind_int64(remove, 1, rowID)
+    let removed = sqlite3_step(remove)
+    sqlite3_finalize(remove)
+    guard removed == SQLITE_DONE else {
+      throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+    }
+    let insert = try prepare("INSERT INTO memory_v2_fts (rowid,id,content,normalized_key) VALUES (?,?,?,?);")
+    sqlite3_bind_int64(insert, 1, rowID)
+    bindText(record.id.uuidString, at: 2, in: insert)
+    bindText(record.content, at: 3, in: insert)
+    bindText(record.normalizedKey, at: 4, in: insert)
+    let result = sqlite3_step(insert)
+    sqlite3_finalize(insert)
+    guard result == SQLITE_DONE else {
+      throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+    }
   }
 
   private func insertMemoryVersion(_ record: MemoryV2Record, payload: Data) throws {
