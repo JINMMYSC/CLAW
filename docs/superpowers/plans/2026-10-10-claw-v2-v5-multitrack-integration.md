@@ -141,3 +141,8 @@
 4. 更多 UI：人物画像来源、Today 任务关联、隐私与导航、故障自诊断入口；不强行新增 55 个 ViewController。
 5. 将独立分支与原先待集成的语音/iCloud/启动 P0 分支差异核对；最终变更冻结后**统一**运行 Build Test、Startup Smoke、Signed IPA 三项同 SHA CI，再做 iPhone 真机验收。
 
+
+### 后续补充：微信设置可用性入口（2026-10-10）
+
+- [x] `1b59ffb9`：设置内加入“微信 ClawBot · 本机连接”入口，并新增 `ClawWeChatLocalSettingsView.swift`；如实显示未连接、暂未开放扫码、图片语音接口尚未连通以及 iOS 后台限制。**仅 UI/状态说明，不是微信登录实现，未 CI。**
+- [ ] 等待合法独立客户端接入权限与真实传输层完成后，将演示状态绑定实际连接状态；Keychain 管理凭证、并发租约、消息 ACK/重试幂等、扫码同机授权及媒体/STT 真机测试。
