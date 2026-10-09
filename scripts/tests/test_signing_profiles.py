@@ -24,6 +24,35 @@ def load_verifier():
 
 
 class SigningProfileTests(unittest.TestCase):
+    def test_cloud_capability_stamp_reflects_actual_profile_services(self):
+        verifier = load_verifier()
+        valid = {
+            "com.apple.developer.icloud-container-identifiers": [
+                "iCloud.dev.fuxiao.app.hamsterapp"
+            ],
+            "com.apple.developer.icloud-services": ["CloudDocuments", "CloudKit"],
+        }
+        self.assertTrue(sign_ipa.has_cloud_documents_entitlement(valid))
+        self.assertTrue(verifier.has_cloud_documents_entitlement(valid))
+        self.assertFalse(sign_ipa.has_cloud_documents_entitlement({
+            "com.apple.developer.icloud-container-identifiers": valid[
+                "com.apple.developer.icloud-container-identifiers"
+            ]
+        }))
+        self.assertFalse(sign_ipa.has_cloud_documents_entitlement({
+            "com.apple.developer.icloud-services": ["CloudDocuments"]
+        }))
+        with tempfile.TemporaryDirectory() as folder:
+            app = pathlib.Path(folder) / "Example.app"
+            app.mkdir()
+            plist = app / "Info.plist"
+            import plistlib
+            plist.write_bytes(plistlib.dumps({"CFBundleIdentifier": "app.lgm.7517"}))
+            self.assertFalse(sign_ipa.stamp_cloud_capability(str(app), {}))
+            self.assertIs(plistlib.loads(plist.read_bytes())["ClawICloudContainerEntitled"], False)
+            self.assertTrue(sign_ipa.stamp_cloud_capability(str(app), valid))
+            self.assertIs(plistlib.loads(plist.read_bytes())["ClawICloudContainerEntitled"], True)
+
     def test_rejects_profile_bundle_identifier_mismatch(self):
         verifier = load_verifier()
         self.assertIsNotNone(verifier, "signed IPA verifier must exist")

@@ -37,6 +37,29 @@ def extract_entitlements(profile_path):
     return pl.get("Entitlements", {}) or {}
 
 
+
+def has_cloud_documents_entitlement(entitlements):
+    """Exactly the iCloud Documents capability needed for CLAW's file copy."""
+    return (
+        DEFAULT_ICLOUD_CONTAINER in
+        (entitlements.get("com.apple.developer.icloud-container-identifiers", []) or [])
+        and "CloudDocuments" in
+        (entitlements.get("com.apple.developer.icloud-services", []) or [])
+    )
+
+
+def stamp_cloud_capability(app_path, entitlements):
+    """Signed app metadata must reflect the actual *provisioning profile*."""
+    path = os.path.join(app_path, "Info.plist")
+    with open(path, "rb") as source:
+        info = plistlib.load(source)
+    enabled = has_cloud_documents_entitlement(entitlements)
+    info["ClawICloudContainerEntitled"] = enabled
+    with open(path, "wb") as target:
+        plistlib.dump(info, target)
+    return enabled
+
+
 def add_shared_keychain_group(entitlements, app_group="group.7518554"):
     """Add one concrete shared Keychain group when the profile wildcard permits it."""
     app_id = entitlements.get("application-identifier", "")
@@ -289,6 +312,8 @@ def main():
             main_ent,
             required_icloud_containers=required_icloud_containers,
         )
+        if not stamp_cloud_capability(app_path, main_ent):
+            print("CLAW iCloud backup is disabled in this signed build: missing CloudDocuments capability")
         main_shared = add_shared_keychain_group(main_ent)
         main_ent_path = os.path.join(tmp, "main_ent.plist")
         with open(main_ent_path, "wb") as f:

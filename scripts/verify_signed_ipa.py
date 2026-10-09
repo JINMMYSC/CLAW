@@ -78,6 +78,16 @@ def validate_bundle_entitlements(
             raise ValueError("missing required iCloud container: %s" % container)
 
 
+
+def has_cloud_documents_entitlement(entitlements):
+    return (
+        DEFAULT_ICLOUD_CONTAINER in
+        (entitlements.get("com.apple.developer.icloud-container-identifiers", []) or [])
+        and "CloudDocuments" in
+        (entitlements.get("com.apple.developer.icloud-services", []) or [])
+    )
+
+
 def _load_embedded_plist(data, description):
     match = re.search(rb"<\?xml.*?</plist>", data, re.S)
     if not match:
@@ -155,6 +165,12 @@ def verify_bundle_tree(app_path, require_icloud=True):
             raise ValueError("missing embedded provisioning profile for %s" % identifier)
         profile_entitlements = extract_profile_entitlements(profile_path)
         signed_entitlements = extract_signed_entitlements(path)
+        if identifier == main_identifier:
+            with open(os.path.join(path, "Info.plist"), "rb") as source:
+                stamp = plistlib.load(source).get("ClawICloudContainerEntitled")
+            actual = has_cloud_documents_entitlement(signed_entitlements)
+            if type(stamp) is not bool or stamp != actual:
+                raise ValueError("signed iCloud capability stamp is missing or disagrees with entitlement")
         validate_bundle_entitlements(
             identifier,
             profile_entitlements,
