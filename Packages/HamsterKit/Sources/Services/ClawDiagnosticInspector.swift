@@ -25,4 +25,19 @@ public enum ClawDiagnosticInspector {
     下一步：在出现故障时导出脱敏诊断记录，同构建版本复现并检查源码。
     """
   }
+  /// Host + last persisted Keyboard Extension snapshot. Does not claim
+  /// the extension is live, or that an unobserved module has passed a test.
+  public static func report(capture: ClawDiagnosticCapture) -> String {
+    let hostAndKeyboard = report(events: capture.events)
+    let keyboardStatus: String
+    switch capture.keyboardState {
+    case .recent: keyboardStatus = "有最近五分钟的键盘事件；不代表进程现在仍在线"
+    case .stale: keyboardStatus = "只有过期键盘快照，当前运行状态未知"
+    case .missing: keyboardStatus = "没有发现键盘诊断事件"
+    case .unavailable: keyboardStatus = "无法读取键盘共享诊断文件"
+    case .corrupted: keyboardStatus = "键盘快照损坏，无法可靠分析"
+    }
+    return hostAndKeyboard + "\n跨进程证据：\(keyboardStatus)；故障现场 \(capture.incidents.count) 条。"
+  }
+
 }
