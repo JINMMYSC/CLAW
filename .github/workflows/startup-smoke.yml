@@ -87,7 +87,7 @@ jobs:
           # is generous; a real hang still fails via the liveness check below.
           for _ in $(seq 1 48); do
             sleep 5
-            if grep -q "\[clawTalk\] first-launch" smoke-first-launch-console.log; then
+            if grep -Eq "\[clawTalk\] first-launch (ready|deployment completed)$" smoke-first-launch-console.log; then
               ready=1
               break
             fi
@@ -99,6 +99,8 @@ jobs:
           done
           if [ "$ready" -ne 1 ]; then
             echo "First-launch deployment did not complete within 240 seconds"
+            echo "Most recent initialization stages:"
+            grep "claw-bootstrap:" smoke-first-launch-console.log | tail -n 12 || true
             cat smoke-first-launch-console.log
             exit 1
           fi
