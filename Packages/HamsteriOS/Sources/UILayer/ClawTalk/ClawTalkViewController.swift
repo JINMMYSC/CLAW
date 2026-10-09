@@ -1,3 +1,4 @@
+import HamsterKit
 import HamsterUIKit
 import SwiftUI
 import UIKit
@@ -10,12 +11,14 @@ public final class ClawTalkViewController: NibLessViewController {
     // The five-tab SwiftUI home owns its navigation chrome. Do not stack the
     // old UIKit "Now ClawTalk" bar above the new app's tabs and page headers.
     navigationController?.setNavigationBarHidden(true, animated: false)
+    ClawDiagnosticsCore.shared.record(module: "ui", action: "assistant_home_appeared")
   }
 
   public override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
     // Legacy settings and RIME routes still use a normal back button.
     navigationController?.setNavigationBarHidden(false, animated: false)
+    ClawDiagnosticsCore.shared.record(module: "ui", action: "assistant_home_disappeared")
   }
 
   public override func viewDidLoad() {
