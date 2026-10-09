@@ -111,6 +111,12 @@ public final class DefaultMemorySDK: MemorySDK {
       ($0.state == .active || $0.state == .confirmed) &&
         ($0.expiresAt == nil || $0.expiresAt! > now)
     }
+    // A stale or expired V2 record must not reappear through its still-active
+    // old projection during migration. V2 is authoritative whenever present.
+    let excludedV2IDs = Set(candidates.filter { record in
+      (record.state != .active && record.state != .confirmed) ||
+        (record.expiresAt.map { $0 <= now } ?? false)
+    }.map(\.id))
     let legacyByID = Dictionary(uniqueKeysWithValues: legacy.map { ($0.id, $0) })
     var seen = Set<UUID>()
     var merged: [ClawMemoryItem] = []
@@ -126,7 +132,7 @@ public final class DefaultMemorySDK: MemorySDK {
       if scope == "contact" { item.scope = "contact" }
       if seen.insert(item.id).inserted { merged.append(item) }
     }
-    for item in legacy where seen.insert(item.id).inserted {
+    for item in legacy where !excludedV2IDs.contains(item.id) && seen.insert(item.id).inserted {
       merged.append(item)
     }
     return Array(merged.sorted { $0.lastObservedAt > $1.lastObservedAt }.prefix(count))

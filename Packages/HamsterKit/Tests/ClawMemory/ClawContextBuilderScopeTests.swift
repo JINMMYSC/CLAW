@@ -59,6 +59,25 @@ final class ClawContextBuilderScopeTests: XCTestCase {
     XCTAssertNil(ClawQueryPersonResolver().resolve(query: "最近哪个客户要跟进？", profiles: profiles))
   }
 
+  func testInvalidatedV2CannotReappearThroughActiveLegacyProjection() throws {
+    let person = HeartTargetProfile(name: "旧记忆测试")
+    let sdk = DefaultMemorySDK(store: store)
+    let record = MemoryV2Record(
+      type: .preference, state: .active, scope: .person,
+      content: "已过期的私人偏好", personID: person.id,
+      provenance: MemoryProvenance(originType: .userExplicit, ingestionMethod: "test")
+    )
+    try sdk.remember(record)
+    XCTAssertTrue(try sdk.contextualMemories(scope: "contact", personID: person.id)
+      .contains { $0.id == record.id })
+    var invalidated = record
+    invalidated.state = .invalidated
+    invalidated.version += 1
+    try store.saveMemoryV2(invalidated)
+    XCTAssertFalse(try sdk.contextualMemories(scope: "contact", personID: person.id)
+      .contains { $0.id == record.id })
+  }
+
   func testOlderPersonMemoryRemainsVisibleAmongManyOtherPeople() throws {
     let alice = HeartTargetProfile(name: "艾丽")
     let bob = HeartTargetProfile(name: "贝贝")

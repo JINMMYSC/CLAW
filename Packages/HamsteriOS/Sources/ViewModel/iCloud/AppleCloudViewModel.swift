@@ -23,6 +23,7 @@ public class AppleCloudViewModel: ObservableObject {
   public let settingsViewModel: SettingsViewModel
 
   @Published public var syncState: SyncState = .idle
+  @Published public var restoreConfirmationRequested = false
 
   // MARK: - Last Sync Status (persisted in UserDefaults)
 
@@ -68,7 +69,9 @@ public class AppleCloudViewModel: ObservableObject {
       text: "从 iCloud 恢复",
       type: .button,
       buttonAction: { [unowned self] in
-        Task { await restoreFromiCloud() }
+        // Restoring overwrites the local RIME files. Require a confirmation in
+        // the host view controller before starting this irreversible copy.
+        restoreConfirmationRequested = true
       }
     ),
     .init(
