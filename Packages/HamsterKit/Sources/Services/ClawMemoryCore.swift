@@ -845,6 +845,101 @@ public final class ClawMemoryStore {
     return sqlite3_changes(try requireDB()) > 0
   }
 
+  /// Undo an explicitly approved screenshot import using its inserted-ID
+  /// receipt. Validate *every* message belongs to this person and was imported
+  /// from a screenshot before removing any row. Associated task and inferred
+  /// memory rows are rolled back in the same transaction.
+  @discardableResult
+  public func undoScreenshotImport(messageIDs: [UUID], personID: UUID) throws -> Int {
+    guard !messageIDs.isEmpty, messageIDs.count <= 500,
+          Set(messageIDs).count == messageIDs.count else { return 0 }
+    lock.lock(); defer { lock.unlock() }
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      try executeUnlocked("CREATE TEMP TABLE IF NOT EXISTS claw_undo_messages(id TEXT PRIMARY KEY);")
+      try executeUnlocked("CREATE TEMP TABLE IF NOT EXISTS claw_undo_memories(id TEXT PRIMARY KEY);")
+      try executeUnlocked("CREATE TEMP TABLE IF NOT EXISTS claw_undo_raw(id TEXT PRIMARY KEY);")
+      for table in ["claw_undo_messages", "claw_undo_memories", "claw_undo_raw"] {
+        try executeUnlocked("DELETE FROM \(table);")
+      }
+      for messageID in messageIDs {
+        let stmt = try prepare("""
+          SELECT 1 FROM conversation_messages
+          WHERE id = ? AND contact_id = ? AND source_type = 'screenshot' LIMIT 1;
+        """)
+        bindText(messageID.uuidString, at: 1, in: stmt)
+        bindText(personID.uuidString, at: 2, in: stmt)
+        let match = sqlite3_step(stmt) == SQLITE_ROW
+        sqlite3_finalize(stmt)
+        guard match else {
+          throw ClawMemoryStoreError.sqlite(message: "截图导入记录已改变，撤销已取消")
+        }
+        let insert = try prepare("INSERT INTO claw_undo_messages(id) VALUES (?);")
+        bindText(messageID.uuidString, at: 1, in: insert)
+        let rc = sqlite3_step(insert)
+        sqlite3_finalize(insert)
+        guard rc == SQLITE_DONE else {
+          throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+        }
+      }
+      let related = try prepare("""
+        INSERT OR IGNORE INTO claw_undo_memories(id)
+        SELECT m.id FROM memory_v2 m
+        JOIN memory_evidence e ON e.memory_id = m.id
+        WHERE m.person_id = ?
+          AND e.locator IN (SELECT id FROM claw_undo_messages);
+      """)
+      bindText(personID.uuidString, at: 1, in: related)
+      let r = sqlite3_step(related)
+      sqlite3_finalize(related)
+      guard r == SQLITE_DONE else {
+        throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+      }
+      try executeUnlocked("""
+        INSERT OR IGNORE INTO claw_undo_raw
+        SELECT raw_event_id FROM memory_evidence
+        WHERE memory_id IN (SELECT id FROM claw_undo_memories);
+      """)
+      try executeUnlocked("""
+        DELETE FROM memory_v2_fts WHERE rowid IN
+        (SELECT rowid FROM memory_v2 WHERE id IN (SELECT id FROM claw_undo_memories));
+      """)
+      for table in ["memory_evidence", "memory_versions", "memory_audit"] {
+        try executeUnlocked("DELETE FROM \(table) WHERE memory_id IN (SELECT id FROM claw_undo_memories);")
+      }
+      try executeUnlocked("""
+        DELETE FROM memory_lineage WHERE memory_id IN (SELECT id FROM claw_undo_memories)
+          OR parent_memory_id IN (SELECT id FROM claw_undo_memories)
+          OR source_memory_id IN (SELECT id FROM claw_undo_memories);
+      """)
+      try executeUnlocked("DELETE FROM memory_v2 WHERE id IN (SELECT id FROM claw_undo_memories);")
+      try executeUnlocked("DELETE FROM memory_items WHERE id IN (SELECT id FROM claw_undo_memories);")
+      let personStmt = try prepare("""
+        DELETE FROM secretary_tasks WHERE contact_id = ? AND source_type = 'screenshot'
+          AND source_ref IN (SELECT id FROM claw_undo_messages);
+      """)
+      bindText(personID.uuidString, at: 1, in: personStmt)
+      let taskRC = sqlite3_step(personStmt)
+      sqlite3_finalize(personStmt)
+      guard taskRC == SQLITE_DONE else {
+        throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+      }
+      try executeUnlocked("DELETE FROM conversation_messages WHERE id IN (SELECT id FROM claw_undo_messages);")
+      try executeUnlocked("""
+        DELETE FROM raw_events WHERE id IN (SELECT id FROM claw_undo_raw)
+          AND id NOT IN (SELECT raw_event_id FROM memory_evidence);
+      """)
+      for table in ["claw_undo_raw", "claw_undo_memories", "claw_undo_messages"] {
+        try executeUnlocked("DELETE FROM \(table);")
+      }
+      try executeUnlocked("COMMIT;")
+      return messageIDs.count
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
+  }
+
   public func conversation(contactID: UUID?, limit: Int = 80) throws -> [ClawConversationMessage] {
     lock.lock(); defer { lock.unlock() }
     let sql: String

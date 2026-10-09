@@ -103,6 +103,33 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     XCTAssertEqual(try store.conversation(contactID: anotherPerson.id).count, 1)
   }
 
+  func testScreenshotUndoReceiptPreservesEarlierAndOtherPeopleImports() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("undo-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = ClawMemoryStore(databaseURL: root.appendingPathComponent("memory.sqlite"))
+    let service = ClawScreenshotIngestionService(store: store)
+    let profile = HeartTargetProfile(name: "A")
+    let other = HeartTargetProfile(name: "B")
+    let old = ClawConversationMessage(contactID: profile.id, speaker: .other,
+      content: "上一次导入", sourceType: "screenshot", sourceRef: "screenshot-digest:old")
+    let fresh = ClawConversationMessage(contactID: profile.id, speaker: .other,
+      content: "周五提交新的项目方案", sourceType: "screenshot", sourceRef: "screenshot-digest:new")
+    let separate = ClawConversationMessage(contactID: other.id, speaker: .other,
+      content: "其他人的信息", sourceType: "screenshot", sourceRef: "screenshot-digest:other")
+    let first = try service.confirmReviewedWithReceipt(messages: [old], for: profile)
+    _ = try service.confirmReviewedWithReceipt(messages: [separate], for: other)
+    let receipt = try service.confirmReviewedWithReceipt(messages: [old,fresh], for: profile)
+    XCTAssertEqual(receipt.messageIDs, [fresh.id])
+    XCTAssertThrowsError(try service.undo(ClawScreenshotImportReceipt(
+      personID: other.id, messageIDs: receipt.messageIDs)))
+    XCTAssertEqual(try store.conversation(contactID: profile.id).count, 2)
+    XCTAssertEqual(try service.undo(receipt), 1)
+    XCTAssertEqual(try store.conversation(contactID: profile.id).map(\.id), [old.id])
+    XCTAssertEqual(try store.conversation(contactID: other.id).map(\.id), [separate.id])
+    XCTAssertEqual(try store.tasks().filter { $0.contactID == profile.id }.count, 0)
+    XCTAssertEqual(first.messageIDs, [old.id])
+  }
+
   func testReviewRejectsUnknownSpeakerWithoutWritingAnything() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("screenshot-review-\(UUID())")
     defer { try? FileManager.default.removeItem(at: root) }

@@ -320,6 +320,7 @@ private struct ClawAssistantChatView: View {
   @State private var showingPhotoAttachment = false
   @State private var showingFileAttachment = false
   @State private var attachmentStatus = ""
+  @State private var lastScreenshotReceipt: ClawScreenshotImportReceipt?
   @State private var pendingScreenshotReview: ClawScreenshotIngestionResult?
   @State private var showingScreenshotReview = false
   @State private var quickPrompts = ClawQuickPromptStore(
@@ -401,6 +402,25 @@ private struct ClawAssistantChatView: View {
               .allowsHitTesting(false)
           }
         }
+      }
+      if let receipt = lastScreenshotReceipt {
+        HStack {
+          Text("最近一次截图已归档 \(receipt.messageIDs.count) 条")
+            .font(.caption).foregroundColor(.secondary)
+          Spacer()
+          Button("撤销本次导入") {
+            do {
+              let removed = try ClawScreenshotIngestionService().undo(receipt)
+              attachmentStatus = "已撤销本次导入的 \(removed) 条截图记录"
+              lastScreenshotReceipt = nil
+            } catch {
+              attachmentStatus = "无法撤销：\(error.localizedDescription)"
+            }
+          }
+          .font(.caption)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
       }
       Divider()
       if let id = keyboardDictationID {
@@ -508,9 +528,11 @@ private struct ClawAssistantChatView: View {
             guard let profile = HeartTargetService.shared.profile(id: id) else {
               throw ClawScreenshotReviewError.missingPerson
             }
-            let count = try ClawScreenshotIngestionService().confirmReviewed(
+            let receipt = try ClawScreenshotIngestionService().confirmReviewedWithReceipt(
               messages: reviewed, for: profile
             )
+            let count = receipt.messageIDs.count
+            if count > 0 { lastScreenshotReceipt = receipt }
             attachmentStatus = count == 0
               ? "截图消息已经归档，无需重复导入"
               : "已审核并归档 \(count) 条截图消息到 \(profile.displayName)"

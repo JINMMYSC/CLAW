@@ -26,6 +26,16 @@ public struct ClawScreenshotIngestionResult: Equatable {
   }
 }
 
+public struct ClawScreenshotImportReceipt: Equatable {
+  public let personID: UUID
+  public let messageIDs: [UUID]
+
+  public init(personID: UUID, messageIDs: [UUID]) {
+    self.personID = personID
+    self.messageIDs = messageIDs
+  }
+}
+
 /// Conservative exact-match rule for overlapping chat screenshots. A
 /// frequent short reply such as "好的" is never collapsed; compare only long
 /// phrases from two distinct screenshots of the *same person* and speaker.
@@ -112,6 +122,15 @@ public final class ClawScreenshotIngestionService {
     messages: [ClawConversationMessage],
     for profile: HeartTargetProfile
   ) throws -> Int {
+    try confirmReviewedWithReceipt(messages: messages, for: profile).messageIDs.count
+  }
+
+  /// Returns only message IDs freshly inserted by this action; re-imported or
+  /// overlapping bubbles are excluded, so undo cannot erase older imports.
+  public func confirmReviewedWithReceipt(
+    messages: [ClawConversationMessage],
+    for profile: HeartTargetProfile
+  ) throws -> ClawScreenshotImportReceipt {
     guard !profile.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       throw ClawScreenshotReviewError.missingPerson
     }
@@ -142,12 +161,24 @@ public final class ClawScreenshotIngestionService {
         seen.append(item)
       }
     }
-    guard !inserted.isEmpty else { return 0 }
+    guard !inserted.isEmpty else {
+      return ClawScreenshotImportReceipt(personID: profile.id, messageIDs: [])
+    }
     let flush = MemoryFlushService().extract(
       sessionID: UUID(), messages: inserted, personID: profile.id
     )
     for record in flush.records { try sdk.remember(record, evidence: record.evidence) }
     for task in flush.tasks { try sdk.createTask(task) }
-    return inserted.count
+    return ClawScreenshotImportReceipt(
+      personID: profile.id, messageIDs: inserted.map(\.id)
+    )
+  }
+
+  /// Undo only a specific, verified import receipt. Duplicate messages from
+  /// earlier imports were not in the receipt and remain untouched.
+  public func undo(_ receipt: ClawScreenshotImportReceipt) throws -> Int {
+    try store.undoScreenshotImport(
+      messageIDs: receipt.messageIDs, personID: receipt.personID
+    )
   }
 }
