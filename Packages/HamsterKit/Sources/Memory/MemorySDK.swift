@@ -209,9 +209,10 @@ public final class DefaultMemorySDK: MemorySDK {
       item.sessionID = item.sessionID ?? session.sessionID
       return item
     }
-    let projections = Dictionary(uniqueKeysWithValues: scoped.map {
-      ($0.id, legacyProjection($0))
-    })
+    // The same memory can be refined repeatedly in one session. Do not
+    // crash on a repeated UUID; the final projection wins for that ID.
+    var projections: [UUID: ClawMemoryItem] = [:]
+    for item in scoped { projections[item.id] = legacyProjection(item) }
     try store.saveMemoryV2Batch(
       scoped, rawEvents: session.rawEvents, legacyProjections: projections
     )

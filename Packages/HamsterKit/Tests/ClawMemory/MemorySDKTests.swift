@@ -72,8 +72,11 @@ final class MemorySDKTests: XCTestCase {
   func testFlushBatchWritesAllVersionsLegacyAndEvidence() throws {
     let sessionID = UUID()
     let raw = RawMemoryEvent(kind: "chat", content: "双方确认")
-    let evidence = MemoryEvidence(rawEventID: raw.id, excerpt: raw.content)
-    let records = (0..<30).map { i in makeRecord(content: "batch \(i)", evidence: [evidence]) }
+    let records = (0..<30).map { i in
+      makeRecord(content: "batch \(i)", evidence: [
+        MemoryEvidence(rawEventID: raw.id, excerpt: raw.content)
+      ])
+    }
     let session = MemoryFlushSession(sessionID: sessionID, records: records, rawEvents: [raw])
     try sdk.flush(session)
     XCTAssertEqual(try store.memoryV2Count(), 30)
