@@ -98,9 +98,19 @@ public final class MemoryForgetEngine {
   }
 
   public func forget(id: UUID, mode: ForgetMode) throws {
-    let before = try store.memoryV2(id: id)
+    // A full erase must not keep an undo snapshot containing the secret in
+    // memory_audit (or it would still be recoverable from the local database).
+    if mode == .fullDelete {
+      try sdk.forget(id: id, mode: mode)
+      return
+    }
+    var before = try store.memoryV2(id: id)
     try sdk.forget(id: id, mode: mode)
     let after = try store.memoryV2(id: id)
+    if mode == .removeEvidence {
+      before?.evidence = []
+      before?.lineage.rawEventIDs = []
+    }
     try store.saveMemoryAudit(MemoryAuditRecord(memoryID: id, kind: .forget, before: before, after: after))
   }
 

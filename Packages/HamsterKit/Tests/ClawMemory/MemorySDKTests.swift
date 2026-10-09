@@ -74,6 +74,23 @@ final class MemorySDKTests: XCTestCase {
     XCTAssertTrue(try store.searchMemoryV2(query: "保留词").contains { $0.id == second.id })
   }
 
+  func testFullDeleteDoesNotRetainVersionOrAuditSnapshots() throws {
+    let raw = RawMemoryEvent(kind: "chat", content: "必须真正删除的证据")
+    let evidence = MemoryEvidence(rawEventID: raw.id, excerpt: raw.content)
+    let sensitive = makeRecord(content: "本机需要擦除的保密内容", evidence: [evidence])
+    try store.saveMemoryV2(sensitive, rawEvents: [raw])
+    let keep = makeRecord(content: "其他人的记录要保留")
+    try sdk.remember(keep)
+    let forget = MemoryForgetEngine(sdk: sdk, store: store)
+    try forget.forget(id: sensitive.id, mode: .fullDelete)
+    XCTAssertNil(try store.memoryV2(id: sensitive.id))
+    XCTAssertEqual(try store.memoryV2VersionCount(id: sensitive.id), 0)
+    XCTAssertTrue(try store.rawEvents(ids: [raw.id]).isEmpty)
+    XCTAssertNil(try store.memory(id: sensitive.id))
+    XCTAssertEqual(try store.memoryV2(id: keep.id)?.content, keep.content)
+    XCTAssertThrowsError(try sdk.forget(id: sensitive.id, mode: .fullDelete))
+  }
+
   func testRepeatedSaveOfSameVersionIsIdempotent() throws {
     let record = makeRecord(content: "只保存一个版本")
     try sdk.remember(record)

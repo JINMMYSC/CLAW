@@ -163,6 +163,10 @@ public final class DefaultMemorySDK: MemorySDK {
 
   public func forget(id: UUID, mode: ForgetMode) throws {
     guard var record = try store.memoryV2(id: id) else { throw MemorySDKError.missingMemory(id) }
+    if mode == .fullDelete {
+      try store.purgeMemoryV2(id: id)
+      return
+    }
     record.version += 1
     record.updatedAt = Date()
     switch mode {
@@ -173,11 +177,6 @@ public final class DefaultMemorySDK: MemorySDK {
       record.state = .archived
     case .invalidateDerivedFacts, .fullDelete:
       record.state = .invalidated
-      if mode == .fullDelete {
-        record.content = ""
-        record.evidence = []
-        record.lineage = MemoryLineage()
-      }
     }
     try store.saveMemoryV2(record)
     _ = try? store.setMemoryStatus(id: id, status: mode == .archive ? .archived : .superseded)

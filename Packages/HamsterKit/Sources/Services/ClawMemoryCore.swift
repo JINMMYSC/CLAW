@@ -1020,6 +1020,52 @@ public final class ClawMemoryStore {
     return false
   }
 
+  /// Irreversible local erase for one Memory V2 record, including all
+  /// historical versions, evidence and stored audit snapshots. An archived
+  /// memory is reversible; full deletion is deliberately not reversible.
+  /// External exports and iCloud backups are outside this SQLite operation.
+  public func purgeMemoryV2(id: UUID) throws {
+    lock.lock(); defer { lock.unlock() }
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      func step(_ sql: String, _ value: String) throws {
+        let stmt = try prepare(sql)
+        defer { sqlite3_finalize(stmt) }
+        bindText(value, at: 1, in: stmt)
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+          throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+        }
+      }
+      try executeUnlocked("CREATE TEMP TABLE IF NOT EXISTS claw_forget_raw (id TEXT PRIMARY KEY);")
+      try executeUnlocked("DELETE FROM claw_forget_raw;")
+      try step("""
+        INSERT OR IGNORE INTO claw_forget_raw(id)
+        SELECT raw_event_id FROM memory_evidence WHERE memory_id = ?;
+      """, id.uuidString)
+      try step("""
+        DELETE FROM memory_v2_fts
+        WHERE rowid = (SELECT rowid FROM memory_v2 WHERE id = ?);
+      """, id.uuidString)
+      for table in ["memory_evidence", "memory_versions", "memory_audit"] {
+        try step("DELETE FROM \(table) WHERE memory_id = ?;", id.uuidString)
+      }
+      for column in ["memory_id", "parent_memory_id", "source_memory_id"] {
+        try step("DELETE FROM memory_lineage WHERE \(column) = ?;", id.uuidString)
+      }
+      try step("DELETE FROM memory_v2 WHERE id = ?;", id.uuidString)
+      try step("DELETE FROM memory_items WHERE id = ?;", id.uuidString)
+      try executeUnlocked("""
+        DELETE FROM raw_events WHERE id IN (SELECT id FROM claw_forget_raw)
+        AND id NOT IN (SELECT raw_event_id FROM memory_evidence);
+      """)
+      try executeUnlocked("DELETE FROM claw_forget_raw;")
+      try executeUnlocked("COMMIT;")
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
+  }
+
   /// Explicitly erase one person's live on-device records without promoting
   /// anything to global. Dependent history, evidence, FTS, versions and audits
   /// are removed in one SQLite transaction. This does not erase user-exported
