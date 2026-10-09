@@ -9,10 +9,19 @@ public final class MemoryRouter {
     self.store = store
   }
 
-  public func recall(_ request: MemoryRecallRequest) throws -> [MemoryV2Record] {
-    let candidates = try store.searchMemoryV2(query: request.query, limit: max(80, request.limit * 8))
+  public func recall(
+    _ request: MemoryRecallRequest,
+    cloudEligibleOnly: Bool = false,
+    now: Date = Date()
+  ) throws -> [MemoryV2Record] {
+    let candidates = try store.searchContextMemoryV2(
+      request, limit: max(80, request.limit * 8),
+      cloudEligibleOnly: cloudEligibleOnly, now: now
+    )
+    // Defense in depth: the SQL predicate owns the candidate budget, while
+    // this guard continues enforcing the same request scope after decoding.
       .filter { $0.state == .active || $0.state == .confirmed }
-      .filter { isVisible($0, for: request) }
+      .filter { isVisible($0, for: request, now: now) }
 
     var seen = Set<String>()
     let ranked = candidates.sorted { score($0, query: request.query) > score($1, query: request.query) }
@@ -24,8 +33,11 @@ public final class MemoryRouter {
     return diversify(deduplicated, query: request.query, limit: max(1, request.limit))
   }
 
-  private func isVisible(_ record: MemoryV2Record, for request: MemoryRecallRequest) -> Bool {
-    if let expiresAt = record.expiresAt, expiresAt <= Date() { return false }
+  private func isVisible(_ record: MemoryV2Record, for request: MemoryRecallRequest, now: Date) -> Bool {
+    if let expiresAt = record.expiresAt, expiresAt <= now { return false }
+    if record.scope == .global && (record.personID != nil || record.projectID != nil) { return false }
+    if let recordPerson = record.personID, recordPerson != request.personID { return false }
+    if let recordProject = record.projectID, recordProject != request.projectID { return false }
     if let projectID = request.projectID,
        record.scope == .project,
        record.projectID != projectID { return false }
