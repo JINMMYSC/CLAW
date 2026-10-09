@@ -154,6 +154,17 @@ public final class ClawVoiceInputService: NSObject {
     )
   }
 
+  private func diagnoseAuthorizations() {
+    switch authorizationStatus {
+    case .authorized:
+      diagnostic("permissions_authorized")
+    case .denied:
+      diagnostic("permissions_denied", severity: "error")
+    case .undetermined:
+      diagnostic("permissions_undetermined", severity: "warning")
+    }
+  }
+
   /// 开始录音；停止后通过 completion 返回最终识别文本
   /// 键盘扩展同样走这条路：前提是主程序已经授权麦克风与语音识别，
   /// 并且键盘已开启「允许完全访问」。扩展里不能弹权限框，所以授权必须在主程序完成。
@@ -164,6 +175,7 @@ public final class ClawVoiceInputService: NSObject {
     }
     let generation = resetForNewSession()
     diagnostic("recording_requested")
+    diagnoseAuthorizations()
     guard let recognizer = makeRecognizer(), recognizer.isAvailable else {
       LogService.shared.log(.voiceRecognizerUnavailable)
       diagnostic("recognizer_unavailable", severity: "error")
@@ -263,6 +275,7 @@ public final class ClawVoiceInputService: NSObject {
     }
     let generation = resetForNewSession()
     diagnostic("recording_requested")
+    diagnoseAuthorizations()
     streamingPartial = onPartial
     streamingSegment = onSegment
     streamingError = onError
@@ -309,23 +322,29 @@ public final class ClawVoiceInputService: NSObject {
     }
 
     recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-      guard let self, self.sessionGeneration == generation else { return }
-      if let result {
-        let text = result.bestTranscription.formattedString
-        if result.isFinal {
-let onSegment = self.streamingSegment
-self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
-onSegment?(text)
-        } else {
-self.restartSilenceTimer(for: generation)
-self.streamingPartial?(text)
+      // Apple Speech may invoke callbacks off-main. Session generation,
+      // streaming callbacks, silence timers and AVAudioEngine teardown are
+      // owned by the same main-thread state machine as stop()/start().
+      DispatchQueue.main.async { [weak self] in
+        guard let self, self.sessionGeneration == generation else { return }
+        if let result {
+          let text = result.bestTranscription.formattedString
+          if result.isFinal {
+            let onSegment = self.streamingSegment
+            self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
+            self.diagnostic("stream_segment_completed")
+            onSegment?(text)
+          } else {
+            self.restartSilenceTimer(for: generation)
+            self.streamingPartial?(text)
+          }
+        } else if let error {
+          let onError = self.streamingError
+          self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
+          LogService.shared.log(.voiceRecognitionFailed)
+          self.diagnostic("recognition_failed", severity: "error", error: error)
+          onError?(error)
         }
-      } else if let error {
-        let onError = self.streamingError
-        self.finishSession(generation, cancelTask: false, clearStreamingCallbacks: true)
-        LogService.shared.log(.voiceRecognitionFailed)
-        self.diagnostic("recognition_failed", severity: "error", error: error)
-        onError?(error)
       }
     }
 
