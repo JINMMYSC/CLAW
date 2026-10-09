@@ -36,6 +36,16 @@ final class StandingIntentTests: XCTestCase {
     XCTAssertTrue(result.records.allSatisfy { !$0.evidence.isEmpty && $0.sessionID == sessionID })
   }
 
+  func testSimpleRefusalIsPreferenceNotPhantomTask() {
+    let personID = UUID()
+    let message = ClawConversationMessage(contactID: personID, speaker: .other,
+      content: "不要提醒我开会，也不需要额外的通知", sourceType: "screenshot")
+    let result = MemoryFlushService().extract(sessionID: UUID(), messages: [message], personID: personID)
+    XCTAssertTrue(result.tasks.isEmpty)
+    XCTAssertFalse(result.records.contains { $0.type == .task })
+    XCTAssertTrue(result.records.contains { $0.type == .preference })
+  }
+
   private func intent(personID: UUID, expiresAt: Date) -> StandingIntent {
     StandingIntent(
       trigger: "下次联系",

@@ -25,6 +25,38 @@ final class ClawScaleGateTests: XCTestCase {
     XCTAssertLessThan(recallDuration, 3, "2k hybrid recall exceeded the release gate")
   }
 
+  /// Separate from the 100k memory gate because conversation timeline
+  /// import covers different SQLite tables and indexing costs.
+  func testOptInQuarterMillionConversationImport() throws {
+    let env = ProcessInfo.processInfo.environment
+    guard env["CLAW_CONVERSATION_STRESS"] == "1" else {
+      throw XCTSkip("250k conversation benchmark is opt-in")
+    }
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("claw-250k-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = ClawMemoryStore(databaseURL: root.appendingPathComponent("memory.sqlite"))
+    let people = (0..<500).map { _ in UUID() }
+    let start = Date()
+    for batchStart in stride(from: 0, to: 250_000, by: 1000) {
+      let messages = (batchStart..<(batchStart+1000)).map { index in
+        ClawConversationMessage(
+          contactID: people[index % people.count],
+          speaker: index.isMultiple(of: 2) ? .me : .other,
+          content: "250k 对话导入 \(index) 唯一内容",
+          occurredAt: Date(timeIntervalSince1970: 1_800_000_000 + Double(index)),
+          sourceType: "scale-fixture"
+        )
+      }
+      XCTAssertEqual(try store.appendConversationsBatch(messages).count, 1000)
+    }
+    let duration = Date().timeIntervalSince(start)
+    XCTAssertEqual(try store.allConversation(limit: 250_000).count, 250_000)
+    XCTAssertEqual(try store.conversation(contactID: people[0], limit: 1000).count, 500)
+    print("CLAW_SCALE_250K: rows=250000, people=500, batch=1000, write=\(duration)s")
+  }
+
   /// Release-only stress gate. Keep regular CI light: explicitly run with
   /// TEST_RUNNER_CLAW_STRESS_TEST=1 on a simulator to exercise the full scale.
   func testOptInHundredThousandMemoriesAndPersonIsolation() throws {

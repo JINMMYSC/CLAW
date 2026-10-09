@@ -767,9 +767,33 @@ public final class ClawMemoryStore {
 
   @discardableResult
   public func appendConversation(_ message: ClawConversationMessage) throws -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    return try appendConversationUnlocked(message)
+  }
+
+  /// Import long conversation timelines in one transaction. A failure rolls
+  /// back all rows, and duplicates are omitted from the returned collection.
+  @discardableResult
+  public func appendConversationsBatch(_ messages: [ClawConversationMessage]) throws -> [ClawConversationMessage] {
+    guard !messages.isEmpty else { return [] }
+    lock.lock(); defer { lock.unlock() }
+    try executeUnlocked("BEGIN IMMEDIATE;")
+    do {
+      var inserted: [ClawConversationMessage] = []
+      for message in messages where try appendConversationUnlocked(message) {
+        inserted.append(message)
+      }
+      try executeUnlocked("COMMIT;")
+      return inserted
+    } catch {
+      try? executeUnlocked("ROLLBACK;")
+      throw error
+    }
+  }
+
+  private func appendConversationUnlocked(_ message: ClawConversationMessage) throws -> Bool {
     let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return false }
-    lock.lock(); defer { lock.unlock() }
     let fingerprint = Self.fingerprint(
       contactID: message.contactID,
       speaker: message.speaker,

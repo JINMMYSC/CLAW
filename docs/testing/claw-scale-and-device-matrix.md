@@ -23,3 +23,10 @@ The release owner records write time, p95 recall time, archive size, export time
 Real-device checks use the oldest supported iPhone on iOS 15 for the host and keyboard, plus an iOS 16.1 or newer device for WidgetKit and Live Activities. Verify permission steps can each be denied or skipped, BG refresh reschedules, SmartFreq only requests processing with external power and outside Low Power Mode, Spotlight opens CLAW, widget snapshots use the App Group, and recording/call Live Activities start and end. Test encrypted migration with a copy of legacy data, then export, hash-verify, import, correct, delete, and confirm lineage and forget propagation.
 
 The Widget is built on every CI archive. Signed distribution embeds it only when `PROFILE_WIDGET_B64` contains a profile for `app.lgm.7517.widget`; otherwise the signing job removes only that extension and still produces the host IPA.
+
+## Conversation import gate
+Build Test now offers a separate `stress_250k` workflow_dispatch flag to
+exercise 250,000 conversation messages spread over 500 people, importing 1,000
+messages per SQLite transaction. The gate is opt-in and reports the measured
+write duration as `CLAW_SCALE_250K`. It also asserts person-scoped lookup.
+It is **not** an iPhone peak-memory measurement or permission for release.
