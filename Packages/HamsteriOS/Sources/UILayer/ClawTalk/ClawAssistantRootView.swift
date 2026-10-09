@@ -424,6 +424,7 @@ private struct ClawAssistantChatView: View {
   @State private var selectedProfileName = HeartTargetService.shared.selectedProfile?.displayName
   @State private var searchText = ""
   @State private var showingSearch = false
+  @State private var isAtChatBottom = true
   @State private var showingNewConversationConfirmation = false
   @State private var showingPhotoAttachment = false
   @State private var showingFileAttachment = false
@@ -485,17 +486,31 @@ private struct ClawAssistantChatView: View {
               }
               .padding(.horizontal)
             }
+            // A lazy bottom anchor tracks whether the user is reading older
+            // content. Incoming messages must not steal their scroll position.
+            Color.clear
+              .frame(height: 1)
+              .id("claw-chat-bottom")
+              .onAppear { isAtChatBottom = true }
+              .onDisappear { isAtChatBottom = false }
           }
           .padding(.vertical, 12)
         }
         .onChange(of: chat.messages.count) { _ in
-          if let id = chat.messages.last?.id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
+          guard ClawChatScrollPolicy.shouldFollow(
+            isAtBottom: isAtChatBottom, isSearching: showingSearch
+          ) else { return }
+          withAnimation { proxy.scrollTo("claw-chat-bottom", anchor: .bottom) }
         }
         .overlay(alignment: .bottomTrailing) {
-          if chat.messages.count > 5, let latest = chat.messages.last?.id {
-            Button { withAnimation { proxy.scrollTo(latest, anchor: .bottom) } } label: {
+          if chat.messages.count > 5 && !isAtChatBottom {
+            Button {
+              isAtChatBottom = true
+              withAnimation { proxy.scrollTo("claw-chat-bottom", anchor: .bottom) }
+            } label: {
               Image(systemName: "arrow.down.circle.fill").font(.title2)
             }
+            .accessibilityLabel("跳到最新消息")
             .padding(10)
           }
         }
