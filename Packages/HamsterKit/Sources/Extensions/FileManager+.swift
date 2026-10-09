@@ -63,6 +63,21 @@ public extension FileManager {
     override: Bool = true
   ) throws {
     let fm = FileManager.default
+    // FileManager.enumerator(at:) can return a non-nil, empty enumerator
+    // for a missing path on some platforms. Check existence and directory
+    // type first; never report a no-op cloud copy as success.
+    var isSourceDirectory: ObjCBool = false
+    guard fm.fileExists(atPath: src.path, isDirectory: &isSourceDirectory),
+          isSourceDirectory.boolValue else {
+      throw NSError(domain: NSCocoaErrorDomain, code: NSFileNoSuchFileError,
+                    userInfo: [NSFilePathErrorKey: src.path])
+    }
+    var isDestinationDirectory: ObjCBool = false
+    guard fm.fileExists(atPath: dst.path, isDirectory: &isDestinationDirectory),
+          isDestinationDirectory.boolValue else {
+      throw NSError(domain: NSCocoaErrorDomain, code: NSFileNoSuchFileError,
+                    userInfo: [NSFilePathErrorKey: dst.path])
+    }
     // 递归获取全部文件
     guard let srcFiles = fm.enumerator(at: src, includingPropertiesForKeys: [.isDirectoryKey]) else {
       throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: src.path])
