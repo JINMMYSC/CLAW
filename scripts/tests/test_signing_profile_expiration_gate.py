@@ -27,8 +27,16 @@ class SigningProfileExpirationGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = pathlib.Path(folder) / "expired.mobileprovision"
             path.write_bytes(profile(datetime(2020, 1, 1)))
-            with self.assertRaisesRegex(ValueError, "expired"):
-                sign_ipa.extract_entitlements(str(path))
+            with mock.patch.object(
+                verify_signed_ipa.subprocess, "run",
+                return_value=SimpleNamespace(stdout=path.read_bytes()),
+            ) as decoder:
+                with self.assertRaisesRegex(ValueError, "expired"):
+                    sign_ipa.extract_entitlements(str(path))
+                decoder.assert_called_once_with(
+                    ["security", "cms", "-D", "-i", str(path)],
+                    check=True, capture_output=True,
+                )
 
     def test_verifier_rejects_expired_profile(self):
         result = SimpleNamespace(stdout=profile(datetime(2020, 1, 1)))
@@ -40,17 +48,33 @@ class SigningProfileExpirationGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = pathlib.Path(folder) / "missing.mobileprovision"
             path.write_bytes(profile())
-            with self.assertRaisesRegex(ValueError, "ExpirationDate"):
-                sign_ipa.extract_entitlements(str(path))
+            with mock.patch.object(
+                verify_signed_ipa.subprocess, "run",
+                return_value=SimpleNamespace(stdout=path.read_bytes()),
+            ) as decoder:
+                with self.assertRaisesRegex(ValueError, "ExpirationDate"):
+                    sign_ipa.extract_entitlements(str(path))
+                decoder.assert_called_once_with(
+                    ["security", "cms", "-D", "-i", str(path)],
+                    check=True, capture_output=True,
+                )
 
     def test_valid_profile_is_accepted(self):
         with tempfile.TemporaryDirectory() as folder:
             path = pathlib.Path(folder) / "valid.mobileprovision"
             path.write_bytes(profile(datetime(2099, 1, 1)))
-            self.assertEqual(
-                sign_ipa.extract_entitlements(str(path))["application-identifier"],
-                "TEAM.app.lgm.7517",
-            )
+            with mock.patch.object(
+                verify_signed_ipa.subprocess, "run",
+                return_value=SimpleNamespace(stdout=path.read_bytes()),
+            ) as decoder:
+                self.assertEqual(
+                    sign_ipa.extract_entitlements(str(path))["application-identifier"],
+                    "TEAM.app.lgm.7517",
+                )
+                decoder.assert_called_once_with(
+                    ["security", "cms", "-D", "-i", str(path)],
+                    check=True, capture_output=True,
+                )
 
 
 if __name__ == "__main__":
