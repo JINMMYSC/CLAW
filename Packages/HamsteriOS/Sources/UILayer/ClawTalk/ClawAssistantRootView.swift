@@ -383,10 +383,10 @@ private struct ClawScreenshotReviewSheet: View {
       .navigationTitle("核对聊天截图")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .topBarLeading) {
+        ToolbarItem(placement: .navigationBarLeading) {
           Button("取消") { dismiss() }
         }
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .navigationBarTrailing) {
           Button("确认归档") {
             guard let id = selectedProfileID else { return }
             do {
@@ -1387,7 +1387,7 @@ private struct ClawSecretaryTodayView: View {
       }
       .navigationTitle("今日秘书")
       .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .navigationBarTrailing) {
           Button { showingNewTask = true } label: { Image(systemName: "plus") }
             .accessibilityLabel("新建待办")
         }
@@ -1666,7 +1666,7 @@ private struct ClawPeopleView: View {
       .navigationTitle("人物")
       .searchable(text: $searchText, prompt: "搜索姓名、别名或关系")
       .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .navigationBarTrailing) {
           Button {
             editingProfile = HeartTargetProfile()
           } label: {
@@ -1796,10 +1796,10 @@ private struct ClawContactEditorView: View {
     .navigationTitle(original.name.isEmpty ? "新建人物" : "编辑人物")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
-      ToolbarItem(placement: .topBarLeading) {
+      ToolbarItem(placement: .navigationBarLeading) {
         Button("取消") { dismiss() }
       }
-      ToolbarItem(placement: .topBarTrailing) {
+      ToolbarItem(placement: .navigationBarTrailing) {
         Button("保存") {
           save()
         }

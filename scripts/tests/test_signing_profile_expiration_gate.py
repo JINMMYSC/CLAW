@@ -1,0 +1,57 @@
+"""Reject expired provisioning profiles before creating an installable IPA."""
+
+from datetime import datetime, timezone
+import pathlib
+import plistlib
+import sys
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest import mock
+
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+import sign_ipa
+import verify_signed_ipa
+
+
+def profile(expiration=None):
+    data = {"Entitlements": {"application-identifier": "TEAM.app.lgm.7517"}}
+    if expiration is not None:
+        data["ExpirationDate"] = expiration
+    return plistlib.dumps(data)
+
+
+class SigningProfileExpirationGateTests(unittest.TestCase):
+    def test_signer_rejects_expired_profile(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / "expired.mobileprovision"
+            path.write_bytes(profile(datetime(2020, 1, 1)))
+            with self.assertRaisesRegex(ValueError, "expired"):
+                sign_ipa.extract_entitlements(str(path))
+
+    def test_verifier_rejects_expired_profile(self):
+        result = SimpleNamespace(stdout=profile(datetime(2020, 1, 1)))
+        with mock.patch.object(verify_signed_ipa.subprocess, "run", return_value=result):
+            with self.assertRaisesRegex(ValueError, "expired"):
+                verify_signed_ipa.extract_profile_entitlements("expired.mobileprovision")
+
+    def test_missing_expiration_fails_closed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / "missing.mobileprovision"
+            path.write_bytes(profile())
+            with self.assertRaisesRegex(ValueError, "ExpirationDate"):
+                sign_ipa.extract_entitlements(str(path))
+
+    def test_valid_profile_is_accepted(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / "valid.mobileprovision"
+            path.write_bytes(profile(datetime(2099, 1, 1)))
+            self.assertEqual(
+                sign_ipa.extract_entitlements(str(path))["application-identifier"],
+                "TEAM.app.lgm.7517",
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

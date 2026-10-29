@@ -2,6 +2,12 @@
 # encoding: utf-8
 set -e
 
+# Fail fast on missing upstream archives instead of waiting indefinitely or
+# passing an HTTP error page to tar/unzip on the macOS CI runner.
+download_schema_asset() {
+  curl --fail --location --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 15 --max-time 120 --output "$1" "$2"
+}
+
 # 输入方案临时目录
 if [[ -z "${CI_PRIMARY_REPOSITORY_PATH}" ]]; then
   CI_PRIMARY_REPOSITORY_PATH="$PWD"
@@ -30,9 +36,9 @@ then
 
   rm -rf .deps && mkdir -p .deps && (
       cd .deps
-      [ -z "${no_download}" ] && curl -LO "${rime_download_url}"
+      [ -z "${no_download}" ] && download_schema_asset "${rime_archive}" "${rime_download_url}"
       tar --bzip2 -xf "${rime_archive}"
-      [ -z "${no_download}" ] && curl -LO "${rime_deps_download_url}"
+      [ -z "${no_download}" ] && download_schema_asset "${rime_deps_archive}" "${rime_deps_download_url}"
       tar --bzip2 -xf "${rime_deps_archive}"
   )
 fi
@@ -45,7 +51,7 @@ rm -rf .plum $OUTPUT
 mkdir -p $DST_PATH/opencc
 cp -r .deps/share/opencc $DST_PATH
 
-git clone --depth 1 https://github.com/rime/plum.git $OUTPUT/.plum
+git -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=30 clone --depth 1 https://github.com/rime/plum.git $OUTPUT/.plum
 
 for package in prelude rime-essay; do
   bash $OUTPUT/.plum/scripts/install-packages.sh "${package}" $DST_PATH
@@ -58,7 +64,7 @@ rime_emoji_archive="rime-emoji-${rime_emoji_version}.zip"
 rime_emoji_download_url="https://github.com/rime/rime-emoji/archive/refs/tags/${rime_emoji_version}.zip"
 rm -rf $OUTPUT/.emoji && mkdir -p $OUTPUT/.emoji && (
     cd $OUTPUT/.emoji
-    [ -z "${no_download}" ] && curl -Lo "${rime_emoji_archive}" "${rime_emoji_download_url}"
+    [ -z "${no_download}" ] && download_schema_asset "${rime_emoji_archive}" "${rime_emoji_download_url}"
     unzip "${rime_emoji_archive}" -d .
     rm -rf ${rime_emoji_archive}
     cd rime-emoji-${rime_emoji_version}
@@ -100,7 +106,7 @@ mkdir -p $CI_PRIMARY_REPOSITORY_PATH/Resources/SharedSupport
 input_scheme_name=rime-ice
 
 rm -rf $OUTPUT/.$input_scheme_name && \
-  git clone https://github.com/iDvel/$input_scheme_name $OUTPUT/.$input_scheme_name && (
+  git -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=30 clone https://github.com/iDvel/$input_scheme_name $OUTPUT/.$input_scheme_name && (
     cd $OUTPUT/.$input_scheme_name
     # t9 v3 processors 官方 librime 不兼容，固定到已验证可用版本 v2.0.0
     git checkout 5000d46e84

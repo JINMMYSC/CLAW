@@ -23,6 +23,14 @@
 		C00C26E62B069D6B00E92F89 /* libmarisa.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = C00C26C52B069D6A00E92F89 /* libmarisa.xcframework */; };
 		C00C26E82B069D6B00E92F89 /* librime.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = C00C26C62B069D6A00E92F89 /* librime.xcframework */; };
 		C00C26E92B069D6B00E92F89 /* librime.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = C00C26C62B069D6A00E92F89 /* librime.xcframework */; };
+		D0B005000000000000000001 /* boost_atomic.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D0B005000000000000000009 /* boost_atomic.xcframework */; };
+		D0B005000000000000000002 /* boost_atomic.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D0B005000000000000000009 /* boost_atomic.xcframework */; };
+		D0B005000000000000000003 /* boost_filesystem.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D0B00500000000000000000A /* boost_filesystem.xcframework */; };
+		D0B005000000000000000004 /* boost_filesystem.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D0B00500000000000000000A /* boost_filesystem.xcframework */; };
+		D0B005000000000000000005 /* boost_regex.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D0B00500000000000000000B /* boost_regex.xcframework */; };
+		D0B005000000000000000006 /* boost_regex.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D0B00500000000000000000B /* boost_regex.xcframework */; };
+		D0B005000000000000000007 /* boost_system.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D0B00500000000000000000C /* boost_system.xcframework */; };
+		D0B005000000000000000008 /* boost_system.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D0B00500000000000000000C /* boost_system.xcframework */; };
 		C01396FC2AB499D80043674A /* RimeSyncIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01396F92AB499CA0043674A /* RimeSyncIntent.swift */; };
 		C01396FD2AB499D80043674A /* RimeDeployIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01396FA2AB499CA0043674A /* RimeDeployIntent.swift */; };
 		C02435B42A0490230080CFB4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C02435932A0490220080CFB4 /* Assets.xcassets */; };
@@ -99,6 +107,10 @@
 		C00C26C32B069D6A00E92F89 /* libopencc.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = libopencc.xcframework; sourceTree = "<group>"; };
 		C00C26C52B069D6A00E92F89 /* libmarisa.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = libmarisa.xcframework; sourceTree = "<group>"; };
 		C00C26C62B069D6A00E92F89 /* librime.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = librime.xcframework; sourceTree = "<group>"; };
+		D0B005000000000000000009 /* boost_atomic.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = boost_atomic.xcframework; sourceTree = "<group>"; };
+		D0B00500000000000000000A /* boost_filesystem.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = boost_filesystem.xcframework; sourceTree = "<group>"; };
+		D0B00500000000000000000B /* boost_regex.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = boost_regex.xcframework; sourceTree = "<group>"; };
+		D0B00500000000000000000C /* boost_system.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = boost_system.xcframework; sourceTree = "<group>"; };
 		C00E006C2A1B6AFD00180F81 /* zh */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = zh; path = zh.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		C01396F92AB499CA0043674A /* RimeSyncIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RimeSyncIntent.swift; sourceTree = "<group>"; };
 		C01396FA2AB499CA0043674A /* RimeDeployIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RimeDeployIntent.swift; sourceTree = "<group>"; };
@@ -162,6 +174,10 @@
 				C053ADC32A5D503200EA7EEE /* HamsteriOS in Frameworks */,
 				C00C26E82B069D6B00E92F89 /* librime.xcframework in Frameworks */,
 				C00C26DF2B069D6A00E92F89 /* libopencc.xcframework in Frameworks */,
+				D0B005000000000000000001 /* boost_atomic.xcframework in Frameworks */,
+				D0B005000000000000000003 /* boost_filesystem.xcframework in Frameworks */,
+				D0B005000000000000000005 /* boost_regex.xcframework in Frameworks */,
+				D0B005000000000000000007 /* boost_system.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -175,6 +191,10 @@
 				C00C26B72B0698E300E92F89 /* HamsterKeyboardKit in Frameworks */,
 				C00C26E92B069D6B00E92F89 /* librime.xcframework in Frameworks */,
 				C00C26E02B069D6A00E92F89 /* libopencc.xcframework in Frameworks */,
+				D0B005000000000000000002 /* boost_atomic.xcframework in Frameworks */,
+				D0B005000000000000000004 /* boost_filesystem.xcframework in Frameworks */,
+				D0B005000000000000000006 /* boost_regex.xcframework in Frameworks */,
+				D0B005000000000000000008 /* boost_system.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -199,6 +219,10 @@
 				C00C26C32B069D6A00E92F89 /* libopencc.xcframework */,
 				C00C26C62B069D6A00E92F89 /* librime.xcframework */,
 				C00C26BF2B069D6900E92F89 /* libyaml-cpp.xcframework */,
+				D0B005000000000000000009 /* boost_atomic.xcframework */,
+				D0B00500000000000000000A /* boost_filesystem.xcframework */,
+				D0B00500000000000000000B /* boost_regex.xcframework */,
+				D0B00500000000000000000C /* boost_system.xcframework */,
 			);
 			path = Frameworks;
 			sourceTree = "<group>";
@@ -558,8 +582,8 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
-		A1000000000000000000000D /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { APPLICATION_EXTENSION_API_ONLY = YES; CODE_SIGN_ENTITLEMENTS = ClawWidgets/ClawWidgets.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = X5G6AN3DYX; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = ClawWidgets/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.1; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", ); MARKETING_VERSION = 3.0.0; PRODUCT_BUNDLE_IDENTIFIER = app.lgm.7517.widget; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
-		A1000000000000000000000E /* Release */ = {isa = XCBuildConfiguration; buildSettings = { APPLICATION_EXTENSION_API_ONLY = YES; CODE_SIGN_ENTITLEMENTS = ClawWidgets/ClawWidgets.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = X5G6AN3DYX; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = ClawWidgets/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.1; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", ); MARKETING_VERSION = 3.0.0; PRODUCT_BUNDLE_IDENTIFIER = app.lgm.7517.widget; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
+		A1000000000000000000000D /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { APPLICATION_EXTENSION_API_ONLY = YES; CODE_SIGN_ENTITLEMENTS = ClawWidgets/ClawWidgets.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = X5G6AN3DYX; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = ClawWidgets/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 15.0; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", ); MARKETING_VERSION = 3.0.0; PRODUCT_BUNDLE_IDENTIFIER = app.lgm.7517.widget; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
+		A1000000000000000000000E /* Release */ = {isa = XCBuildConfiguration; buildSettings = { APPLICATION_EXTENSION_API_ONLY = YES; CODE_SIGN_ENTITLEMENTS = ClawWidgets/ClawWidgets.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = X5G6AN3DYX; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = ClawWidgets/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 15.0; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", ); MARKETING_VERSION = 3.0.0; PRODUCT_BUNDLE_IDENTIFIER = app.lgm.7517.widget; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
 		C03E8031296D4F4D0083E53A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {

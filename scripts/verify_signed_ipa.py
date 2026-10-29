@@ -3,6 +3,7 @@
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import fnmatch
 import os
 import plistlib
@@ -77,6 +78,16 @@ def validate_bundle_entitlements(
         if container not in signed_containers or not _entitlement_allows(profile_containers, container):
             raise ValueError("missing required iCloud container: %s" % container)
 
+    # A container identifier alone does not grant iCloud Documents access.
+    # The release signing path passes a required container for the CLAW Host;
+    # reject a profile or signature that silently omits CloudDocuments.
+    if required_icloud_containers:
+        service_key = "com.apple.developer.icloud-services"
+        for source, entitlements in (("profile", profile_entitlements),
+                                     ("signature", signed_entitlements)):
+            if "CloudDocuments" not in (entitlements.get(service_key, []) or []):
+                raise ValueError("required CloudDocuments entitlement missing from %s" % source)
+
 
 
 def has_cloud_documents_entitlement(entitlements):
@@ -95,13 +106,29 @@ def _load_embedded_plist(data, description):
     return plistlib.loads(match.group(0))
 
 
+def validate_profile_expiration(profile, now=None):
+    """Reject missing or expired provisioning dates before trusting a profile."""
+    expiration = profile.get("ExpirationDate")
+    if not isinstance(expiration, datetime):
+        raise ValueError("provisioning profile is missing ExpirationDate")
+    if expiration.tzinfo is None:
+        expiration = expiration.replace(tzinfo=timezone.utc)
+    current = now if now is not None else datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    if expiration <= current:
+        raise ValueError("provisioning profile expired")
+
+
 def extract_profile_entitlements(profile_path):
     result = subprocess.run(
         ["security", "cms", "-D", "-i", profile_path],
         check=True,
         capture_output=True,
     )
-    return plistlib.loads(result.stdout).get("Entitlements", {}) or {}
+    profile = plistlib.loads(result.stdout)
+    validate_profile_expiration(profile)
+    return profile.get("Entitlements", {}) or {}
 
 
 def extract_signed_entitlements(bundle_path):

@@ -10,10 +10,12 @@ private actor FakeWeChatTransport: ClawWeChatLocalTransport {
   var cursors: [String?] = []
   var mediaSize = 8
   var fetchHook: (() async -> Void)?
+  var downloadHook: (() async -> Void)?
   var maxDownloadBytes: [Int] = []
 
   func setMessages(_ value: [ClawWeChatLocalMessage]) { messages = value }
   func setFetchHook(_ hook: (() async -> Void)?) { fetchHook = hook }
+  func setDownloadHook(_ hook: (() async -> Void)?) { downloadHook = hook }
   func setMediaSize(_ size: Int) { mediaSize = size }
   func downloadLimits() -> [Int] { maxDownloadBytes }
   func failNextSend() { sendFailures += 1 }
@@ -26,6 +28,7 @@ private actor FakeWeChatTransport: ClawWeChatLocalTransport {
     downloaded.append(reference)
     maxDownloadBytes.append(maximumBytes)
     guard mediaSize <= maximumBytes else { throw ClawWeChatLocalPumpError.mediaTooLarge }
+    if let downloadHook { await downloadHook() }
     return Data(repeating: 1, count: mediaSize)
   }
   func sendText(_ text: String, conversationID: String) async throws {
@@ -50,6 +53,11 @@ private actor FakeWeChatProcessor: ClawWeChatLocalMessageProcessor {
   func processedKinds() -> [ClawWeChatLocalMessageKind] { processed }
 }
 
+/// Test-only simulation of a user confirming each exact draft and destination.
+private struct FakeConfirmedWeChatReply: ClawWeChatLocalSendApproval {
+  func confirmSend(reply: String, to message: ClawWeChatLocalMessage) async -> Bool { true }
+}
+
 final class ClawWeChatLocalPumpTests: XCTestCase {
   private func message(
     _ id: String,
@@ -70,7 +78,11 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
       message("b", kind: .image),
       message("c", kind: .voice)
     ])
-    let pump = ClawWeChatLocalPump(transport: transport, processor: processor, allowedSenderID: "owner")
+    let pump = ClawWeChatLocalPump(
+      transport: transport, processor: processor,
+      allowedSenderID: "owner", allowedConversationID: "chat",
+      sendApproval: FakeConfirmedWeChatReply()
+    )
     await pump.setConnection(.active)
     let first = try await pump.pollOnce(hostForeground: true, keyboardVisible: false, keyboardFullAccess: false)
     XCTAssertEqual(first, 3)
@@ -93,7 +105,10 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
   func testPausedKeyboardCannotPollAndUnknownSenderIsIgnored() async throws {
     let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
     await transport.setMessages([message("x", kind: .text, sender: "stranger")])
-    let pump = ClawWeChatLocalPump(transport: transport, processor: processor, allowedSenderID: "owner")
+    let pump = ClawWeChatLocalPump(
+      transport: transport, processor: processor,
+      allowedSenderID: "owner", allowedConversationID: "chat"
+    )
     await pump.setConnection(.active)
     do {
       _ = try await pump.pollOnce(hostForeground: false, keyboardVisible: true, keyboardFullAccess: false)
@@ -109,7 +124,11 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
     let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
     await transport.setMessages([message("r", kind: .voice)])
     await transport.failNextSend()
-    let pump = ClawWeChatLocalPump(transport: transport, processor: processor, allowedSenderID: "owner")
+    let pump = ClawWeChatLocalPump(
+      transport: transport, processor: processor,
+      allowedSenderID: "owner", allowedConversationID: "chat",
+      sendApproval: FakeConfirmedWeChatReply()
+    )
     await pump.setConnection(.active)
     do {
       _ = try await pump.pollOnce(hostForeground: true, keyboardVisible: false, keyboardFullAccess: false)
@@ -126,7 +145,9 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
     let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
     await transport.setMessages([message("pause", kind: .image)])
     let pump = ClawWeChatLocalPump(
-      transport: transport, processor: processor, allowedSenderID: "owner"
+      transport: transport, processor: processor,
+      allowedSenderID: "owner", allowedConversationID: "chat",
+      sendApproval: FakeConfirmedWeChatReply()
     )
     await transport.setFetchHook {
       await pump.setConnection(.authorizedPaused)
@@ -156,7 +177,8 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
     await transport.setMessages([message("huge", kind: .image)])
     await transport.setMediaSize(32)
     let pump = ClawWeChatLocalPump(
-      transport: transport, processor: processor, allowedSenderID: "owner", maximumMediaBytes: 16
+      transport: transport, processor: processor,
+      allowedSenderID: "owner", allowedConversationID: "chat", maximumMediaBytes: 16
     )
     await pump.setConnection(.active)
     do {
@@ -167,6 +189,44 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
     let processed = await processor.processedKinds()
     XCTAssertNil(cursor)
     XCTAssertTrue(processed.isEmpty)
+  }
+
+  func testPauseDuringMediaDownloadDoesNotStartProcessorOrAdvanceCursor() async throws {
+    let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
+    await transport.setMessages([message("pause-download", kind: .image)])
+    let pump = ClawWeChatLocalPump(
+      transport: transport, processor: processor,
+      allowedSenderID: "owner", allowedConversationID: "chat"
+    )
+    await transport.setDownloadHook {
+      await pump.setConnection(.authorizedPaused)
+    }
+    await pump.setConnection(.active)
+
+    do {
+      _ = try await pump.pollOnce(
+        hostForeground: true, keyboardVisible: false, keyboardFullAccess: false
+      )
+      XCTFail("A paused connection must not process media after download")
+    } catch ClawWeChatLocalPumpError.notRunning { }
+
+    let processedWhilePaused = await processor.processedKinds()
+    let cursorWhilePaused = await pump.lastCursor()
+    let sentWhilePaused = await transport.sentMessages()
+    XCTAssertTrue(processedWhilePaused.isEmpty)
+    XCTAssertNil(cursorWhilePaused)
+    XCTAssertTrue(sentWhilePaused.isEmpty)
+
+    await transport.setDownloadHook(nil)
+    await pump.setConnection(.active)
+    let recovered = try await pump.pollOnce(
+      hostForeground: true, keyboardVisible: false, keyboardFullAccess: false
+    )
+    XCTAssertEqual(recovered, 1)
+    let processedAfterRecovery = await processor.processedKinds()
+    let cursorAfterRecovery = await pump.lastCursor()
+    XCTAssertEqual(processedAfterRecovery, [.image])
+    XCTAssertEqual(cursorAfterRecovery, "next-page")
   }
 
 }

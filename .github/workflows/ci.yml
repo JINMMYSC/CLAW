@@ -6,6 +6,7 @@ on:
       - work/claw-voice-keyboard-bg
       - work/claw-productization-20261006
       - 'work/claw-ux-*'
+      - 'feature/claw-ipa-build-candidate-*'
   pull_request:
     branches:
       - main
@@ -35,12 +36,27 @@ jobs:
 
       - name: Download Rime frameworks (zgl v0.1.0)
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p Frameworks
           cd Frameworks
           BASE="https://github.com/zhanggenlove/LibrimeKit/releases/download/v0.1.0"
-          for f in librime libleveldb libmarisa libopencc libyaml-cpp; do
-            curl -fL -o "$f.xcframework.zip" "$BASE/$f.xcframework.zip"
+          for f in librime boost_atomic boost_filesystem boost_regex boost_system libleveldb libmarisa libopencc libyaml-cpp; do
+            # Published SHA-256 digests from the pinned upstream v0.1.0 release.
+            # Never extract an unverified third-party binary into the build.
+            case "$f" in
+              librime) sha="869ad448db92be5855e239f6f61a87d87e84974a4668509a3cbe4d766f294a54" ;;
+              boost_atomic) sha="4db32b1015c0b2df5b55042e5ec2cced674f8e54e083f7d4aeb1e7db3a6c6925" ;;
+              boost_filesystem) sha="d22bfd6aa9dd37333710aa5cea19fb065ab270bf2e55551841193bfac5b52af1" ;;
+              boost_regex) sha="8b13fb6da177e777b76cc9e02d1aed342f922cb3c24f3029e3879f3c2f82fe33" ;;
+              boost_system) sha="cb3a7cb48499686024923eef902c4327bb021eb8ef25da602a713b9108f56365" ;;
+              libleveldb) sha="147cd30ee8763ccea573ca9778a5b2ed420c3adf5c91fe1b171fd1799422d103" ;;
+              libmarisa) sha="cf66bb44fe11d5bc9ce39d61212e5f269bc4cc5045250bc79d62e34205bfc3bb" ;;
+              libopencc) sha="715f2a323cc3f2b5aaeb3158533fc52ede265dbb54b07ea82f586c68604fe914" ;;
+              libyaml-cpp) sha="4c277cc6fa3f7330200f16d4454cd77c43c495714465bcb0d506d07d5fcdcc4c" ;;
+              *) echo "Unpinned RIME asset: $f" >&2; exit 1 ;;
+            esac
+            curl --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 15 --max-time 120 -fL -o "$f.xcframework.zip" "$BASE/$f.xcframework.zip"
+            printf '%s  %s\n' "$sha" "$f.xcframework.zip" | shasum -a 256 -c -
             unzip -oq "$f.xcframework.zip"
             rm -f "$f.xcframework.zip"
           done
@@ -59,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tools/tests -p 'test_*.py'
-          python3 -m unittest discover -s scripts/tests -p 'test_signing_profiles.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
           python3 tools/generate_claw_source_manifest.py --repo . --out "$RUNNER_TEMP/claw-code-aware.json"
 
       - name: Archive Code-Aware source manifest
@@ -113,6 +129,11 @@ jobs:
             composer-test-screenshots/
             /tmp/HamsteriOSTests.xcresult/
           if-no-files-found: warn
+
+      - name: Verify RIME iOS arm64 device slices before archive
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_rime_device_slices.py --frameworks Frameworks
 
       - name: Compile
         run: |
