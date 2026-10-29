@@ -106,6 +106,8 @@ def parse_bundle_profile_mappings(values):
         identifier, path = value.split("=", 1)
         if not identifier or not path:
             raise ValueError("--bundle-profile must use BUNDLE_ID=PATH")
+        if identifier in mappings:
+            raise ValueError("duplicate --bundle-profile for %s" % identifier)
         mappings[identifier] = path
     return mappings
 
@@ -231,6 +233,8 @@ def main():
         "--bundle-profile", action="append", default=[], metavar="BUNDLE_ID=PATH",
         help="profile for one exact extension bundle identifier (repeatable)")
     ap.add_argument("--list-extension-bundle-identifiers", action="store_true")
+    ap.add_argument("--expected-main-bundle-id", default="app.lgm.7517",
+                    help="exact Host bundle identifier required for this release")
     ap.add_argument("--out")
     args = ap.parse_args()
     if args.list_extension_bundle_identifiers:
@@ -298,6 +302,8 @@ def main():
         # --- entitlements ---
         main_ent = extract_entitlements(args.main_profile)
         main_identifier = read_bundle_info(app_path)["CFBundleIdentifier"]
+        if main_identifier != args.expected_main_bundle_id:
+            raise ValueError("unexpected Host bundle identifier: %s" % main_identifier)
         required_icloud_containers = (
             [] if args.allow_missing_icloud else [DEFAULT_ICLOUD_CONTAINER]
         )
