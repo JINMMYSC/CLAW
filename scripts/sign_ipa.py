@@ -117,6 +117,11 @@ def read_bundle_info(bundle_path):
         return plistlib.load(stream)
 
 
+def require_expected_main_bundle(actual, expected):
+    if actual != expected:
+        raise ValueError("unexpected Host bundle identifier: %s" % actual)
+
+
 def validate_profile(bundle_identifier, entitlements, required_icloud_containers=()):
     """Validate profile coverage before using it to sign a bundle."""
     app_id = entitlements.get("application-identifier", "")
@@ -302,8 +307,7 @@ def main():
         # --- entitlements ---
         main_ent = extract_entitlements(args.main_profile)
         main_identifier = read_bundle_info(app_path)["CFBundleIdentifier"]
-        if main_identifier != args.expected_main_bundle_id:
-            raise ValueError("unexpected Host bundle identifier: %s" % main_identifier)
+        require_expected_main_bundle(main_identifier, args.expected_main_bundle_id)
         required_icloud_containers = (
             [] if args.allow_missing_icloud else [DEFAULT_ICLOUD_CONTAINER]
         )
