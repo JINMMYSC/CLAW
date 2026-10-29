@@ -157,14 +157,13 @@ jobs:
             exit 1
           fi
           xcrun simctl io "$SIMULATOR_UDID" screenshot smoke-screen-45s.png
-          python3 -m pip install --user --quiet pillow || true
-          python3 - <<'PY'
-          import sys
+          python3 -m venv "$RUNNER_TEMP/claw-smoke-py"
+          "$RUNNER_TEMP/claw-smoke-py/bin/python" -m pip install --disable-pip-version-check --quiet "Pillow==11.3.0"
+          "$RUNNER_TEMP/claw-smoke-py/bin/python" - <<'PY'
           try:
               from PIL import Image
-          except ImportError:
-              print("PIL unavailable; skipping black-screen check")
-              sys.exit(0)
+          except ImportError as exc:
+              raise SystemExit("Pillow unavailable; black-screen check cannot be skipped") from exc
           def dark_ratio(path):
               img = Image.open(path).convert("L")
               px = img.load()
