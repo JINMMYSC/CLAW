@@ -12,7 +12,6 @@ Usage:
 import argparse
 import os
 import plistlib
-import re
 import shutil
 import subprocess
 import sys
@@ -23,21 +22,14 @@ from verify_signed_ipa import (
     DEFAULT_APP_GROUP,
     DEFAULT_ICLOUD_CONTAINER,
     validate_bundle_entitlements,
-    validate_profile_expiration,
+    extract_profile_entitlements,
     verify_bundle_tree,
 )
 
 
 def extract_entitlements(profile_path):
-    """Parse the Entitlements dict embedded in a .mobileprovision file."""
-    with open(profile_path, "rb") as source:
-        raw = source.read()
-    m = re.search(rb"<\?xml.*?</plist>", raw, re.S)
-    if not m:
-        raise RuntimeError("no plist found in %s" % profile_path)
-    pl = plistlib.loads(m.group(0))
-    validate_profile_expiration(pl)
-    return pl.get("Entitlements", {}) or {}
+    """Decode and validate the Apple CMS profile using the same verifier as post-sign checks."""
+    return extract_profile_entitlements(profile_path)
 
 
 
