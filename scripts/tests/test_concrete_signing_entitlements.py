@@ -12,7 +12,7 @@ from verify_signed_ipa import DEFAULT_APP_GROUP, DEFAULT_ICLOUD_CONTAINER
 class ConcreteApplicationIdentifierTests(TestCase):
     def _profile(self):
         return {
-            "application-identifier": "TEAM123.app.lgm.7517.*",
+            "application-identifier": "TEAM123.*",
             "com.apple.developer.team-identifier": "TEAM123",
             "com.apple.security.application-groups": [DEFAULT_APP_GROUP],
             "com.apple.developer.icloud-container-identifiers": [DEFAULT_ICLOUD_CONTAINER],
@@ -27,7 +27,7 @@ class ConcreteApplicationIdentifierTests(TestCase):
             required_icloud_containers=[DEFAULT_ICLOUD_CONTAINER],
         )
         self.assertEqual(result["application-identifier"], "TEAM123.app.lgm.7517")
-        self.assertEqual(profile["application-identifier"], "TEAM123.app.lgm.7517.*")
+        self.assertEqual(profile["application-identifier"], "TEAM123.*")
 
     def test_keyboard_and_widget_have_distinct_concrete_ids(self):
         profile = self._profile()
