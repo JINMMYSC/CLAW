@@ -61,7 +61,33 @@ class RimeDeviceSliceTests(unittest.TestCase):
             self.make_frameworks(root)
             runner, calls = self.fake_tools(2)
             verify_frameworks(root, run_command=runner)
-            self.assertEqual(len(calls), len(REQUIRED_FRAMEWORKS) * 3)
+            self.assertEqual(len(calls), len(REQUIRED_FRAMEWORKS) * 2)
+            self.assertFalse(any("lipo" in call for call in calls))
+
+    def test_accepts_thin_arm64_archives_when_lipo_cannot_parse_ar_container(self):
+        """An ar container is validated member-by-member, not by lipo."""
+        from verify_rime_device_slices import verify_frameworks
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            self.make_frameworks(root)
+            calls = []
+
+            def run(args):
+                calls.append(args)
+                if "lipo" in args:
+                    return subprocess.CompletedProcess(args, 1, "", "not a fat file")
+                if "ar" in args:
+                    return subprocess.CompletedProcess(args, 0, "test.o\\n", "")
+                return subprocess.CompletedProcess(
+                    args, 0,
+                    "Archive : lib.a\\nlib.a(test.o):\\n"
+                    "Load command 1\\n cmd LC_BUILD_VERSION\\n"
+                    " platform 2\\n minos 15.0\\n", "",
+                )
+
+            verify_frameworks(root, run_command=run)
+            self.assertFalse(any("lipo" in call for call in calls))
 
     def test_rejects_simulator_only_xcframework_metadata(self):
         from verify_rime_device_slices import verify_frameworks

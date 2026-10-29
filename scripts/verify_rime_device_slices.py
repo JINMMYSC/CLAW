@@ -108,13 +108,18 @@ def verify_frameworks(frameworks, run_command=None):
     runner = run_command or _run
     for name in REQUIRED_FRAMEWORKS:
         binary = _device_binary(root / f"{name}.xcframework", name)
-        arch = runner(["xcrun", "lipo", "-verify_arch", "arm64", str(binary)])
-        if arch.returncode != 0:
-            raise ValueError(f"{name}: native arm64 architecture verification failed")
+        archive = binary.suffix == ".a"
+        # Apple's lipo -verify_arch may reject a thin BSD ar archive even
+        # when every contained Mach-O object is arm64. For archives, inspect
+        # every member with arm64-filtered otool and compare the full ar
+        # inventory below; a missing or wrong-architecture member fails closed.
+        if not archive:
+            arch = runner(["xcrun", "lipo", "-verify_arch", "arm64", str(binary)])
+            if arch.returncode != 0:
+                raise ValueError(f"{name}: native arm64 architecture verification failed")
         result = runner(["xcrun", "otool", "-arch", "arm64", "-l", str(binary)])
         if result.returncode != 0:
             raise ValueError(f"{name}: native Mach-O inspection failed")
-        archive = binary.suffix == ".a"
         expected_members = None
         if archive:
             inventory = runner(["xcrun", "ar", "-t", str(binary)])

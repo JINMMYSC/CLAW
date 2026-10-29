@@ -73,7 +73,7 @@ public actor ClawWeChatLocalPump {
     self.allowedSenderID = allowedSenderID
     self.allowedConversationID = allowedConversationID
     self.sendApproval = sendApproval
-    maximumMediaBytes = max(1, maximumMediaBytes)
+    self.maximumMediaBytes = max(1, maximumMediaBytes)
     inbox = ClawWeChatLocalInboxGuard(capacity: inboxCapacity)
   }
 
