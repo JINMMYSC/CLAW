@@ -231,6 +231,15 @@ class SigningProfileTests(unittest.TestCase):
         self.assertEqual(workflow.count("--allow-missing-icloud"), 0)
 
 
+    def test_signing_decodes_profiles_through_cms_verifier(self):
+        expected = {"application-identifier": "TEAM123.app.lgm.7517.widget"}
+        with mock.patch.object(
+            sign_ipa, "extract_profile_entitlements", return_value=expected
+        ) as decoder:
+            actual = sign_ipa.extract_entitlements("widget.mobileprovision")
+        self.assertEqual(actual, expected)
+        decoder.assert_called_once_with("widget.mobileprovision")
+
 if __name__ == "__main__":
     unittest.main()
 
