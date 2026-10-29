@@ -78,12 +78,12 @@ class RimeDeviceSliceTests(unittest.TestCase):
                 if "lipo" in args:
                     return subprocess.CompletedProcess(args, 1, "", "not a fat file")
                 if "ar" in args:
-                    return subprocess.CompletedProcess(args, 0, "test.o\\n", "")
+                    return subprocess.CompletedProcess(args, 0, "test.o\n", "")
                 return subprocess.CompletedProcess(
                     args, 0,
-                    "Archive : lib.a\\nlib.a(test.o):\\n"
-                    "Load command 1\\n cmd LC_BUILD_VERSION\\n"
-                    " platform 2\\n minos 15.0\\n", "",
+                    "Archive : lib.a\nlib.a(test.o):\n"
+                    "Load command 1\n cmd LC_BUILD_VERSION\n"
+                    " platform 2\n minos 15.0\n", "",
                 )
 
             verify_frameworks(root, run_command=run)
