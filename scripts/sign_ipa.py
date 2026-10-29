@@ -138,6 +138,8 @@ def validate_profile(bundle_identifier, entitlements, required_icloud_containers
         required_app_groups=[DEFAULT_APP_GROUP],
         required_icloud_containers=required_icloud_containers,
     )
+    # A profile may permit TEAM.*, but codesign must use this bundle's exact ID.
+    return signed_shape
 
 
 class SigningCommandError(RuntimeError):
@@ -314,7 +316,7 @@ def main():
                 "WARNING: signing without iCloud container %s; iCloud features are unavailable"
                 % DEFAULT_ICLOUD_CONTAINER
             )
-        validate_profile(
+        main_ent = validate_profile(
             main_identifier,
             main_ent,
             required_icloud_containers=required_icloud_containers,
@@ -333,7 +335,7 @@ def main():
             ext_info = read_bundle_info(ext_path)
             profile_path = profiles[ext_identifier]
             ext_ent = extract_entitlements(profile_path)
-            validate_profile(ext_identifier, ext_ent)
+            ext_ent = validate_profile(ext_identifier, ext_ent)
             if ext_ent.get("com.apple.developer.team-identifier") != main_team:
                 raise ValueError("provisioning profile team mismatch for %s" % ext_identifier)
             ext_shared = add_shared_keychain_group(ext_ent)
