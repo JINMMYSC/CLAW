@@ -19,6 +19,18 @@ let package = Package(
       name: "librimeRIME",
       path: "../../Frameworks/librime.xcframework"),
     .binaryTarget(
+      name: "boost_atomicRIME",
+      path: "../../Frameworks/boost_atomic.xcframework"),
+    .binaryTarget(
+      name: "boost_filesystemRIME",
+      path: "../../Frameworks/boost_filesystem.xcframework"),
+    .binaryTarget(
+      name: "boost_regexRIME",
+      path: "../../Frameworks/boost_regex.xcframework"),
+    .binaryTarget(
+      name: "boost_systemRIME",
+      path: "../../Frameworks/boost_system.xcframework"),
+    .binaryTarget(
       name: "libleveldbRIME",
       path: "../../Frameworks/libleveldb.xcframework"),
     .binaryTarget(
@@ -34,6 +46,10 @@ let package = Package(
       name: "RimeKitObjC",
       dependencies: [
         "librimeRIME",
+        "boost_atomicRIME",
+        "boost_filesystemRIME",
+        "boost_regexRIME",
+        "boost_systemRIME",
         "libleveldbRIME",
         "libmarisaRIME",
         "libopenccRIME",
@@ -55,6 +71,10 @@ let package = Package(
       dependencies: [
         "RimeKit",
         "librimeRIME",
+        "boost_atomicRIME",
+        "boost_filesystemRIME",
+        "boost_regexRIME",
+        "boost_systemRIME",
         "libleveldbRIME",
         "libmarisaRIME",
         "libopenccRIME",
