@@ -240,6 +240,19 @@ class SigningProfileTests(unittest.TestCase):
         self.assertEqual(actual, expected)
         decoder.assert_called_once_with("widget.mobileprovision")
 
+
+    def test_duplicate_bundle_profile_mapping_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "duplicate --bundle-profile"):
+            sign_ipa.parse_bundle_profile_mappings([
+                "app.lgm.7517.widget=first.mobileprovision",
+                "app.lgm.7517.widget=second.mobileprovision",
+            ])
+
+    def test_release_host_bundle_identifier_is_exact(self):
+        sign_ipa.require_expected_main_bundle("app.lgm.7517", "app.lgm.7517")
+        with self.assertRaisesRegex(ValueError, "unexpected Host bundle identifier"):
+            sign_ipa.require_expected_main_bundle("app.lgm.other", "app.lgm.7517")
+
 if __name__ == "__main__":
     unittest.main()
 
