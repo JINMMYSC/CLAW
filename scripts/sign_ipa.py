@@ -206,9 +206,10 @@ def list_extension_bundle_identifiers(input_path):
                 for path in extension_bundle_paths(app_path)]
 
 
-def find_distribution_identity():
+def find_distribution_identity(keychain="ci.keychain"):
+    # Only select a distribution identity from the P12 imported for this run.
     out = subprocess.check_output(
-        ["security", "find-identity", "-v", "-p", "codesigning"], text=True)
+        ["security", "find-identity", "-v", "-p", "codesigning", keychain], text=True)
     for line in out.splitlines():
         if ("iPhone Distribution" in line) or ("Apple Distribution" in line):
             parts = line.split('"')
@@ -262,6 +263,9 @@ def main():
     # --- import p12 into an isolated keychain ---
     subprocess.run(["security", "create-keychain", "-p", "ci", "ci.keychain"],
                    capture_output=True, check=False)
+    # A new keychain is not guaranteed to be in the user search list.
+    subprocess.run(["security", "list-keychains", "-d", "user", "-s", "ci.keychain"],
+                   check=True, capture_output=True)
     subprocess.run(["security", "default-keychain", "-s", "ci.keychain"], check=True,
                    capture_output=True)
     subprocess.run(["security", "unlock-keychain", "-p", "ci", "ci.keychain"], check=True,
@@ -275,7 +279,7 @@ def main():
                     "apple-tool:,apple:,codesign:", "-s", "-k", "ci", "ci.keychain"],
                    check=True, capture_output=True)
 
-    identity = find_distribution_identity()
+    identity = find_distribution_identity("ci.keychain")
     if not identity:
         print("ERROR: no iPhone Distribution identity found in keychain")
         sys.exit(1)
@@ -317,6 +321,7 @@ def main():
         )
         if not stamp_cloud_capability(app_path, main_ent):
             print("CLAW iCloud backup is disabled in this signed build: missing CloudDocuments capability")
+        main_team = main_ent["com.apple.developer.team-identifier"]
         main_shared = add_shared_keychain_group(main_ent)
         main_ent_path = os.path.join(tmp, "main_ent.plist")
         with open(main_ent_path, "wb") as f:
@@ -329,6 +334,8 @@ def main():
             profile_path = profiles[ext_identifier]
             ext_ent = extract_entitlements(profile_path)
             validate_profile(ext_identifier, ext_ent)
+            if ext_ent.get("com.apple.developer.team-identifier") != main_team:
+                raise ValueError("provisioning profile team mismatch for %s" % ext_identifier)
             ext_shared = add_shared_keychain_group(ext_ent)
             if not main_shared or ext_shared != main_shared:
                 print("WARNING: shared keychain group is not permitted for", ext_identifier)
