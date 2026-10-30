@@ -99,8 +99,8 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     XCTAssertEqual(try store.conversation(contactID: person.id).count, 3)
 
     let anotherPerson = HeartTargetProfile(name: "B")
-    XCTAssertEqual(try service.confirmReviewed(messages: [b], for: anotherPerson), 1)
-    XCTAssertEqual(try store.conversation(contactID: anotherPerson.id).count, 1)
+    XCTAssertThrowsError(try service.confirmReviewed(messages: [b], for: anotherPerson))
+    XCTAssertEqual(try store.conversation(contactID: anotherPerson.id).count, 0)
   }
 
   func testAtomicImportRejectsUnconfirmedSpeakersWithoutPartialWrites() throws {
