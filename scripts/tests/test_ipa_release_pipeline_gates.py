@@ -52,5 +52,18 @@ class IPAReleasePipelineGates(unittest.TestCase):
                 self.assertIn(f"secrets.{name}", section)
 
 
+    def test_signed_release_requires_target_iphone_authorization(self):
+        """Manual signed release must not silently target a different Ad Hoc device."""
+        workflow = (WORKFLOWS / "build-ipa.yml").read_text(encoding="utf-8")
+        early = workflow[workflow.index("name: Check signing prerequisites before build"):
+                         workflow.index("name: Validate installable Host/Keyboard/Widget profiles")]
+        self.assertIn("CLAW_TARGET_DEVICE_UDID: ${{ secrets.CLAW_TARGET_DEVICE_UDID }}", early)
+        self.assertIn('[ -n "$CLAW_TARGET_DEVICE_UDID" ] || missing+=(CLAW_TARGET_DEVICE_UDID)', early)
+        signing = workflow[workflow.index("name: Check signing secrets"):
+                           workflow.index("name: Download unsigned ipa")]
+        self.assertIn("CLAW_TARGET_DEVICE_UDID: ${{ secrets.CLAW_TARGET_DEVICE_UDID }}", signing)
+        self.assertIn('[ -n "$CLAW_TARGET_DEVICE_UDID" ] || missing+=(CLAW_TARGET_DEVICE_UDID)', signing)
+
+
 if __name__ == "__main__":
     unittest.main()
