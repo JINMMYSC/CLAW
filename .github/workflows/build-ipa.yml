@@ -53,6 +53,43 @@ jobs:
             exit 1
           fi
 
+      - name: Validate installable Host/Keyboard/Widget profiles before expensive native build
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          MAIN_PROFILE_B64: ${{ secrets.PROFILE_MAIN_B64 }}
+          EXT_PROFILE_B64: ${{ secrets.PROFILE_EXT_B64 }}
+          WIDGET_PROFILE_B64: ${{ secrets.PROFILE_WIDGET_B64 }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import os
+          import pathlib
+          import sys
+          import tempfile
+
+          sys.path.insert(0, "scripts")
+          from sign_ipa import extract_entitlements, validate_profile
+          from verify_signed_ipa import DEFAULT_ICLOUD_CONTAINER
+
+          profiles = (
+              ("MAIN_PROFILE_B64", "app.lgm.7517", (DEFAULT_ICLOUD_CONTAINER,)),
+              ("EXT_PROFILE_B64", "app.lgm.7517.123", ()),
+              ("WIDGET_PROFILE_B64", "app.lgm.7517.widget", ()),
+          )
+          with tempfile.TemporaryDirectory() as tmp:
+              for secret, bundle_id, icloud in profiles:
+                  raw = base64.b64decode(os.environ.get(secret, ""), validate=True)
+                  if not raw:
+                      raise ValueError("empty provisioning profile for " + bundle_id)
+                  path = pathlib.Path(tmp, bundle_id + ".mobileprovision")
+                  path.write_bytes(raw)
+                  entitlements = extract_entitlements(str(path))
+                  validate_profile(bundle_id, entitlements,
+                                   required_icloud_containers=icloud)
+                  print("Provisioning profile preflight OK:", bundle_id)
+          PY
+
       - name: Download Rime frameworks (zgl v0.1.0)
         run: |
           set -euo pipefail
