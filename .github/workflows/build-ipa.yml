@@ -252,6 +252,13 @@ jobs:
           name: guru-unsigned-ipa
           path: unsigned-art
 
+      - name: Verify unsigned IPA matches frozen SHA before signing
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_signed_ipa.py \
+            unsigned-art/GuruIM-unsigned.ipa \
+            --check-unsigned-source-sha "$GITHUB_SHA"
+
       - name: Inspect extension bundle identifiers
         id: extensions
         env:
