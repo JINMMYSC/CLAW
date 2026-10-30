@@ -40,6 +40,7 @@ jobs:
           MAIN_PROFILE_B64: ${{ secrets.PROFILE_MAIN_B64 }}
           EXT_PROFILE_B64: ${{ secrets.PROFILE_EXT_B64 }}
           WIDGET_PROFILE_B64: ${{ secrets.PROFILE_WIDGET_B64 }}
+          CLAW_TARGET_DEVICE_UDID: ${{ secrets.CLAW_TARGET_DEVICE_UDID }}
         run: |
           set -euo pipefail
           missing=()
@@ -48,6 +49,7 @@ jobs:
           [ -n "$MAIN_PROFILE_B64" ] || missing+=(PROFILE_MAIN_B64)
           [ -n "$EXT_PROFILE_B64" ] || missing+=(PROFILE_EXT_B64)
           [ -n "$WIDGET_PROFILE_B64" ] || missing+=(PROFILE_WIDGET_B64)
+          [ -n "$CLAW_TARGET_DEVICE_UDID" ] || missing+=(CLAW_TARGET_DEVICE_UDID)
           if [ ${#missing[@]} -ne 0 ]; then
             echo "::error::Missing required signing secrets: ${missing[*]}"
             exit 1
@@ -306,6 +308,7 @@ jobs:
           MAIN_PROFILE_B64: ${{ secrets.PROFILE_MAIN_B64 }}
           EXT_PROFILE_B64: ${{ secrets.PROFILE_EXT_B64 }}
           WIDGET_PROFILE_B64: ${{ secrets.PROFILE_WIDGET_B64 }}
+          CLAW_TARGET_DEVICE_UDID: ${{ secrets.CLAW_TARGET_DEVICE_UDID }}
         run: |
           set -e
           missing=()
@@ -314,6 +317,7 @@ jobs:
           [ -n "$MAIN_PROFILE_B64" ] || missing+=(PROFILE_MAIN_B64)
           [ -n "$EXT_PROFILE_B64" ] || missing+=(PROFILE_EXT_B64)
           [ -n "$WIDGET_PROFILE_B64" ] || missing+=(PROFILE_WIDGET_B64)
+          [ -n "$CLAW_TARGET_DEVICE_UDID" ] || missing+=(CLAW_TARGET_DEVICE_UDID)
 
           if [ ${#missing[@]} -ne 0 ]; then
             echo "::error::Missing required signing secrets: ${missing[*]}"
