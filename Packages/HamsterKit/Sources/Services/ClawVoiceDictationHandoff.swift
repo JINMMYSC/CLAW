@@ -60,6 +60,8 @@ public final class ClawVoiceDictationHandoff {
   /// Only an idle handoff may be created. A failure must be explicitly dismissed.
   @discardableResult
   public func beginIfIdle(at now: Date = Date()) -> UUID? {
+    // A local-only UserDefaults fallback cannot transfer speech to the keyboard.
+    guard isSharedAvailable else { return nil }
     guard snapshot(at: now).state == .idle else { return nil }
     return begin(at: now)
   }
@@ -120,8 +122,22 @@ public final class ClawVoiceDictationHandoff {
   }
 
   private func validRecord(at now: Date) -> Record? {
-    guard let data = defaults.data(forKey: storageKey),
-          let record = try? JSONDecoder().decode(Record.self, from: data) else { return nil }
+    guard let data = defaults.data(forKey: storageKey) else { return nil }
+    // Corrupt shared data may still contain private dictation text: purge it.
+    guard let record = try? JSONDecoder().decode(Record.self, from: data) else {
+      clear()
+      return nil
+    }
+    if record.state == .ready {
+      guard let text = record.text,
+            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        clear()
+        return nil
+      }
+    } else if record.text != nil {
+      clear()
+      return nil
+    }
     guard now.timeIntervalSince(record.createdAt) >= 0,
           now.timeIntervalSince(record.createdAt) < maxAge else {
       clear()

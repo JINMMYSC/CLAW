@@ -1116,6 +1116,10 @@ private struct ClawAssistantChatView: View {
     if callActive { stopHandsFreeCall() }
     guard !recording, !oneShotFinalizing else { return }
     let handoff = ClawVoiceDictationHandoff.shared
+    guard handoff.isSharedAvailable else {
+      voiceHint = "键盘语音交接不可用，请检查 CLAW 的共享容器权限后重试"
+      return
+    }
     if handoff.snapshot.state == .failed {
       voiceHint = handoff.snapshot.error ?? "语音输入未完成，请重试"
       return

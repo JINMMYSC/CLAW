@@ -6,6 +6,7 @@
 //
 
 import Combine
+import CoreFoundation
 import Foundation
 import HamsterKit
 import HamsterKeyboardKit
@@ -22,6 +23,13 @@ private enum ClawICloudBuildError: LocalizedError {
       return "当前安装的 CLAW TALK 签名版本没有 iCloud 文稿容器权限，无法进行云端拷贝或恢复。请使用带 iCloud 权限的签名包；本地文件没有因本次检测而修改。"
     }
   }
+}
+
+/// Only an actual CFBoolean true in the signed Info.plist authorizes iCloud file operations.
+/// Numeric 1, strings and absent metadata must never grant cloud-copy permission.
+func hasExplicitTrueBoolean(_ value: Any?) -> Bool {
+  guard let number = value as? NSNumber else { return false }
+  return CFGetTypeID(number) == CFBooleanGetTypeID() && number.boolValue
 }
 
 public class AppleCloudViewModel: ObservableObject {
@@ -110,7 +118,7 @@ public class AppleCloudViewModel: ObservableObject {
     guard canStart else { return }
     await ProgressHUD.animate("拷贝中……", interaction: false)
     do {
-      guard Bundle.main.object(forInfoDictionaryKey: "ClawICloudContainerEntitled") as? Bool != false else {
+      guard hasExplicitTrueBoolean(Bundle.main.object(forInfoDictionaryKey: "ClawICloudContainerEntitled")) else {
         ClawDiagnosticsCore.shared.record(
           module: "icloud", action: "copy_blocked_missing_entitlement",
           severity: "error", traceID: traceID
@@ -153,7 +161,7 @@ public class AppleCloudViewModel: ObservableObject {
     guard canStart else { return }
     await ProgressHUD.animate("从 iCloud 恢复中……", interaction: false)
     do {
-      guard Bundle.main.object(forInfoDictionaryKey: "ClawICloudContainerEntitled") as? Bool != false else {
+      guard hasExplicitTrueBoolean(Bundle.main.object(forInfoDictionaryKey: "ClawICloudContainerEntitled")) else {
         ClawDiagnosticsCore.shared.record(
           module: "icloud", action: "restore_blocked_missing_entitlement",
           severity: "error", traceID: traceID
