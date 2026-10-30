@@ -60,6 +60,7 @@ public final class ClawVoiceDictationHandoff {
   /// Only an idle handoff may be created. A failure must be explicitly dismissed.
   @discardableResult
   public func beginIfIdle(at now: Date = Date()) -> UUID? {
+    guard isSharedAvailable else { return nil }
     guard snapshot(at: now).state == .idle else { return nil }
     return begin(at: now)
   }
@@ -84,6 +85,7 @@ public final class ClawVoiceDictationHandoff {
 
   @discardableResult
   public func complete(id: UUID, text: String) -> Bool {
+    guard isSharedAvailable else { return false }
     guard var record = validRecord(at: Date()), record.id == id, record.state == .pending else { return false }
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return false }
@@ -95,6 +97,7 @@ public final class ClawVoiceDictationHandoff {
 
   @discardableResult
   public func fail(id: UUID, reason: String) -> Bool {
+    guard isSharedAvailable else { return false }
     guard var record = validRecord(at: Date()), record.id == id, record.state == .pending else { return false }
     record.state = .failed
     record.error = reason
@@ -120,6 +123,11 @@ public final class ClawVoiceDictationHandoff {
   }
 
   private func validRecord(at now: Date) -> Record? {
+    guard isSharedAvailable else {
+      // Never consume a transcript from the legacy non-shared fallback store.
+      clear()
+      return nil
+    }
     guard let data = defaults.data(forKey: storageKey),
           let record = try? JSONDecoder().decode(Record.self, from: data) else { return nil }
     guard now.timeIntervalSince(record.createdAt) >= 0,
@@ -131,6 +139,7 @@ public final class ClawVoiceDictationHandoff {
   }
 
   private func write(_ record: Record) {
+    guard isSharedAvailable else { return }
     guard let data = try? JSONEncoder().encode(record) else { return }
     defaults.set(data, forKey: storageKey)
   }
