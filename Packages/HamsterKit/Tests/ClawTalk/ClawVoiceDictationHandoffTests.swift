@@ -89,4 +89,23 @@ final class ClawVoiceDictationHandoffTests: XCTestCase {
     XCTAssertNotNil(keyboard.beginIfIdle())
   }
 
+
+  func testCorruptSharedHandoffRecordIsPurgedBeforeAnotherRequest() {
+    let (handoff, defaults, suite) = makeStore()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let key = "claw_voice_dictation_handoff_v1"
+    defaults.set(Data(#"{"text":"private transcript","state":"ready"}"#.utf8), forKey: key)
+    XCTAssertEqual(handoff.snapshot.state, .idle)
+    XCTAssertNil(defaults.data(forKey: key), "Unreadable transcript bytes must not remain in App Group defaults")
+    XCTAssertNotNil(handoff.beginIfIdle())
+  }
+
+  func testUnavailableSharedContainerCannotBeginKeyboardHandoff() {
+    let (_, defaults, suite) = makeStore()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let unavailable = ClawVoiceDictationHandoff(defaults: defaults, isSharedAvailable: false)
+    XCTAssertNil(unavailable.beginIfIdle(), "A non-shared container cannot transfer speech to the keyboard")
+    XCTAssertEqual(unavailable.snapshot.state, .idle)
+  }
+
 }
