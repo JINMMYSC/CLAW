@@ -4,7 +4,7 @@
 //
 //  - 音色：晓晓 / 小艺 / 云希 / 云扬（Edge 免费非官方接口）
 //  - 语速/音调：-50...50 映射到 Edge TTS 参数，持久化到 App Group
-//  - 试听：直接调用 ClawEdgeTTSService 合成播放，失败自动降级系统语音
+//  - 试听：默认本地系统语音，在线 Edge TTS 必须单独授权
 //
 
 import HamsterKit
@@ -32,6 +32,7 @@ public final class VoiceSettingsViewController: UITableViewController {
   private let pitchSlider = UISlider()
   private let rateLabel = UILabel()
   private let pitchLabel = UILabel()
+  private let cloudTTSSwitch = UISwitch()
 
   public init() {
     super.init(style: .insetGrouped)
@@ -47,6 +48,14 @@ public final class VoiceSettingsViewController: UITableViewController {
     tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
     tableView.register(UITableViewCell.self, forCellReuseIdentifier: "slider")
     setupSliders()
+    cloudTTSSwitch.isOn = tts.allowsCloudTTS
+    cloudTTSSwitch.accessibilityLabel = "允许在线语音合成"
+    cloudTTSSwitch.addTarget(self, action: #selector(cloudTTSChanged(_:)), for: .valueChanged)
+  }
+
+  public override func viewWillAppear(_ animated: Bool) {
+    super.viewWillAppear(animated)
+    cloudTTSSwitch.isOn = tts.allowsCloudTTS
   }
 
   deinit {
@@ -88,13 +97,18 @@ public final class VoiceSettingsViewController: UITableViewController {
     tts.speak(previewText)
   }
 
-  public override func numberOfSections(in tableView: UITableView) -> Int { 3 }
+  @objc private func cloudTTSChanged(_ sender: UISwitch) {
+    tts.allowsCloudTTS = sender.isOn
+  }
+
+  public override func numberOfSections(in tableView: UITableView) -> Int { 4 }
 
   public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
     switch section {
     case 0: return "音色"
     case 1: return "语速与音调"
-    default: return "试听"
+    case 2: return "试听"
+    default: return "在线语音合成隐私"
     }
   }
 
@@ -149,12 +163,18 @@ public final class VoiceSettingsViewController: UITableViewController {
         container.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8),
       ])
       return cell
-    default:
+    case 2:
       let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
       cell.textLabel?.text = "播放试听"
       cell.textLabel?.textColor = .systemBlue
       cell.detailTextLabel?.text = nil
       cell.accessoryType = .none
+      return cell
+    default:
+      let cell = UITableViewCell(style: .default, reuseIdentifier: "cloudTTS")
+      cell.textLabel?.text = "允许在线语音合成"
+      cell.accessoryView = cloudTTSSwitch
+      cell.selectionStyle = .none
       return cell
     }
   }
@@ -166,12 +186,21 @@ public final class VoiceSettingsViewController: UITableViewController {
       let voice = voices[indexPath.row]
       tts.voice = voice.name
       tableView.reloadSections(IndexSet(integer: 0), with: .automatic)
-    default:
+    case 2:
       previewTapped()
+    default:
+      break
     }
   }
 
   public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-    section == 2 ? "试听使用 Edge TTS 在线合成，无网络时自动降级为系统语音。" : nil
+    switch section {
+    case 2:
+      return "默认使用设备本地系统语音朗读；仅在主动开启在线语音合成后使用 Edge TTS。"
+    case 3:
+      return "默认关闭。开启后，朗读文本会发送至 Microsoft Edge TTS 的非官方在线接口。此授权独立于麦克风和语音识别权限；关闭后取消尚未完成的在线合成。"
+    default:
+      return nil
+    }
   }
 }
