@@ -15,6 +15,7 @@ import os
 import re
 import plistlib
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -182,11 +183,31 @@ def locate_ipa(input_path, tmp):
     return input_path
 
 
+def extract_ipa_archive(archive, destination):
+    """Extract IPA files without losing executable modes needed by iOS."""
+    members = archive.infolist()
+    for member in members:
+        name = member.filename
+        parts = name.split("/")
+        if (not name or name.startswith("/") or "\\" in name
+                or any(part in (".", "..") for part in parts)):
+            raise ValueError("unsafe IPA archive path")
+        if stat.S_ISLNK(member.external_attr >> 16):
+            raise ValueError("unsupported IPA archive symlink")
+    archive.extractall(destination)
+    for member in members:
+        if member.is_dir() or member.create_system != 3:
+            continue
+        mode = stat.S_IMODE(member.external_attr >> 16)
+        if mode:
+            os.chmod(os.path.join(destination, *member.filename.split("/")), mode)
+
+
 def extract_app(input_path, tmp):
     ipa_path = locate_ipa(input_path, tmp)
     work = os.path.join(tmp, "work")
     with zipfile.ZipFile(ipa_path) as archive:
-        archive.extractall(work)
+        extract_ipa_archive(archive, work)
     payload = os.path.join(work, "Payload")
     apps = [name for name in os.listdir(payload) if name.endswith(".app")]
     if len(apps) != 1:
