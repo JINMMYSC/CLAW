@@ -190,5 +190,59 @@ class TargetDeviceSigningGateTests(unittest.TestCase):
             )
 
 
+
+class SigningAssetPreflightTests(unittest.TestCase):
+    """P12/profile mismatch must fail before downloading RIME or building Xcode."""
+
+    def test_missing_widget_profile_is_rejected_before_certificate_import(self):
+        with self.assertRaisesRegex(ValueError, "Widget"):
+            sign_ipa.validate_signing_asset_set(
+                "A" * 40, "host.mobileprovision",
+                {"app.lgm.7517.123": "keyboard.mobileprovision"},
+                "app.lgm.7517",
+            )
+
+    def test_all_three_profiles_are_checked_against_imported_p12(self):
+        mappings = {
+            "app.lgm.7517.123": "keyboard.mobileprovision",
+            "app.lgm.7517.widget": "widget.mobileprovision",
+        }
+        with (
+            mock.patch.object(sign_ipa, "require_identity_in_profiles") as cert_check,
+            mock.patch.object(sign_ipa, "extract_profile") as decode,
+            mock.patch.object(sign_ipa, "extract_entitlements") as entitlements,
+            mock.patch.object(sign_ipa, "validate_profile") as entitlement_check,
+            mock.patch.object(sign_ipa, "validate_common_installable_devices") as device_check,
+        ):
+            decode.return_value = {"ProvisionsAllDevices": True}
+            entitlements.return_value = {}
+            sign_ipa.validate_signing_asset_set(
+                "A" * 40, "host.mobileprovision", mappings, "app.lgm.7517",
+                target_device_udid="IPHONE-TEST",
+            )
+            cert_check.assert_called_once_with(
+                "A" * 40,
+                ["host.mobileprovision", "keyboard.mobileprovision",
+                 "widget.mobileprovision"],
+            )
+            self.assertEqual(entitlement_check.call_count, 3)
+            self.assertEqual(device_check.call_args.kwargs["target_device_udid"],
+                             "IPHONE-TEST")
+
+    def test_mismatched_p12_certificate_aborts_preflight(self):
+        mappings = {
+            "app.lgm.7517.123": "keyboard.mobileprovision",
+            "app.lgm.7517.widget": "widget.mobileprovision",
+        }
+        with mock.patch.object(
+            sign_ipa, "require_identity_in_profiles",
+            side_effect=ValueError("profile does not include imported certificate"),
+        ):
+            with self.assertRaisesRegex(ValueError, "certificate"):
+                sign_ipa.validate_signing_asset_set(
+                    "A" * 40, "host.mobileprovision", mappings, "app.lgm.7517",
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
