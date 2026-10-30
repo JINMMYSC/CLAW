@@ -128,8 +128,13 @@ public final class ClawVoiceDictationHandoff {
       clear()
       return nil
     }
-    guard let data = defaults.data(forKey: storageKey),
-          let record = try? JSONDecoder().decode(Record.self, from: data) else { return nil }
+    guard let data = defaults.data(forKey: storageKey) else { return nil }
+    // Malformed App Group records can still contain private transcript bytes.
+    // Purge them rather than retaining unreadable speech across app launches.
+    guard let record = try? JSONDecoder().decode(Record.self, from: data) else {
+      clear()
+      return nil
+    }
     guard now.timeIntervalSince(record.createdAt) >= 0,
           now.timeIntervalSince(record.createdAt) < maxAge else {
       clear()
