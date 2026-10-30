@@ -118,4 +118,16 @@ final class ClawVoiceDictationHandoffTests: XCTestCase {
     XCTAssertNil(defaults.data(forKey: "claw_voice_dictation_handoff_v1"))
   }
 
+
+  func testCorruptSharedHandoffRecordIsPurgedBeforeAnotherRequest() {
+    let (handoff, defaults, suite) = makeStore()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let key = "claw_voice_dictation_handoff_v1"
+    // A partial record may retain private dictation text even when decoding fails.
+    defaults.set(Data(#"{"text":"private transcript","state":"ready"}"#.utf8), forKey: key)
+    XCTAssertEqual(handoff.snapshot.state, .idle)
+    XCTAssertNil(defaults.data(forKey: key), "Unreadable transcript bytes must not remain in App Group defaults")
+    XCTAssertNotNil(handoff.beginIfIdle())
+  }
+
 }
