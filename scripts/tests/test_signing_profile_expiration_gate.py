@@ -150,5 +150,50 @@ class SigningProfileExpirationGateTests(unittest.TestCase):
             verify_signed_ipa.validate_common_installable_devices(profiles)
 
 
+
+    def test_disjoint_signing_certificates_fail_before_native_build(self):
+        profiles = [
+            ("Host", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
+                      "ProvisionedDevices": ["IPHONE-A"],
+                      "DeveloperCertificates": [b"host-only-certificate"]}),
+            ("Keyboard", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
+                          "ProvisionedDevices": ["IPHONE-A"],
+                          "DeveloperCertificates": [b"keyboard-only-certificate"]}),
+            ("Widget", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
+                        "ProvisionedDevices": ["IPHONE-A"],
+                        "DeveloperCertificates": [b"host-only-certificate"]}),
+        ]
+        with self.assertRaisesRegex(ValueError, "common signing certificate"):
+            verify_signed_ipa.validate_common_installable_devices(profiles)
+
+    def test_missing_signing_certificates_fail_before_native_build(self):
+        profiles = [
+            ("Host", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
+                      "ProvisionedDevices": ["IPHONE-A"],
+                      "DeveloperCertificates": [b"shared-certificate"]}),
+            ("Keyboard", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
+                          "ProvisionedDevices": ["IPHONE-A"],
+                          "DeveloperCertificates": []}),
+            ("Widget", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
+                        "ProvisionedDevices": ["IPHONE-A"],
+                        "DeveloperCertificates": [b"shared-certificate"]}),
+        ]
+        with self.assertRaisesRegex(ValueError, "signing certificate"):
+            verify_signed_ipa.validate_common_installable_devices(profiles)
+
+    def test_shared_signing_certificate_allows_multiple_profile_certificates(self):
+        profiles = [
+            ("Host", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
+                      "ProvisionedDevices": ["IPHONE-A"],
+                      "DeveloperCertificates": [b"host-only", b"shared-certificate"]}),
+            ("Keyboard", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
+                          "ProvisionedDevices": ["IPHONE-A"],
+                          "DeveloperCertificates": [b"shared-certificate"]}),
+            ("Widget", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
+                        "ProvisionedDevices": ["IPHONE-A"],
+                        "DeveloperCertificates": [b"shared-certificate", b"widget-only"]}),
+        ]
+        verify_signed_ipa.validate_common_installable_devices(profiles)
+
 if __name__ == "__main__":
     unittest.main()
