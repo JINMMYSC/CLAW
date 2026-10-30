@@ -63,6 +63,17 @@ public enum ClawScreenshotOverlapPolicy {
   }
 }
 
+/// An explicit screenshot review authorizes only human messages belonging to
+/// the selected contact. Imported IDs must not be silently reassigned.
+public enum ClawScreenshotReviewScopePolicy {
+  public static func permits(_ message: ClawConversationMessage, for contactID: UUID) -> Bool {
+    guard message.contactID == nil || message.contactID == contactID else { return false }
+    guard message.speaker == .me || message.speaker == .other else { return false }
+    guard message.sourceType == "screenshot" else { return false }
+    return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+}
+
 /// End-to-end screenshot ingestion boundary. It resolves identity, routes
 /// uncertain parses to review, and only persists high-confidence timelines.
 public final class ClawScreenshotIngestionService {
@@ -124,8 +135,7 @@ public final class ClawScreenshotIngestionService {
     }
     guard !messages.isEmpty else { throw ClawScreenshotReviewError.emptyMessages }
     guard messages.allSatisfy({
-      !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-      $0.speaker != .unknown && $0.sourceType == "screenshot"
+      ClawScreenshotReviewScopePolicy.permits($0, for: profile.id)
     }) else { throw ClawScreenshotReviewError.unresolvedMessage }
 
     let approved = messages.enumerated().map { entry -> ClawConversationMessage in
