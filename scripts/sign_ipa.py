@@ -10,6 +10,7 @@ Usage:
     --out signed.ipa
 """
 import argparse
+from contextlib import contextmanager
 import hashlib
 import os
 import re
@@ -297,119 +298,48 @@ def validate_signing_asset_set(
         validate_profile(bundle, extract_entitlements(profile_by_bundle[bundle]))
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--ipa", help="path to unsigned ipa or artifact zip")
-    ap.add_argument("--preflight-signing-assets", action="store_true",
-                    help="verify P12 and all three profiles without building an IPA")
-    ap.add_argument("--p12")
-    ap.add_argument("--password")
-    ap.add_argument("--password-env", help="environment variable containing the P12 password")
-    ap.add_argument("--main-profile")
-    ap.add_argument("--ext-profile", help="legacy/default extension profile")
-    ap.add_argument("--widget-profile", help="profile for a WidgetKit extension")
-    ap.add_argument("--widget-bundle-id", help="exact bundle identifier for --widget-profile")
-    ap.add_argument(
-        "--allow-missing-icloud",
-        action="store_true",
-        help="sign without the CLAW iCloud container when the supplied profile omits it",
-    )
-    ap.add_argument(
-        "--bundle-profile", action="append", default=[], metavar="BUNDLE_ID=PATH",
-        help="profile for one exact extension bundle identifier (repeatable)")
-    ap.add_argument("--list-extension-bundle-identifiers", action="store_true")
-    ap.add_argument("--expected-main-bundle-id", default="app.lgm.7517",
-                    help="exact Host bundle identifier required for this release")
-    ap.add_argument("--out")
-    args = ap.parse_args()
-    if args.list_extension_bundle_identifiers:
-        if not args.ipa:
-            ap.error("--list-extension-bundle-identifiers requires --ipa")
-        for identifier in list_extension_bundle_identifiers(args.ipa):
-            print(identifier)
-        return 0
-    required_args = ("p12", "main_profile") if args.preflight_signing_assets else (
-        "ipa", "p12", "main_profile", "out"
-    )
-    missing_args = [name for name in required_args if not getattr(args, name)]
-    if missing_args:
-        ap.error("signing requires: %s" % ", ".join("--" + name.replace("_", "-")
-                                                        for name in missing_args))
-    try:
-        profile_by_bundle = parse_bundle_profile_mappings(args.bundle_profile)
-        if args.widget_profile:
-            if not args.widget_bundle_id:
-                raise ValueError("--widget-profile requires --widget-bundle-id")
-            if args.widget_bundle_id in profile_by_bundle:
-                raise ValueError("duplicate profile mapping for %s" % args.widget_bundle_id)
-            profile_by_bundle[args.widget_bundle_id] = args.widget_profile
-        password = resolve_password(args)
-    except ValueError as error:
-        ap.error(str(error))
+@contextmanager
+def signing_keychain(p12_path, password):
+    """Import P12 into a private temporary keychain without changing user defaults.
 
-
-    if args.preflight_signing_assets:
-        # A temporary keychain avoids altering the runner's default keychain.
-        # Only the public certificate fingerprint is compared; the P12 private
-        # key and password are never printed or uploaded as artifacts.
-        with tempfile.TemporaryDirectory() as tmp:
-            keychain = os.path.join(tmp, "claw-preflight.keychain-db")
-            keychain_password = secrets.token_urlsafe(24)
-            subprocess.run(
-                ["security", "create-keychain", "-p", keychain_password, keychain],
-                check=True, capture_output=True,
+    The keychain is deleted on both success and failure. Security command errors
+    are sanitized so passwords and keychain paths cannot appear in CI traces.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        keychain = os.path.join(tmp, "claw-signing.keychain-db")
+        keychain_password = secrets.token_urlsafe(24)
+        run_sensitive_command(
+            ["security", "create-keychain", "-p", keychain_password, keychain],
+            "temporary keychain creation",
+        )
+        try:
+            run_sensitive_command(
+                ["security", "unlock-keychain", "-p", keychain_password, keychain],
+                "temporary keychain unlock",
             )
-            try:
-                subprocess.run(
-                    ["security", "unlock-keychain", "-p", keychain_password, keychain],
-                    check=True, capture_output=True,
-                )
-                run_sensitive_command(
-                    ["security", "import", args.p12, "-k", keychain,
-                     "-P", password, "-T", "/usr/bin/codesign"],
-                    "preflight certificate import",
-                )
-                identity = find_distribution_identity(keychain)
-                if not identity:
-                    raise ValueError("P12 has no usable Apple Distribution identity")
-                validate_signing_asset_set(
-                    identity, args.main_profile, profile_by_bundle,
-                    args.expected_main_bundle_id,
-                    target_device_udid=os.environ.get("CLAW_TARGET_DEVICE_UDID") or None,
-                )
-            finally:
-                subprocess.run(
-                    ["security", "delete-keychain", keychain],
-                    check=False, capture_output=True,
-                )
-        print("P12, Host, Keyboard and Widget signing materials preflight OK")
-        return 0
+            run_sensitive_command(
+                ["security", "import", p12_path, "-k", keychain,
+                 "-P", password, "-T", "/usr/bin/codesign"],
+                "certificate import",
+            )
+            run_sensitive_command(
+                ["security", "set-key-partition-list", "-S",
+                 "apple-tool:,apple:,codesign:", "-s", "-k",
+                 keychain_password, keychain],
+                "temporary keychain partition setup",
+            )
+            identity = find_distribution_identity(keychain)
+            if not identity:
+                raise ValueError("P12 has no usable Apple Distribution identity")
+            yield keychain, identity
+        finally:
+            subprocess.run(
+                ["security", "delete-keychain", keychain],
+                check=False, capture_output=True,
+            )
 
-    # --- import p12 into an isolated keychain ---
-    subprocess.run(["security", "create-keychain", "-p", "ci", "ci.keychain"],
-                   capture_output=True, check=False)
-    # A new keychain is not guaranteed to be in the user search list.
-    subprocess.run(["security", "list-keychains", "-d", "user", "-s", "ci.keychain"],
-                   check=True, capture_output=True)
-    subprocess.run(["security", "default-keychain", "-s", "ci.keychain"], check=True,
-                   capture_output=True)
-    subprocess.run(["security", "unlock-keychain", "-p", "ci", "ci.keychain"], check=True,
-                   capture_output=True)
-    run_sensitive_command(
-        ["security", "import", args.p12, "-k", "ci.keychain",
-         "-P", password, "-T", "/usr/bin/codesign"],
-        "certificate import",
-    )
-    subprocess.run(["security", "set-key-partition-list", "-S",
-                    "apple-tool:,apple:,codesign:", "-s", "-k", "ci", "ci.keychain"],
-                   check=True, capture_output=True)
 
-    identity = find_distribution_identity("ci.keychain")
-    if not identity:
-        print("ERROR: no iPhone Distribution identity found in keychain")
-        sys.exit(1)
-    print("distribution identity fingerprint:", identity[:8] + "...")
-
+def sign_ipa_with_identity(args, profile_by_bundle, identity, keychain):
     with tempfile.TemporaryDirectory() as tmp:
         work, app_path = extract_app(args.ipa, tmp)
         app_name = os.path.basename(app_path)
@@ -482,10 +412,12 @@ def main():
                 plistlib.dump(ext_ent, f)
             shutil.copy(profile_path, os.path.join(ext_path, "embedded.mobileprovision"))
             subprocess.run(["codesign", "--force", "--sign", identity,
+                            "--keychain", keychain,
                             "--entitlements", ext_ent_path,
                             "--timestamp=none", ext_path], check=True)
             print("signed extension:", ext_identifier)
         subprocess.run(["codesign", "--force", "--sign", identity,
+                            "--keychain", keychain,
                         "--entitlements", main_ent_path,
                         "--timestamp=none", app_path], check=True)
         print("signed app:", app_name)
@@ -503,6 +435,69 @@ def main():
                     z.write(fp, os.path.relpath(fp, work))
         shutil.copy(out_ipa, args.out)
         print("signed ipa ->", args.out)
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ipa", help="path to unsigned ipa or artifact zip")
+    ap.add_argument("--preflight-signing-assets", action="store_true",
+                    help="verify P12 and all three profiles without building an IPA")
+    ap.add_argument("--p12")
+    ap.add_argument("--password")
+    ap.add_argument("--password-env", help="environment variable containing the P12 password")
+    ap.add_argument("--main-profile")
+    ap.add_argument("--ext-profile", help="legacy/default extension profile")
+    ap.add_argument("--widget-profile", help="profile for a WidgetKit extension")
+    ap.add_argument("--widget-bundle-id", help="exact bundle identifier for --widget-profile")
+    ap.add_argument(
+        "--allow-missing-icloud",
+        action="store_true",
+        help="sign without the CLAW iCloud container when the supplied profile omits it",
+    )
+    ap.add_argument(
+        "--bundle-profile", action="append", default=[], metavar="BUNDLE_ID=PATH",
+        help="profile for one exact extension bundle identifier (repeatable)")
+    ap.add_argument("--list-extension-bundle-identifiers", action="store_true")
+    ap.add_argument("--expected-main-bundle-id", default="app.lgm.7517",
+                    help="exact Host bundle identifier required for this release")
+    ap.add_argument("--out")
+    args = ap.parse_args()
+    if args.list_extension_bundle_identifiers:
+        if not args.ipa:
+            ap.error("--list-extension-bundle-identifiers requires --ipa")
+        for identifier in list_extension_bundle_identifiers(args.ipa):
+            print(identifier)
+        return 0
+    required_args = ("p12", "main_profile") if args.preflight_signing_assets else (
+        "ipa", "p12", "main_profile", "out"
+    )
+    missing_args = [name for name in required_args if not getattr(args, name)]
+    if missing_args:
+        ap.error("signing requires: %s" % ", ".join("--" + name.replace("_", "-")
+                                                        for name in missing_args))
+    try:
+        profile_by_bundle = parse_bundle_profile_mappings(args.bundle_profile)
+        if args.widget_profile:
+            if not args.widget_bundle_id:
+                raise ValueError("--widget-profile requires --widget-bundle-id")
+            if args.widget_bundle_id in profile_by_bundle:
+                raise ValueError("duplicate profile mapping for %s" % args.widget_bundle_id)
+            profile_by_bundle[args.widget_bundle_id] = args.widget_profile
+        password = resolve_password(args)
+    except ValueError as err    if args.preflight_signing_assets:
+        with signing_keychain(args.p12, password) as (_keychain, identity):
+            validate_signing_asset_set(
+                identity, args.main_profile, profile_by_bundle,
+                args.expected_main_bundle_id,
+                target_device_udid=os.environ.get("CLAW_TARGET_DEVICE_UDID") or None,
+            )
+        print("P12, Host, Keyboard and Widget signing materials preflight OK")
+        return 0
+
+    with signing_keychain(args.p12, password) as (keychain, identity):
+        print("distribution identity fingerprint:", identity[:8] + "...")
+        return sign_ipa_with_identity(args, profile_by_bundle, identity, keychain)signed ipa ->", args.out)
     return 0
 
 
