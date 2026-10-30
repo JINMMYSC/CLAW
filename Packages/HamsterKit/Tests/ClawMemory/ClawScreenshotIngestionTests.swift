@@ -208,4 +208,17 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     XCTAssertTrue(try store.tasks(status: .open, limit: 10).isEmpty)
     XCTAssertEqual(try store.memoryV2Count(), 0)
   }
+
+  func testReviewRejectsNonScreenshotSourceWithoutWriting() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("screenshot-source-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = ClawMemoryStore(databaseURL: root.appendingPathComponent("memory.sqlite"))
+    let profile = HeartTargetProfile(name: "已确认")
+    let unrelated = ClawConversationMessage(contactID: profile.id, speaker: .other,
+      content: "不能借截图审核写入其他来源消息", sourceType: "manual")
+    XCTAssertThrowsError(try ClawScreenshotIngestionService(store: store)
+      .confirmReviewed(messages: [unrelated], for: profile))
+    XCTAssertTrue(try store.conversation(contactID: profile.id).isEmpty)
+  }
+
 }
