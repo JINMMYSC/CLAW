@@ -300,11 +300,7 @@ def validate_signing_asset_set(
 
 @contextmanager
 def signing_keychain(p12_path, password):
-    """Import P12 into a private temporary keychain without changing user defaults.
-
-    The keychain is deleted on both success and failure. Security command errors
-    are sanitized so passwords and keychain paths cannot appear in CI traces.
-    """
+    """Keep imported P12 in a private, auto-deleted keychain."""
     with tempfile.TemporaryDirectory() as tmp:
         keychain = os.path.join(tmp, "claw-signing.keychain-db")
         keychain_password = secrets.token_urlsafe(24)
@@ -485,7 +481,11 @@ def main():
                 raise ValueError("duplicate profile mapping for %s" % args.widget_bundle_id)
             profile_by_bundle[args.widget_bundle_id] = args.widget_profile
         password = resolve_password(args)
-    except ValueError as err    if args.preflight_signing_assets:
+    except ValueError as error:
+        ap.error(str(error))
+
+
+    if args.preflight_signing_assets:
         with signing_keychain(args.p12, password) as (_keychain, identity):
             validate_signing_asset_set(
                 identity, args.main_profile, profile_by_bundle,
@@ -497,8 +497,7 @@ def main():
 
     with signing_keychain(args.p12, password) as (keychain, identity):
         print("distribution identity fingerprint:", identity[:8] + "...")
-        return sign_ipa_with_identity(args, profile_by_bundle, identity, keychain)signed ipa ->", args.out)
-    return 0
+        return sign_ipa_with_identity(args, profile_by_bundle, identity, keychain)
 
 
 if __name__ == "__main__":
