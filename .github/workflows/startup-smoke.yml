@@ -195,6 +195,11 @@ jobs:
       - name: Capture native assistant composer states
         run: |
           set -euo pipefail
+          # The first-launch run separately records the initial permission UI.
+          # Grant simulator-only Speech/Mic access for visual composer QA; do not
+          # mistake an OS permission dialog for a validated app screen.
+          xcrun simctl privacy "$SIMULATOR_UDID" grant speech-recognition app.lgm.7517
+          xcrun simctl privacy "$SIMULATOR_UDID" grant microphone app.lgm.7517
           xcrun simctl ui "$SIMULATOR_UDID" appearance light
           for state in empty text multiline voice emoji more dark; do
             if [ "$state" = dark ]; then
@@ -229,6 +234,10 @@ jobs:
             xcrun simctl terminate "$SIMULATOR_UDID" app.lgm.7517 || true
             wait "$monitor" 2>/dev/null || true
           done
+          # Pillow was installed by the preceding startup regression step.
+          "$RUNNER_TEMP/claw-smoke-py/bin/python" scripts/verify_composer_screenshots.py \
+            composer-empty.png composer-text.png composer-multiline.png \
+            composer-voice.png composer-emoji.png composer-more.png
           xcrun simctl ui "$SIMULATOR_UDID" appearance light
 
       - name: Upload native assistant composer screenshots
