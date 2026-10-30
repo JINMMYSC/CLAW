@@ -11,17 +11,17 @@ import sign_ipa
 
 class SigningIdentityScopeTests(TestCase):
     def test_uses_isolated_imported_keychain(self):
-        output = '  1) ABCDEF123456 "Apple Distribution: Example (TEAM123)"\n     1 valid identities found\n'
+        output = '  1) ABCDEF1234567890ABCDEF1234567890ABCDEF12 "Apple Distribution: Example (TEAM123)"\n     1 valid identities found\n'
         with patch.object(sign_ipa.subprocess, "check_output", return_value=output) as mocked:
             identity = sign_ipa.find_distribution_identity()
-        self.assertEqual(identity, "ABCDEF123456")
+        self.assertEqual(identity, "ABCDEF1234567890ABCDEF1234567890ABCDEF12")
         mocked.assert_called_once_with(
             ["security", "find-identity", "-v", "-p", "codesigning", "ci.keychain"],
             text=True,
         )
 
     def test_rejects_non_distribution_identity(self):
-        output = '  1) ABCDEF123456 "Apple Development: Example (TEAM123)"\n'
+        output = '  1) ABCDEF1234567890ABCDEF1234567890ABCDEF12 "Apple Development: Example (TEAM123)"\n'
         with patch.object(sign_ipa.subprocess, "check_output", return_value=output):
             self.assertIsNone(sign_ipa.find_distribution_identity())
 
