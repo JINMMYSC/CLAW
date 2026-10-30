@@ -10,7 +10,9 @@ Usage:
     --out signed.ipa
 """
 import argparse
+import hashlib
 import os
+import re
 import plistlib
 import shutil
 import subprocess
@@ -23,6 +25,7 @@ from verify_signed_ipa import (
     DEFAULT_ICLOUD_CONTAINER,
     validate_bundle_entitlements,
     extract_profile_entitlements,
+    extract_profile,
     verify_bundle_tree,
 )
 
@@ -208,15 +211,31 @@ def list_extension_bundle_identifiers(input_path):
 
 
 def find_distribution_identity(keychain="ci.keychain"):
-    # Only select a distribution identity from the P12 imported for this run.
+    """Return a SHA-1 fingerprint instead of an ambiguous certificate name."""
     out = subprocess.check_output(
         ["security", "find-identity", "-v", "-p", "codesigning", keychain], text=True)
     for line in out.splitlines():
         if ("iPhone Distribution" in line) or ("Apple Distribution" in line):
-            parts = line.split('"')
-            if len(parts) >= 2:
-                return parts[1]
+            match = re.match(r'^\s*\d+\)\s+([0-9a-fA-F]{40})\s+"', line)
+            if match:
+                return match.group(1).upper()
     return None
+
+
+def require_identity_in_profiles(identity, profile_paths):
+    """Reject profiles not authorized for the imported distribution P12."""
+    if not re.fullmatch(r"[0-9A-Fa-f]{40}", identity):
+        raise ValueError("invalid imported distribution certificate fingerprint")
+    for path in profile_paths:
+        profile = extract_profile(path)
+        certificates = profile.get("DeveloperCertificates", []) or []
+        allowed = {hashlib.sha1(bytes(cert)).hexdigest().upper()
+                   for cert in certificates}
+        if identity.upper() not in allowed:
+            raise ValueError(
+                "provisioning profile %s does not include the imported distribution certificate"
+                % os.path.basename(path)
+            )
 
 
 def main():
@@ -286,7 +305,7 @@ def main():
     if not identity:
         print("ERROR: no iPhone Distribution identity found in keychain")
         sys.exit(1)
-    print("identity:", identity)
+    print("distribution identity fingerprint:", identity[:8] + "...")
 
     with tempfile.TemporaryDirectory() as tmp:
         work, app_path = extract_app(args.ipa, tmp)
@@ -303,6 +322,9 @@ def main():
         )
         print("app:", app_name, "| extension bundle identifiers:",
               [identifier for _path, identifier in extension_records])
+        require_identity_in_profiles(
+            identity, [args.main_profile] + list(profiles.values())
+        )
 
         # --- entitlements ---
         main_ent = extract_entitlements(args.main_profile)
