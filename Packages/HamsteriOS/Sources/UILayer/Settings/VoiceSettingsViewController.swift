@@ -7,6 +7,7 @@
 //  - 试听：默认本地系统语音，在线 Edge TTS 必须单独授权
 //
 
+import HamsterKeyboardKit
 import HamsterKit
 import UIKit
 
@@ -33,6 +34,7 @@ public final class VoiceSettingsViewController: UITableViewController {
   private let rateLabel = UILabel()
   private let pitchLabel = UILabel()
   private let cloudTTSSwitch = UISwitch()
+  private let cloudSpeechSwitch = UISwitch()
 
   public init() {
     super.init(style: .insetGrouped)
@@ -51,11 +53,15 @@ public final class VoiceSettingsViewController: UITableViewController {
     cloudTTSSwitch.isOn = tts.allowsCloudTTS
     cloudTTSSwitch.accessibilityLabel = "允许在线语音合成"
     cloudTTSSwitch.addTarget(self, action: #selector(cloudTTSChanged(_:)), for: .valueChanged)
+    cloudSpeechSwitch.isOn = ClawVoiceInputService.shared.allowsCloudSpeechRecognition
+    cloudSpeechSwitch.accessibilityLabel = "允许 Apple 在线语音识别"
+    cloudSpeechSwitch.addTarget(self, action: #selector(cloudSpeechChanged(_:)), for: .valueChanged)
   }
 
   public override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     cloudTTSSwitch.isOn = tts.allowsCloudTTS
+    cloudSpeechSwitch.isOn = ClawVoiceInputService.shared.allowsCloudSpeechRecognition
   }
 
   deinit {
@@ -101,14 +107,19 @@ public final class VoiceSettingsViewController: UITableViewController {
     tts.allowsCloudTTS = sender.isOn
   }
 
-  public override func numberOfSections(in tableView: UITableView) -> Int { 4 }
+  @objc private func cloudSpeechChanged(_ sender: UISwitch) {
+    ClawVoiceInputService.shared.allowsCloudSpeechRecognition = sender.isOn
+  }
+
+  public override func numberOfSections(in tableView: UITableView) -> Int { 5 }
 
   public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
     switch section {
     case 0: return "音色"
     case 1: return "语速与音调"
     case 2: return "试听"
-    default: return "在线语音合成隐私"
+    case 3: return "在线语音合成隐私"
+    default: return "在线语音识别隐私"
     }
   }
 
@@ -172,8 +183,13 @@ public final class VoiceSettingsViewController: UITableViewController {
       return cell
     default:
       let cell = UITableViewCell(style: .default, reuseIdentifier: "cloudTTS")
-      cell.textLabel?.text = "允许在线语音合成"
-      cell.accessoryView = cloudTTSSwitch
+      if indexPath.section == 3 {
+        cell.textLabel?.text = "允许在线语音合成"
+        cell.accessoryView = cloudTTSSwitch
+      } else {
+        cell.textLabel?.text = "允许 Apple 在线语音识别"
+        cell.accessoryView = cloudSpeechSwitch
+      }
       cell.selectionStyle = .none
       return cell
     }
@@ -199,6 +215,8 @@ public final class VoiceSettingsViewController: UITableViewController {
       return "默认使用设备本地系统语音朗读；仅在主动开启在线语音合成后使用 Edge TTS。"
     case 3:
       return "默认关闭。开启后，朗读文本会发送至 Microsoft Edge TTS 的非官方在线接口。此授权独立于麦克风和语音识别权限；关闭后取消尚未完成的在线合成。"
+    case 4:
+      return "默认仅在设备本地识别语音；如果设备或语言不支持本地识别，将提示而不会自动上传。开启后，录音可能交由 Apple 在线语音识别服务处理。关闭会取消当前在线识别；系统麦克风权限不代表同意联网。"
     default:
       return nil
     }
