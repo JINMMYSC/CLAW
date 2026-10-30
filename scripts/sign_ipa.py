@@ -28,6 +28,7 @@ from verify_signed_ipa import (
     extract_profile_entitlements,
     extract_profile,
     verify_bundle_tree,
+    validate_common_installable_devices,
 )
 
 
@@ -345,6 +346,14 @@ def main():
               [identifier for _path, identifier in extension_records])
         require_identity_in_profiles(
             identity, [args.main_profile] + list(profiles.values())
+        )
+        # This is also enforced by the release workflow preflight. Keep the
+        # direct signer fail-closed when the three Ad Hoc profiles authorize
+        # different devices or come from different Apple developer teams.
+        validate_common_installable_devices(
+            [("Host", extract_profile(args.main_profile))] +
+            [(bundle_id, extract_profile(profile_path))
+             for bundle_id, profile_path in profiles.items()]
         )
 
         # --- entitlements ---
