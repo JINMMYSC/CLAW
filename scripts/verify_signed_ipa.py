@@ -120,7 +120,8 @@ def validate_profile_expiration(profile, now=None):
         raise ValueError("provisioning profile expired")
 
 
-def extract_profile_entitlements(profile_path):
+def extract_profile(profile_path):
+    """Decode and validate the complete Apple CMS provisioning profile."""
     result = subprocess.run(
         ["security", "cms", "-D", "-i", profile_path],
         check=True,
@@ -128,7 +129,11 @@ def extract_profile_entitlements(profile_path):
     )
     profile = plistlib.loads(result.stdout)
     validate_profile_expiration(profile)
-    return profile.get("Entitlements", {}) or {}
+    return profile
+
+
+def extract_profile_entitlements(profile_path):
+    return extract_profile(profile_path).get("Entitlements", {}) or {}
 
 
 def extract_signed_entitlements(bundle_path):
