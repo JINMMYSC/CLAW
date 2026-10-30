@@ -59,6 +59,7 @@ jobs:
           MAIN_PROFILE_B64: ${{ secrets.PROFILE_MAIN_B64 }}
           EXT_PROFILE_B64: ${{ secrets.PROFILE_EXT_B64 }}
           WIDGET_PROFILE_B64: ${{ secrets.PROFILE_WIDGET_B64 }}
+          CLAW_TARGET_DEVICE_UDID: ${{ secrets.CLAW_TARGET_DEVICE_UDID }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -92,7 +93,14 @@ jobs:
                   validate_profile(bundle_id, entitlements,
                                    required_icloud_containers=icloud)
                   print("Provisioning profile preflight OK:", bundle_id)
-          validate_common_installable_devices(decoded_profiles)
+          validate_common_installable_devices(
+              decoded_profiles,
+              target_device_udid=os.environ.get("CLAW_TARGET_DEVICE_UDID") or None,
+          )
+          if os.environ.get("CLAW_TARGET_DEVICE_UDID"):
+              print("Target iPhone authorization verified (identifier withheld)")
+          else:
+              print("Target iPhone not individually verified: optional device secret absent")
           print("Provisioning profiles share a developer team and compatible device scope")
           PY
 
@@ -363,6 +371,7 @@ jobs:
         if: steps.check.outputs.skip != 'true'
         env:
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          CLAW_TARGET_DEVICE_UDID: ${{ secrets.CLAW_TARGET_DEVICE_UDID }}
         run: |
           set -o pipefail
           mkdir -p build
