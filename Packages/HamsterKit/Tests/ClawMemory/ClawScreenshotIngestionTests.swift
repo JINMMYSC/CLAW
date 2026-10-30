@@ -204,6 +204,8 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     let inserted = try service.confirmReviewed(messages: result.messages, for: profile)
     XCTAssertEqual(inserted, result.messages.count)
     XCTAssertEqual(try store.conversation(contactID: profile.id, limit: 10).count, inserted)
-    XCTAssertFalse(try store.tasks(status: .open, limit: 10).isEmpty)
+    // Reviewing OCR bubbles is not consent to infer tasks or long-term memories.
+    XCTAssertTrue(try store.tasks(status: .open, limit: 10).isEmpty)
+    XCTAssertEqual(try store.memoryV2Count(), 0)
   }
 }
