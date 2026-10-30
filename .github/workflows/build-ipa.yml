@@ -69,14 +69,16 @@ jobs:
           import tempfile
 
           sys.path.insert(0, "scripts")
-          from sign_ipa import extract_entitlements, validate_profile
-          from verify_signed_ipa import DEFAULT_ICLOUD_CONTAINER
+          from sign_ipa import validate_profile
+          from verify_signed_ipa import (DEFAULT_ICLOUD_CONTAINER, extract_profile,
+                                          validate_common_installable_devices)
 
           profiles = (
               ("MAIN_PROFILE_B64", "app.lgm.7517", (DEFAULT_ICLOUD_CONTAINER,)),
               ("EXT_PROFILE_B64", "app.lgm.7517.123", ()),
               ("WIDGET_PROFILE_B64", "app.lgm.7517.widget", ()),
           )
+          decoded_profiles = []
           with tempfile.TemporaryDirectory() as tmp:
               for secret, bundle_id, icloud in profiles:
                   raw = base64.b64decode(os.environ.get(secret, ""), validate=True)
@@ -84,10 +86,14 @@ jobs:
                       raise ValueError("empty provisioning profile for " + bundle_id)
                   path = pathlib.Path(tmp, bundle_id + ".mobileprovision")
                   path.write_bytes(raw)
-                  entitlements = extract_entitlements(str(path))
+                  profile = extract_profile(str(path))
+                  entitlements = profile.get("Entitlements", {}) or {}
+                  decoded_profiles.append((bundle_id, profile))
                   validate_profile(bundle_id, entitlements,
                                    required_icloud_containers=icloud)
                   print("Provisioning profile preflight OK:", bundle_id)
+          validate_common_installable_devices(decoded_profiles)
+          print("Provisioning profiles share a developer team and compatible device scope")
           PY
 
       - name: Download Rime frameworks (zgl v0.1.0)
