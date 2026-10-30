@@ -142,7 +142,7 @@ def validate_device_installable_profile(profile):
     )
 
 
-def validate_common_installable_devices(named_profiles):
+def validate_common_installable_devices(named_profiles, target_device_udid=None):
     """Require a common device and developer team across Host and extensions.
 
     Individually valid Ad Hoc profiles can still be mutually incompatible:
@@ -170,6 +170,17 @@ def validate_common_installable_devices(named_profiles):
         common_devices = devices if common_devices is None else common_devices & devices
         if not common_devices:
             raise ValueError("no common provisioned device across Host/Keyboard/Widget profiles")
+
+    # A common Ad Hoc device may not be the actual destination iPhone.
+    # Device-specific checks must never disclose the UDID in diagnostics.
+    if target_device_udid is not None:
+        if not isinstance(target_device_udid, str) or not target_device_udid.strip():
+            raise ValueError("target device identifier is invalid")
+        requested = target_device_udid.strip().casefold()
+        if common_devices is not None and requested not in {
+            device.casefold() for device in common_devices
+        }:
+            raise ValueError("target device is not provisioned across all app targets")
 
 
 def extract_profile(profile_path):
