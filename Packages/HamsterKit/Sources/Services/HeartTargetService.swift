@@ -152,7 +152,29 @@ public class HeartTargetService {
     return profile
   }
 
+  /// Apply a late AI result only to an existing, unchanged individual contact.
+  /// This must never recreate a deleted profile or overwrite a newer user edit.
+  @discardableResult
+  public func updateLearnedSummary(
+    _ summary: String, for id: UUID, expectedUpdatedAt: Date
+  ) -> Bool {
+    var updated = false
+    ClawContactProfileLearningConsentStore.shared.performIfGranted(for: id) {
+      reload()
+      guard let index = profiles.firstIndex(where: { $0.id == id }),
+            !profiles[index].isGroup,
+            profiles[index].updatedAt == expectedUpdatedAt else { return }
+      profiles[index].learnedSummary = summary
+      profiles[index].updatedAt = Date()
+      persist()
+      updated = true
+    }
+    return updated
+  }
+
   public func delete(id: UUID) {
+    reload()
+    ClawContactProfileLearningConsentStore.shared.setGranted(false, for: id)
     // Preserve the selected person's identity, not the array index after a
     // deletion; never silently switch private keyboard context to a stranger.
     let currentID = selectedProfile?.id
@@ -164,13 +186,18 @@ public class HeartTargetService {
   }
 
   public func deleteAllProfiles() {
+    reload()
+    for profile in profiles {
+      ClawContactProfileLearningConsentStore.shared.setGranted(false, for: profile.id)
+    }
     profiles = []
     selectedIndex = -1
     persist()
   }
 
   public func profile(id: UUID) -> HeartTargetProfile? {
-    profiles.first(where: { $0.id == id })
+    reload()
+    return profiles.first(where: { $0.id == id })
   }
 
   public func select(at index: Int) {
