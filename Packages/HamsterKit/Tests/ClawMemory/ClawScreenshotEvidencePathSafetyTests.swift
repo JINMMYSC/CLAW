@@ -18,16 +18,22 @@ final class ClawScreenshotEvidencePathSafetyTests: XCTestCase {
       .appendingPathComponent("EncryptedEvidence", isDirectory: true)
     let invalidID = "invalid-" + UUID().uuidString
     let invalidName = encrypted.appendingPathComponent(invalidID + ".clawenc")
+    let validID = UUID().uuidString
+    let validName = encrypted.appendingPathComponent(validID + ".clawenc")
     try files.createDirectory(at: evidence, withIntermediateDirectories: true)
     try files.createDirectory(at: encrypted, withIntermediateDirectories: true)
     try Data("path-safety-fixture".utf8).write(to: outside, options: .atomic)
     try Data("invalid-name-fixture".utf8).write(to: invalidName, options: .atomic)
+    try Data("valid-name-fixture".utf8).write(to: validName, options: .atomic)
     defer { try? files.removeItem(at: outside) }
     defer { try? files.removeItem(at: invalidName) }
+    defer { try? files.removeItem(at: validName) }
 
     let traversal = "screenshot-evidence:../Evidence/" + filename
     XCTAssertNil(store.url(for: traversal), "A source reference must never resolve outside EncryptedEvidence")
     XCTAssertNil(store.url(for: "screenshot-evidence:../"))
     XCTAssertNil(store.url(for: "screenshot-evidence:" + invalidID))
+    XCTAssertEqual(store.url(for: "screenshot-evidence:" + validID)?.standardizedFileURL,
+                   validName.standardizedFileURL)
   }
 }
