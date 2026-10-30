@@ -6,6 +6,7 @@
 //  - 合成 mp3 → AVAudioPlayer 播放；失败自动降级系统 AVSpeechSynthesizer
 //
 import AVFoundation
+import CoreFoundation
 import Foundation
 
 /// ClawTalk 语音设置存储键
@@ -13,8 +14,17 @@ public enum ClawVoiceSettings {
   public static let voiceKey = "claw_tts_voice"
   public static let rateKey = "claw_tts_rate" // Int -50...50（百分比）
   public static let pitchKey = "claw_tts_pitch" // Int -50...50（Hz）
+  public static let edgeTTSCloudConsentKey = "claw_tts_cloud_opt_in"
 
   public static let defaultVoice = "zh-CN-XiaoxiaoNeural"
+}
+
+/// Fail closed for absent, malformed and legacy numeric consent values.
+public enum ClawEdgeTTSConsentPolicy {
+  public static func permitsUpload(_ storedValue: Any?) -> Bool {
+    guard let value = storedValue as? NSNumber else { return false }
+    return CFGetTypeID(value) == CFBooleanGetTypeID() && value.boolValue
+  }
 }
 
 public final class ClawEdgeTTSService: NSObject, AVAudioPlayerDelegate {
@@ -33,6 +43,9 @@ public final class ClawEdgeTTSService: NSObject, AVAudioPlayerDelegate {
   private let edgeTTS = EdgeTTSService()
   private let synthesizer = AVSpeechSynthesizer()
   private var player: AVAudioPlayer?
+  private var audioFileURL: URL?
+  private var synthesisTask: Task<Void, Never>?
+  private var activeRequestID: UUID?
 
   private override init() {
     super.init()
@@ -55,9 +68,22 @@ public final class ClawEdgeTTSService: NSObject, AVAudioPlayerDelegate {
     set { defaults?.set(newValue, forKey: ClawVoiceSettings.pitchKey) }
   }
 
+  /// Online text transmission requires separate explicit consent from Speech.
+  public var allowsCloudTTS: Bool {
+    get {
+      ClawEdgeTTSConsentPolicy.permitsUpload(
+        defaults?.object(forKey: ClawVoiceSettings.edgeTTSCloudConsentKey)
+      )
+    }
+    set {
+      defaults?.set(newValue, forKey: ClawVoiceSettings.edgeTTSCloudConsentKey)
+      if !newValue { stop() }
+    }
+  }
+
   // MARK: - 朗读
 
-  /// 朗读一段文字（Edge TTS 主链路，失败自动降级系统语音）
+  /// Default to on-device speech. Edge TTS is only used after explicit opt-in.
   public func speak(_ text: String) {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
@@ -67,36 +93,65 @@ public final class ClawEdgeTTSService: NSObject, AVAudioPlayerDelegate {
     try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
     try? session.setActive(true, options: [.notifyOthersOnDeactivation])
     isSpeaking = true
-    Task {
+    guard allowsCloudTTS else {
+      fallbackSpeak(trimmed)
+      return
+    }
+    let requestID = UUID()
+    activeRequestID = requestID
+    synthesisTask = Task { [weak self] in
+      guard let self else { return }
+      let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("claw_tts_\(UUID().uuidString).mp3")
       do {
         let rate = ratePercent >= 0 ? "+\(ratePercent)%" : "\(ratePercent)%"
         let pitch = pitchHz >= 0 ? "+\(pitchHz)Hz" : "\(pitchHz)Hz"
-        let url = FileManager.default.temporaryDirectory
-          .appendingPathComponent("claw_tts_\(UUID().uuidString).mp3")
-        let out = try await edgeTTS.synthesize(text: trimmed, voice: voice, outputURL: url, rate: rate, volume: nil, pitch: pitch)
+        let out = try await edgeTTS.synthesize(
+          text: trimmed, voice: voice, outputURL: url,
+          rate: rate, volume: nil, pitch: pitch
+        )
         await MainActor.run {
-          guard self.isSpeaking else { return }
+          guard self.isSpeaking, self.activeRequestID == requestID, self.allowsCloudTTS else {
+            try? FileManager.default.removeItem(at: out)
+            return
+          }
           self.player = try? AVAudioPlayer(contentsOf: out)
           self.player?.delegate = self
+          self.audioFileURL = self.player == nil ? nil : out
+          if self.player == nil { try? FileManager.default.removeItem(at: out) }
           if self.player?.play() != true {
+            self.removeAudioFile()
             self.fallbackSpeak(trimmed)
           }
         }
       } catch {
-        await MainActor.run { self.fallbackSpeak(trimmed) }
+        try? FileManager.default.removeItem(at: url)
+        await MainActor.run {
+          guard self.isSpeaking, self.activeRequestID == requestID, self.allowsCloudTTS else { return }
+          self.fallbackSpeak(trimmed)
+        }
       }
     }
   }
 
   /// 停止播放
   public func stop() {
+    activeRequestID = nil
+    synthesisTask?.cancel()
+    synthesisTask = nil
     player?.stop()
     player = nil
+    removeAudioFile()
     if synthesizer.isSpeaking {
       synthesizer.stopSpeaking(at: .immediate)
     }
     isSpeaking = false
     try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+  }
+
+  private func removeAudioFile() {
+    if let url = audioFileURL { try? FileManager.default.removeItem(at: url) }
+    audioFileURL = nil
   }
 
   /// 降级：系统 AVSpeechSynthesizer（离线/网络失败时保证能出声）
@@ -114,6 +169,7 @@ public final class ClawEdgeTTSService: NSObject, AVAudioPlayerDelegate {
 
   public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
     self.player = nil
+    removeAudioFile()
     isSpeaking = false
     try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
   }
