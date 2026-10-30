@@ -53,6 +53,28 @@ class SigningExecutableModeTests(unittest.TestCase):
                         archive.getinfo(executable).external_attr >> 16)
                     self.assertEqual(mode, 0o755, executable)
 
+    def test_signed_ipa_verifier_rejects_nonexecutable_widget(self):
+        from verify_signed_ipa import verify_ipa_executable_modes
+        with tempfile.TemporaryDirectory() as tmp:
+            ipa = pathlib.Path(tmp, "signed.ipa")
+            with zipfile.ZipFile(ipa, "w") as archive:
+                for name, executable, mode in (
+                    ("Hamster.app", "Hamster", 0o755),
+                    ("Hamster.app/PlugIns/Keyboard.appex", "Keyboard", 0o755),
+                    ("Hamster.app/PlugIns/Widget.appex", "Widget", 0o644),
+                ):
+                    base = "Payload/" + name
+                    archive.writestr(base + "/Info.plist", plistlib.dumps({
+                        "CFBundleExecutable": executable,
+                    }))
+                    member = zipfile.ZipInfo(base + "/" + executable)
+                    member.create_system = 3
+                    member.external_attr = (stat.S_IFREG | mode) << 16
+                    archive.writestr(member, b"MachO")
+            with zipfile.ZipFile(ipa) as archive:
+                with self.assertRaisesRegex(ValueError, "Widget"):
+                    verify_ipa_executable_modes(archive)
+
     def test_rejects_archive_path_traversal_before_extraction(self):
         with tempfile.TemporaryDirectory() as tmp:
             ipa = pathlib.Path(tmp, "unsafe.ipa")
