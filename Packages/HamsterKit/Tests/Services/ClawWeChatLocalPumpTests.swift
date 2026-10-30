@@ -62,10 +62,11 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
   private func message(
     _ id: String,
     kind: ClawWeChatLocalMessageKind,
-    sender: String = "owner"
+    sender: String = "owner",
+    conversation: String = "chat"
   ) -> ClawWeChatLocalMessage {
     ClawWeChatLocalMessage(
-      messageID: id, conversationID: "chat", senderID: sender,
+      messageID: id, conversationID: conversation, senderID: sender,
       kind: kind, text: kind == .text ? "问 CLAW" : nil,
       mediaReference: kind == .text ? nil : "opaque-\(id)"
     )
@@ -228,5 +229,54 @@ final class ClawWeChatLocalPumpTests: XCTestCase {
     XCTAssertEqual(processedAfterRecovery, [.image])
     XCTAssertEqual(cursorAfterRecovery, "next-page")
   }
+
+
+  func testUnapprovedChatsNeverDownloadMediaOrSendReplies() async throws {
+    let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
+    await transport.setMessages([
+      message("group", kind: .image, conversation: "project-group"),
+      message("other", kind: .voice, conversation: "private-friend"),
+      message("approved", kind: .text, conversation: "chat")
+    ])
+    let pump = ClawWeChatLocalPump(
+      transport: transport, processor: processor,
+      allowedSenderID: "owner", allowedConversationID: "chat",
+      sendApproval: FakeConfirmedWeChatReply()
+    )
+    await pump.setConnection(.active)
+    let count = try await pump.pollOnce(
+      hostForeground: true, keyboardVisible: false, keyboardFullAccess: false
+    )
+    XCTAssertEqual(count, 1)
+    let downloaded = await transport.downloadedMedia()
+    let processed = await processor.processedKinds()
+    let sent = await transport.sentMessages()
+    XCTAssertTrue(downloaded.isEmpty, "Unapproved media must not be downloaded")
+    XCTAssertEqual(processed, [.text])
+    XCTAssertEqual(sent, ["chat:已处理"])
+  }
+
+  func testMissingPerReplyApprovalNeverSends() async throws {
+    let transport = FakeWeChatTransport(), processor = FakeWeChatProcessor()
+    await transport.setMessages([message("draft-only", kind: .text)])
+    let pump = ClawWeChatLocalPump(
+      transport: transport, processor: processor,
+      allowedSenderID: "owner", allowedConversationID: "chat"
+    )
+    await pump.setConnection(.active)
+    let count = try await pump.pollOnce(
+      hostForeground: true, keyboardVisible: false, keyboardFullAccess: false
+    )
+    XCTAssertEqual(count, 1)
+    let processed = await processor.processedKinds()
+    let sent = await transport.sentMessages()
+    XCTAssertEqual(processed, [.text])
+    XCTAssertTrue(sent.isEmpty, "A generated draft is never send consent")
+    let duplicateCount = try await pump.pollOnce(
+      hostForeground: true, keyboardVisible: false, keyboardFullAccess: false
+    )
+    XCTAssertEqual(duplicateCount, 0)
+  }
+
 
 }
