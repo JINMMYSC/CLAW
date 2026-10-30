@@ -260,6 +260,20 @@ def verify_release_bundle_manifest(archive):
         raise ValueError("signed IPA Bundle IDs do not match Host/Keyboard/Widget release")
 
 
+def verify_ipa_source_sha(archive, expected_sha):
+    """Verify every unsigned release bundle embeds the exact frozen commit."""
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_sha or ""):
+        raise ValueError("expected source SHA must be a lowercase 40-character commit ID")
+    verify_release_bundle_manifest(archive)
+    paths = [name for name in archive.namelist()
+             if re.fullmatch(r"Payload/[^/]+\\.app/Info\\.plist", name)
+             or re.fullmatch(r"Payload/[^/]+\\.app/PlugIns/[^/]+\\.appex/Info\\.plist", name)]
+    for path in paths:
+        actual = plistlib.loads(archive.read(path)).get("ClawSourceCommit")
+        if actual != expected_sha:
+            raise ValueError("unsigned IPA source SHA mismatch in " + path)
+
+
 def verify_ipa_executable_modes(archive):
     """Require executable Host/extension Mach-O modes in the final IPA ZIP."""
     bundle_plists = []
@@ -313,7 +327,14 @@ def main():
         action="store_true",
         help="verify a build signed by a profile that omits the CLAW iCloud container",
     )
+    parser.add_argument("--check-unsigned-source-sha", metavar="SHA",
+                        help="verify Host/Keyboard/Widget source SHA before importing signing assets")
     args = parser.parse_args()
+    if args.check_unsigned_source_sha is not None:
+        with zipfile.ZipFile(args.ipa) as archive:
+            verify_ipa_source_sha(archive, args.check_unsigned_source_sha)
+        print("unsigned IPA source SHA verified:", args.check_unsigned_source_sha)
+        return
     verify_ipa(args.ipa, require_icloud=not args.allow_missing_icloud)
     print("signed IPA verification OK")
 
