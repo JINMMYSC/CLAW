@@ -63,7 +63,7 @@ struct ClawImportScreenshotsIntent: AppIntent {
   @Parameter(title: "聊天截图")
   var screenshots: [IntentFile]
 
-  func perform() async throws -> some ReturnsValue & ProvidesDialog {
+  func perform() async throws -> some IntentResult & ReturnsValue<Int> & ProvidesDialog {
     var insertedTotal = 0
     var names = Set<String>()
     for file in screenshots.prefix(6) {
