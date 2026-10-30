@@ -6,12 +6,22 @@
 //
 
 import Combine
+import CoreFoundation
 import Foundation
 import HamsterKit
 import HamsterKeyboardKit
 import OSLog
 import ProgressHUD
 import UIKit
+
+/// Fail closed unless the signed Host metadata is a genuine CFBoolean true.
+/// Missing, string, and numeric values must not authorize cloud file mutation.
+enum ClawICloudEntitlementPolicy {
+  static func isAuthorized(_ value: Any?) -> Bool {
+    guard let number = value as? NSNumber else { return false }
+    return CFGetTypeID(number) == CFBooleanGetTypeID() && number.boolValue
+  }
+}
 
 private enum ClawICloudBuildError: LocalizedError {
   case missingSigningCapability
@@ -110,7 +120,7 @@ public class AppleCloudViewModel: ObservableObject {
     guard canStart else { return }
     await ProgressHUD.animate("拷贝中……", interaction: false)
     do {
-      guard Bundle.main.object(forInfoDictionaryKey: "ClawICloudContainerEntitled") as? Bool != false else {
+      guard ClawICloudEntitlementPolicy.isAuthorized(Bundle.main.object(forInfoDictionaryKey: "ClawICloudContainerEntitled")) else {
         ClawDiagnosticsCore.shared.record(
           module: "icloud", action: "copy_blocked_missing_entitlement",
           severity: "error", traceID: traceID
@@ -153,7 +163,7 @@ public class AppleCloudViewModel: ObservableObject {
     guard canStart else { return }
     await ProgressHUD.animate("从 iCloud 恢复中……", interaction: false)
     do {
-      guard Bundle.main.object(forInfoDictionaryKey: "ClawICloudContainerEntitled") as? Bool != false else {
+      guard ClawICloudEntitlementPolicy.isAuthorized(Bundle.main.object(forInfoDictionaryKey: "ClawICloudContainerEntitled")) else {
         ClawDiagnosticsCore.shared.record(
           module: "icloud", action: "restore_blocked_missing_entitlement",
           severity: "error", traceID: traceID
