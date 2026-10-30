@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreFoundation
 import Foundation
 import HamsterKit
 import Speech
@@ -53,6 +54,30 @@ enum ClawVoiceLaunchPolicy {
   }
 }
 
+enum ClawVoiceRecognitionMode: Equatable {
+  case onDevice
+  case online
+  case unavailable
+}
+
+/// Microphone and Speech OS permissions are not consent for online recognition.
+enum ClawVoiceCloudConsentPolicy {
+  static func permitsOnlineRecognition(_ storedValue: Any?) -> Bool {
+    guard let value = storedValue as? NSNumber else { return false }
+    return CFGetTypeID(value) == CFBooleanGetTypeID() && value.boolValue
+  }
+}
+
+enum ClawVoiceRecognitionPolicy {
+  static func mode(
+    supportsOnDevice: Bool, allowsCloud: Bool, prefersOnDevice: Bool
+  ) -> ClawVoiceRecognitionMode {
+    if supportsOnDevice && (prefersOnDevice || !allowsCloud) { return .onDevice }
+    if allowsCloud { return .online }
+    return .unavailable
+  }
+}
+
 /// 语音输入服务：按住说话 / 连续语音 → Speech 转文字。
 public final class ClawVoiceInputService: NSObject {
   public static let shared = ClawVoiceInputService()
@@ -61,6 +86,7 @@ public final class ClawVoiceInputService: NSObject {
   private let languageModeKey = "claw_voice_language_mode_v1"
   private let silenceIntervalKey = "claw_voice_silence_interval_v1"
   private let preferOnDeviceKey = "claw_voice_prefer_on_device_v1"
+  private let cloudConsentKey = "claw_voice_cloud_recognition_opt_in_v1"
   private var audioEngine: AVAudioEngine?
   private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
   private var recognitionTask: SFSpeechRecognitionTask?
@@ -92,10 +118,30 @@ public final class ClawVoiceInputService: NSObject {
     set { defaults?.set(min(1.8, max(0.7, newValue)), forKey: silenceIntervalKey) }
   }
 
-  /// 默认优先可靠性，不强制本地识别。用户明确开启后才要求 on-device。
+  /// Without explicit cloud consent, on-device recognition is mandatory.
   public var preferOnDeviceRecognition: Bool {
     get { defaults?.bool(forKey: preferOnDeviceKey) ?? false }
     set { defaults?.set(newValue, forKey: preferOnDeviceKey) }
+  }
+
+  /// Explicit, revocable opt-in for Apple Speech online recognition.
+  public var allowsCloudSpeechRecognition: Bool {
+    get {
+      ClawVoiceCloudConsentPolicy.permitsOnlineRecognition(
+        defaults?.object(forKey: cloudConsentKey)
+      )
+    }
+    set {
+      let wasAllowed = allowsCloudSpeechRecognition
+      defaults?.set(newValue, forKey: cloudConsentKey)
+      if wasAllowed && !newValue && recognitionRequest?.requiresOnDeviceRecognition == false {
+        let oneShot = oneShotCompletion
+        let streaming = streamingError
+        _ = resetForNewSession()
+        oneShot?(.failure(ClawVoiceError.cloudRecognitionConsentRevoked))
+        streaming?(ClawVoiceError.cloudRecognitionConsentRevoked)
+      }
+    }
   }
 
   private var streamingPartial: ((String) -> Void)?
@@ -201,11 +247,20 @@ public final class ClawVoiceInputService: NSObject {
       return
     }
 
+    let mode = ClawVoiceRecognitionPolicy.mode(
+      supportsOnDevice: recognizer.supportsOnDeviceRecognition,
+      allowsCloud: allowsCloudSpeechRecognition,
+      prefersOnDevice: preferOnDeviceRecognition
+    )
+    guard mode != .unavailable else {
+      diagnostic("on_device_recognition_unavailable", severity: "warning")
+      completion(.failure(ClawVoiceError.onDeviceRecognitionUnavailable))
+      return
+    }
+
     let audioEngine = AVAudioEngine()
     let request = Self.makeOneShotRequest()
-    if preferOnDeviceRecognition, recognizer.supportsOnDeviceRecognition {
-      request.requiresOnDeviceRecognition = true
-    }
+    request.requiresOnDeviceRecognition = mode == .onDevice
 
     do {
       try activateMicrophoneSession()
@@ -314,12 +369,22 @@ public final class ClawVoiceInputService: NSObject {
       return
     }
 
+    let mode = ClawVoiceRecognitionPolicy.mode(
+      supportsOnDevice: recognizer.supportsOnDeviceRecognition,
+      allowsCloud: allowsCloudSpeechRecognition,
+      prefersOnDevice: preferOnDeviceRecognition
+    )
+    guard mode != .unavailable else {
+      clearStreamingCallbacks()
+      diagnostic("on_device_recognition_unavailable", severity: "warning")
+      onError(ClawVoiceError.onDeviceRecognitionUnavailable)
+      return
+    }
+
     let audioEngine = AVAudioEngine()
     let request = SFSpeechAudioBufferRecognitionRequest()
     request.shouldReportPartialResults = true
-    if preferOnDeviceRecognition, recognizer.supportsOnDeviceRecognition {
-      request.requiresOnDeviceRecognition = true
-    }
+    request.requiresOnDeviceRecognition = mode == .onDevice
 
     do {
       try activateMicrophoneSession()
@@ -510,13 +575,15 @@ public final class ClawVoiceInputService: NSObject {
     pendingCleanupWorkItem?.cancel()
     pendingCleanupWorkItem = nil
 
-    recognitionRequest?.endAudio()
+    // Cancel first on revocation; never flush more audio to an online task.
+    if cancelTask {
+      recognitionTask?.cancel()
+    } else {
+      recognitionRequest?.endAudio()
+    }
     if let audioEngine {
       audioEngine.stop()
       audioEngine.inputNode.removeTap(onBus: 0)
-    }
-    if cancelTask {
-      recognitionTask?.cancel()
     }
 
     audioEngine = nil
@@ -534,6 +601,8 @@ public final class ClawVoiceInputService: NSObject {
 
 public enum ClawVoiceError: LocalizedError {
   case recognizerUnavailable
+  case onDeviceRecognitionUnavailable
+  case cloudRecognitionConsentRevoked
   case audioUnavailable
   case keyboardExtensionUnsupported
   case permissionRequired
@@ -544,6 +613,8 @@ public enum ClawVoiceError: LocalizedError {
   public var errorDescription: String? {
     switch self {
     case .recognizerUnavailable: return "语音识别不可用，请检查系统设置"
+    case .onDeviceRecognitionUnavailable: return "当前语言或设备不支持本地语音识别。若需要在线识别，请在 CLAW 语音设置中明确授权。"
+    case .cloudRecognitionConsentRevoked: return "已关闭在线语音识别，录音已取消"
     case .audioUnavailable: return "麦克风不可用"
     case .keyboardExtensionUnsupported: return "键盘扩展无法直接使用麦克风，请在 CLAW 主程序录音"
     case .permissionRequired: return "请先在 CLAW 主程序授权语音识别和麦克风"
