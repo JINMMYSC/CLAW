@@ -223,6 +223,43 @@ def verify_bundle_tree(app_path, require_icloud=True):
     print("verified deep signature tree:", main_identifier)
 
 
+EXPECTED_RELEASE_BUNDLE_IDS = frozenset({
+    "app.lgm.7517",
+    "app.lgm.7517.123",
+    "app.lgm.7517.widget",
+})
+
+
+def verify_release_bundle_manifest(archive):
+    """Fail closed if a signed release drops a target or raises the iOS 15 floor."""
+    names = archive.namelist()
+    hosts = [name for name in names
+             if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", name)]
+    if len(hosts) != 1:
+        raise ValueError("signed IPA must contain exactly one Host app")
+    prefix = hosts[0].rsplit("/", 1)[0] + "/PlugIns/"
+    extensions = [name for name in names
+                  if re.fullmatch(re.escape(prefix) + r"[^/]+\.appex/Info\.plist", name)]
+    if len(extensions) != 2:
+        raise ValueError("signed IPA must preserve Keyboard and Widget extensions")
+
+    bundle_ids = []
+    for path in hosts + extensions:
+        info = plistlib.loads(archive.read(path))
+        identifier = info.get("CFBundleIdentifier")
+        bundle_ids.append(identifier)
+        minimum = info.get("MinimumOSVersion")
+        if (not isinstance(minimum, str)
+                or not re.fullmatch(r"\d+(?:\.\d+){0,2}", minimum)):
+            raise ValueError("invalid MinimumOSVersion for " + str(identifier))
+        major, minor = (int(part) for part in (minimum.split(".") + ["0"])[:2])
+        if (major, minor) > (15, 0):
+            raise ValueError("iOS 15 compatibility lost for " + str(identifier))
+
+    if frozenset(bundle_ids) != EXPECTED_RELEASE_BUNDLE_IDS or len(set(bundle_ids)) != 3:
+        raise ValueError("signed IPA Bundle IDs do not match Host/Keyboard/Widget release")
+
+
 def verify_ipa_executable_modes(archive):
     """Require executable Host/extension Mach-O modes in the final IPA ZIP."""
     bundle_plists = []
@@ -256,6 +293,7 @@ def verify_ipa(ipa_path, require_icloud=True):
     with tempfile.TemporaryDirectory() as tmp:
         with zipfile.ZipFile(ipa_path) as archive:
             verify_ipa_executable_modes(archive)
+            verify_release_bundle_manifest(archive)
             archive.extractall(tmp)
         payload = os.path.join(tmp, "Payload")
         apps = [name for name in os.listdir(payload) if name.endswith(".app")]
