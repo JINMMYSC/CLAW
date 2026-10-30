@@ -99,7 +99,11 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     XCTAssertEqual(try store.conversation(contactID: person.id).count, 3)
 
     let anotherPerson = HeartTargetProfile(name: "B")
-    XCTAssertEqual(try service.confirmReviewed(messages: [b], for: anotherPerson), 1)
+    // The same text may belong to a different person, but the reviewed row
+    // must be explicitly scoped to that person rather than silently rebound.
+    var otherScoped = b
+    otherScoped.contactID = anotherPerson.id
+    XCTAssertEqual(try service.confirmReviewed(messages: [otherScoped], for: anotherPerson), 1)
     XCTAssertEqual(try store.conversation(contactID: anotherPerson.id).count, 1)
   }
 
