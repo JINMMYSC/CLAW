@@ -125,7 +125,7 @@ public final class ClawScreenshotIngestionService {
     guard !messages.isEmpty else { throw ClawScreenshotReviewError.emptyMessages }
     guard messages.allSatisfy({
       !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-      $0.speaker != .unknown
+      $0.speaker != .unknown && $0.sourceType == "screenshot"
     }) else { throw ClawScreenshotReviewError.unresolvedMessage }
 
     let approved = messages.enumerated().map { entry -> ClawConversationMessage in
@@ -138,8 +138,8 @@ public final class ClawScreenshotIngestionService {
       }
       return item
     }
-    // Build a candidate batch without modifying storage; the store commits
-    // bubbles, related memories and tasks atomically or rolls everything back.
+    // Persist only explicitly reviewed screenshot bubbles. Deriving memories
+    // or creating tasks requires a separate consent decision, not an import side effect.
     var candidates: [ClawConversationMessage] = []
     var seen = try store.conversation(contactID: profile.id, limit: 250)
     for item in approved {
@@ -147,7 +147,7 @@ public final class ClawScreenshotIngestionService {
       candidates.append(item)
       seen.append(item)
     }
-    let inserted = try store.commitScreenshotImport(candidates, personID: profile.id)
+    let inserted = try store.appendConversationsBatch(candidates)
     return ClawScreenshotImportReceipt(
       personID: profile.id, messageIDs: inserted.map(\.id)
     )
