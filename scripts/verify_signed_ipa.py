@@ -139,6 +139,36 @@ def validate_device_installable_profile(profile):
     )
 
 
+def validate_common_installable_devices(named_profiles):
+    """Require a common device and developer team across Host and extensions.
+
+    Individually valid Ad Hoc profiles can still be mutually incompatible:
+    if their ProvisionedDevices sets have no intersection, no iPhone can
+    install the complete app. Enterprise profiles allow all devices.
+    Never print or persist device identifiers from the profiles.
+    """
+    common_devices = None
+    expected_team = None
+    if not named_profiles:
+        raise ValueError("no provisioning profiles supplied")
+    for name, profile in named_profiles:
+        validate_device_installable_profile(profile)
+        entitlements = profile.get("Entitlements", {}) or {}
+        team = entitlements.get("com.apple.developer.team-identifier")
+        if not isinstance(team, str) or not team:
+            raise ValueError("missing developer team in " + name + " profile")
+        if expected_team is None:
+            expected_team = team
+        elif team != expected_team:
+            raise ValueError("provisioning profile team mismatch across targets")
+        if profile.get("ProvisionsAllDevices") is True:
+            continue
+        devices = set(profile["ProvisionedDevices"])
+        common_devices = devices if common_devices is None else common_devices & devices
+        if not common_devices:
+            raise ValueError("no common provisioned device across Host/Keyboard/Widget profiles")
+
+
 def extract_profile(profile_path):
     """Decode and validate the complete Apple CMS provisioning profile."""
     result = subprocess.run(
