@@ -125,7 +125,12 @@ public final class ClawScreenshotIngestionService {
     guard !messages.isEmpty else { throw ClawScreenshotReviewError.emptyMessages }
     guard messages.allSatisfy({
       !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-      $0.speaker != .unknown && $0.sourceType == "screenshot"
+      // A screenshot row already assigned to another person cannot be
+      // silently rebound by a later selection in the review sheet.
+      ($0.contactID == nil || $0.contactID == profile.id) &&
+      // System/assistant rows are not confirmed human conversation bubbles.
+      ($0.speaker == .me || $0.speaker == .other) &&
+      $0.sourceType == "screenshot"
     }) else { throw ClawScreenshotReviewError.unresolvedMessage }
 
     let approved = messages.enumerated().map { entry -> ClawConversationMessage in
