@@ -93,7 +93,7 @@ jobs:
                                    required_icloud_containers=icloud)
                   print("Provisioning profile preflight OK:", bundle_id)
           validate_common_installable_devices(decoded_profiles)
-          print("Provisioning profiles share a developer team and compatible device scope")
+          print("Provisioning profiles share developer team, device scope, and signing certificate")
           PY
 
       - name: Download Rime frameworks (zgl v0.1.0)
