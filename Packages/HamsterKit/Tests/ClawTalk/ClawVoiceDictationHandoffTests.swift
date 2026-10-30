@@ -89,4 +89,33 @@ final class ClawVoiceDictationHandoffTests: XCTestCase {
     XCTAssertNotNil(keyboard.beginIfIdle())
   }
 
+
+  func testUnavailableAppGroupRejectsRecordingAndNeverWritesFallbackTranscript() {
+    let suite = "claw-voice-unavailable-tests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let unavailable = ClawVoiceDictationHandoff(defaults: defaults, isSharedAvailable: false)
+
+    XCTAssertNil(unavailable.beginIfIdle(), "A keyboard without its App Group must not start a recorder")
+    let id = unavailable.begin()
+    XCTAssertEqual(unavailable.snapshot.state, .idle)
+    XCTAssertFalse(unavailable.complete(id: id, text: "不可跨进程传递的语音"))
+    XCTAssertFalse(unavailable.fail(id: id, reason: "共享容器不可用"))
+    XCTAssertNil(defaults.data(forKey: "claw_voice_dictation_handoff_v1"))
+  }
+
+  func testUnavailableAppGroupClearsPreviouslyPersistedLegacyFallbackText() {
+    let suite = "claw-voice-legacy-fallback-tests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let legacy = ClawVoiceDictationHandoff(defaults: defaults)
+    let id = legacy.begin()
+    XCTAssertTrue(legacy.complete(id: id, text: "历史残留转写"))
+
+    let unavailable = ClawVoiceDictationHandoff(defaults: defaults, isSharedAvailable: false)
+    XCTAssertEqual(unavailable.snapshot.state, .idle)
+    XCTAssertNil(unavailable.consume())
+    XCTAssertNil(defaults.data(forKey: "claw_voice_dictation_handoff_v1"))
+  }
+
 }
