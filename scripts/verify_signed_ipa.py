@@ -5,6 +5,7 @@ import argparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import fnmatch
+import hashlib
 import os
 import plistlib
 import re
@@ -151,6 +152,7 @@ def validate_common_installable_devices(named_profiles):
     Never print or persist device identifiers from the profiles.
     """
     common_devices = None
+    common_certificates = None
     expected_team = None
     if not named_profiles:
         raise ValueError("no provisioning profiles supplied")
@@ -164,6 +166,19 @@ def validate_common_installable_devices(named_profiles):
             expected_team = team
         elif team != expected_team:
             raise ValueError("provisioning profile team mismatch across targets")
+        # Every bundle must be signable by the SAME imported P12 identity.
+        # Checking this before Xcode builds avoids late failures when profiles
+        # have matching teams/devices but disjoint DeveloperCertificates.
+        certificates = profile.get("DeveloperCertificates")
+        if (not isinstance(certificates, list) or not certificates
+                or any(not isinstance(cert, (bytes, bytearray)) or not cert
+                       for cert in certificates)):
+            raise ValueError("missing or invalid signing certificate in " + name + " profile")
+        fingerprints = {hashlib.sha256(bytes(cert)).digest() for cert in certificates}
+        common_certificates = (fingerprints if common_certificates is None
+                               else common_certificates & fingerprints)
+        if not common_certificates:
+            raise ValueError("no common signing certificate across Host/Keyboard/Widget profiles")
         if profile.get("ProvisionsAllDevices") is True:
             continue
         devices = set(profile["ProvisionedDevices"])
