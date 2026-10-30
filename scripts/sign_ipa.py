@@ -353,7 +353,8 @@ def main():
         validate_common_installable_devices(
             [("Host", extract_profile(args.main_profile))] +
             [(bundle_id, extract_profile(profile_path))
-             for bundle_id, profile_path in profiles.items()]
+             for bundle_id, profile_path in profiles.items()],
+            target_device_udid=os.environ.get("CLAW_TARGET_DEVICE_UDID") or None,
         )
 
         # --- entitlements ---
