@@ -16,7 +16,7 @@ class ConcreteApplicationIdentifierTests(TestCase):
             "com.apple.developer.team-identifier": "TEAM123",
             "com.apple.security.application-groups": [DEFAULT_APP_GROUP],
             "com.apple.developer.icloud-container-identifiers": [DEFAULT_ICLOUD_CONTAINER],
-            "com.apple.developer.icloud-services": ["CloudDocuments"],
+            "com.apple.developer.icloud-services": ["CloudDocuments", "CloudKit"],
         }
 
     def test_host_signing_entitlements_use_concrete_id(self):

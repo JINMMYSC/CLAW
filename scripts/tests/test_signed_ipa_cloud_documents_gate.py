@@ -41,6 +41,23 @@ class SignedIPACloudDocumentsGateTests(unittest.TestCase):
                 required_icloud_containers=[CONTAINER],
             )
 
+    def test_signing_rejects_profile_with_documents_but_no_cloudkit(self):
+        with self.assertRaisesRegex(ValueError, "CloudKit"):
+            sign_ipa.validate_profile(
+                "app.lgm.7517",
+                entitlements(["CloudDocuments"]),
+                required_icloud_containers=[CONTAINER],
+            )
+
+    def test_verifier_rejects_signature_with_documents_but_no_cloudkit(self):
+        with self.assertRaisesRegex(ValueError, "CloudKit"):
+            verify_signed_ipa.validate_bundle_entitlements(
+                "app.lgm.7517",
+                entitlements(["CloudDocuments", "CloudKit"]),
+                entitlements(["CloudDocuments"]),
+                required_icloud_containers=[CONTAINER],
+            )
+
     def test_valid_cloud_documents_profile_and_signature_pass(self):
         valid = entitlements(["CloudDocuments", "CloudKit"])
         verify_signed_ipa.validate_bundle_entitlements(

@@ -79,15 +79,18 @@ def validate_bundle_entitlements(
         if container not in signed_containers or not _entitlement_allows(profile_containers, container):
             raise ValueError("missing required iCloud container: %s" % container)
 
-    # A container identifier alone does not grant iCloud Documents access.
-    # The release signing path passes a required container for the CLAW Host;
-    # reject a profile or signature that silently omits CloudDocuments.
+    # A container identifier alone does not grant iCloud Documents or CloudKit.
+    # The CLAW Host release requires both services, and neither may silently
+    # disappear from the profile or from the final code signature.
     if required_icloud_containers:
         service_key = "com.apple.developer.icloud-services"
         for source, entitlements in (("profile", profile_entitlements),
                                      ("signature", signed_entitlements)):
-            if "CloudDocuments" not in (entitlements.get(service_key, []) or []):
-                raise ValueError("required CloudDocuments entitlement missing from %s" % source)
+            granted_services = entitlements.get(service_key, []) or []
+            for required_service in ("CloudDocuments", "CloudKit"):
+                if required_service not in granted_services:
+                    raise ValueError("required %s entitlement missing from %s"
+                                     % (required_service, source))
 
 
 
