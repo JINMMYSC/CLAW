@@ -106,22 +106,22 @@ class SigningProfileExpirationGateTests(unittest.TestCase):
     def test_common_device_across_all_three_adhoc_profiles(self):
         profiles = [
             ("Host", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
-                      "ProvisionedDevices": ["IPHONE-A", "IPHONE-B"]}),
+                      "ProvisionedDevices": ["IPHONE-A", "IPHONE-B"], "DeveloperCertificates": [b"shared-certificate"]}),
             ("Keyboard", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
-                          "ProvisionedDevices": ["IPHONE-B", "IPHONE-C"]}),
+                          "ProvisionedDevices": ["IPHONE-B", "IPHONE-C"], "DeveloperCertificates": [b"shared-certificate"]}),
             ("Widget", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
-                        "ProvisionedDevices": ["IPHONE-B"]}),
+                        "ProvisionedDevices": ["IPHONE-B"], "DeveloperCertificates": [b"shared-certificate"]}),
         ]
         verify_signed_ipa.validate_common_installable_devices(profiles)
 
     def test_disjoint_adhoc_profiles_cannot_install_on_one_iphone(self):
         profiles = [
             ("Host", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
-                      "ProvisionedDevices": ["IPHONE-A"]}),
+                      "ProvisionedDevices": ["IPHONE-A"], "DeveloperCertificates": [b"shared-certificate"]}),
             ("Keyboard", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
-                          "ProvisionedDevices": ["IPHONE-B"]}),
+                          "ProvisionedDevices": ["IPHONE-B"], "DeveloperCertificates": [b"shared-certificate"]}),
             ("Widget", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
-                        "ProvisionedDevices": ["IPHONE-A", "IPHONE-B"]}),
+                        "ProvisionedDevices": ["IPHONE-A", "IPHONE-B"], "DeveloperCertificates": [b"shared-certificate"]}),
         ]
         with self.assertRaisesRegex(ValueError, "no common provisioned device"):
             verify_signed_ipa.validate_common_installable_devices(profiles)
@@ -129,22 +129,22 @@ class SigningProfileExpirationGateTests(unittest.TestCase):
     def test_enterprise_profile_does_not_restrict_common_adhoc_devices(self):
         profiles = [
             ("Host", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
-                      "ProvisionsAllDevices": True}),
+                      "ProvisionsAllDevices": True, "DeveloperCertificates": [b"shared-certificate"]}),
             ("Keyboard", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
-                          "ProvisionedDevices": ["IPHONE-A"]}),
+                          "ProvisionedDevices": ["IPHONE-A"], "DeveloperCertificates": [b"shared-certificate"]}),
             ("Widget", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
-                        "ProvisionedDevices": ["IPHONE-A", "IPHONE-B"]}),
+                        "ProvisionedDevices": ["IPHONE-A", "IPHONE-B"], "DeveloperCertificates": [b"shared-certificate"]}),
         ]
         verify_signed_ipa.validate_common_installable_devices(profiles)
 
     def test_mismatched_signing_teams_fail_before_xcode_build(self):
         profiles = [
             ("Host", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM-A"},
-                      "ProvisionedDevices": ["IPHONE-A"]}),
+                      "ProvisionedDevices": ["IPHONE-A"], "DeveloperCertificates": [b"shared-certificate"]}),
             ("Keyboard", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM-B"},
-                          "ProvisionedDevices": ["IPHONE-A"]}),
+                          "ProvisionedDevices": ["IPHONE-A"], "DeveloperCertificates": [b"shared-certificate"]}),
             ("Widget", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM-A"},
-                        "ProvisionedDevices": ["IPHONE-A"]}),
+                        "ProvisionedDevices": ["IPHONE-A"], "DeveloperCertificates": [b"shared-certificate"]}),
         ]
         with self.assertRaisesRegex(ValueError, "team mismatch"):
             verify_signed_ipa.validate_common_installable_devices(profiles)
