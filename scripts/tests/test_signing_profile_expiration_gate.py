@@ -150,5 +150,45 @@ class SigningProfileExpirationGateTests(unittest.TestCase):
             verify_signed_ipa.validate_common_installable_devices(profiles)
 
 
+
+class TargetDeviceSigningGateTests(unittest.TestCase):
+    def setUp(self):
+        self.profiles = [
+            ("Host", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
+                      "ProvisionedDevices": ["IPHONE-A", "IPHONE-B"]}),
+            ("Keyboard", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
+                          "ProvisionedDevices": ["IPHONE-B"]}),
+            ("Widget", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
+                        "ProvisionedDevices": ["IPHONE-B"]}),
+        ]
+
+    def test_rejects_target_not_in_every_profile_without_disclosing_udid(self):
+        with self.assertRaises(ValueError) as caught:
+            verify_signed_ipa.validate_common_installable_devices(
+                self.profiles, target_device_udid="IPHONE-A"
+            )
+        self.assertIn("target device", str(caught.exception))
+        self.assertNotIn("IPHONE-A", str(caught.exception))
+
+    def test_accepts_target_in_all_profiles_case_insensitively(self):
+        verify_signed_ipa.validate_common_installable_devices(
+            self.profiles, target_device_udid="iphone-b"
+        )
+
+    def test_enterprise_profile_allows_target_when_other_profiles_match(self):
+        profiles = list(self.profiles)
+        profiles[0] = ("Host", {"Entitlements": {"com.apple.developer.team-identifier": "TEAM"},
+                                "ProvisionsAllDevices": True})
+        verify_signed_ipa.validate_common_installable_devices(
+            profiles, target_device_udid="IPHONE-B"
+        )
+
+    def test_rejects_empty_target_when_target_check_is_requested(self):
+        with self.assertRaisesRegex(ValueError, "target device"):
+            verify_signed_ipa.validate_common_installable_devices(
+                self.profiles, target_device_udid=" "
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
