@@ -15,8 +15,12 @@ import sign_ipa
 import verify_signed_ipa
 
 
-def profile(expiration=None):
+def profile(expiration=None, devices=None, all_devices=False):
     data = {"Entitlements": {"application-identifier": "TEAM.app.lgm.7517"}}
+    if devices is not None:
+        data["ProvisionedDevices"] = devices
+    if all_devices:
+        data["ProvisionsAllDevices"] = True
     if expiration is not None:
         data["ExpirationDate"] = expiration
     return plistlib.dumps(data)
@@ -62,7 +66,7 @@ class SigningProfileExpirationGateTests(unittest.TestCase):
     def test_valid_profile_is_accepted(self):
         with tempfile.TemporaryDirectory() as folder:
             path = pathlib.Path(folder) / "valid.mobileprovision"
-            path.write_bytes(profile(datetime(2099, 1, 1)))
+            path.write_bytes(profile(datetime(2099, 1, 1), devices=["TEST-DEVICE"]))
             with mock.patch.object(
                 verify_signed_ipa.subprocess, "run",
                 return_value=SimpleNamespace(stdout=path.read_bytes()),
@@ -75,6 +79,28 @@ class SigningProfileExpirationGateTests(unittest.TestCase):
                     ["security", "cms", "-D", "-i", str(path)],
                     check=True, capture_output=True,
                 )
+
+    def test_app_store_profile_is_rejected_for_direct_iphone_install(self):
+        result = SimpleNamespace(stdout=profile(datetime(2099, 1, 1)))
+        with mock.patch.object(verify_signed_ipa.subprocess, "run", return_value=result):
+            with self.assertRaisesRegex(ValueError, "not device-installable"):
+                sign_ipa.extract_entitlements("app-store.mobileprovision")
+
+    def test_empty_ad_hoc_device_list_is_rejected(self):
+        result = SimpleNamespace(stdout=profile(datetime(2099, 1, 1), devices=[]))
+        with mock.patch.object(verify_signed_ipa.subprocess, "run", return_value=result):
+            with self.assertRaisesRegex(ValueError, "not device-installable"):
+                sign_ipa.extract_entitlements("empty-ad-hoc.mobileprovision")
+
+    def test_enterprise_profile_can_provision_all_devices(self):
+        result = SimpleNamespace(stdout=profile(datetime(2099, 1, 1), all_devices=True))
+        with mock.patch.object(verify_signed_ipa.subprocess, "run", return_value=result):
+            self.assertEqual(
+                sign_ipa.extract_entitlements("enterprise.mobileprovision")[
+                    "application-identifier"
+                ],
+                "TEAM.app.lgm.7517",
+            )
 
 
 if __name__ == "__main__":
