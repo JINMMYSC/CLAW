@@ -46,6 +46,8 @@ public final class ClawEdgeTTSService: NSObject, AVAudioPlayerDelegate {
   private var audioFileURL: URL?
   private var synthesisTask: Task<Void, Never>?
   private var activeRequestID: UUID?
+  // Only callbacks from the current on-device utterance may end playback.
+  private var activeOfflineUtterance: AVSpeechUtterance?
 
   private override init() {
     super.init()
@@ -137,6 +139,7 @@ public final class ClawEdgeTTSService: NSObject, AVAudioPlayerDelegate {
   /// 停止播放
   public func stop() {
     activeRequestID = nil
+    activeOfflineUtterance = nil
     synthesisTask?.cancel()
     synthesisTask = nil
     player?.stop()
@@ -161,6 +164,7 @@ public final class ClawEdgeTTSService: NSObject, AVAudioPlayerDelegate {
     let baseRate = AVSpeechUtteranceDefaultSpeechRate
     utterance.rate = baseRate * (1 + Float(ratePercent) / 100)
     utterance.pitchMultiplier = 1 + Float(pitchHz) / 200
+    activeOfflineUtterance = utterance
     synthesizer.delegate = self
     synthesizer.speak(utterance)
   }
@@ -168,6 +172,7 @@ public final class ClawEdgeTTSService: NSObject, AVAudioPlayerDelegate {
   // MARK: - AVAudioPlayerDelegate
 
   public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+    guard player === self.player else { return }
     self.player = nil
     removeAudioFile()
     isSpeaking = false
@@ -179,11 +184,15 @@ public final class ClawEdgeTTSService: NSObject, AVAudioPlayerDelegate {
 
 extension ClawEdgeTTSService: AVSpeechSynthesizerDelegate {
   public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    guard synthesizer === self.synthesizer, utterance === activeOfflineUtterance else { return }
+    activeOfflineUtterance = nil
     isSpeaking = false
     try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
   }
 
   public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+    guard synthesizer === self.synthesizer, utterance === activeOfflineUtterance else { return }
+    activeOfflineUtterance = nil
     isSpeaking = false
     try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
   }
