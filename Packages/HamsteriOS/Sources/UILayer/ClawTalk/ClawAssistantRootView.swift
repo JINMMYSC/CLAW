@@ -297,12 +297,24 @@ private struct ClawScreenshotReviewSheet: View {
     _reviewedMessages = State(initialValue: preview.messages)
   }
 
+  /// Reassign OCR rows only after the user explicitly chooses a person in
+  /// the review sheet. The storage service rejects silent cross-person moves.
+  private func chooseProfile(_ id: UUID) {
+    selectedProfileID = id
+    reviewedMessages = reviewedMessages.map { message in
+      var reviewed = message
+      reviewed.contactID = id
+      return reviewed
+    }
+  }
+
   private var canConfirm: Bool {
-    selectedProfileID != nil && !reviewedMessages.isEmpty &&
-      reviewedMessages.allSatisfy {
-        $0.speaker != .unknown &&
-        !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      }
+    guard let selectedProfileID else { return false }
+    return !reviewedMessages.isEmpty && reviewedMessages.allSatisfy {
+      ($0.speaker == .me || $0.speaker == .other) &&
+      ($0.contactID == nil || $0.contactID == selectedProfileID) &&
+      !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
   }
 
   var body: some View {
@@ -324,7 +336,7 @@ private struct ClawScreenshotReviewSheet: View {
         Section {
           Menu {
             ForEach(availableProfiles) { profile in
-              Button(profile.displayName) { selectedProfileID = profile.id }
+              Button(profile.displayName) { chooseProfile(profile.id) }
             }
             Button("＋ 新建聊天对象") { showingNewProfile = true }
           } label: {
@@ -420,7 +432,7 @@ private struct ClawScreenshotReviewSheet: View {
                   relationship: newProfileRelationship.trimmingCharacters(in: .whitespacesAndNewlines)
                 ))
                 availableProfiles = HeartTargetService.shared.profiles
-                selectedProfileID = profile.id
+                chooseProfile(profile.id)
                 showingNewProfile = false
               }
               .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
