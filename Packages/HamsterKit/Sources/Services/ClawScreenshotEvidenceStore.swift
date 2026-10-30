@@ -44,7 +44,11 @@ public final class ClawScreenshotEvidenceStore {
   public func url(for sourceRef: String) -> URL? {
     let prefix = "screenshot-evidence:"
     guard sourceRef.hasPrefix(prefix) else { return nil }
-    let id = String(sourceRef.dropFirst(prefix.count))
+    // Source references may originate in imported conversations. Accept only
+    // canonical UUID filenames, never arbitrary path components or traversal.
+    guard let id = UUID(uuidString: String(sourceRef.dropFirst(prefix.count)))?.uuidString else {
+      return nil
+    }
     let url = encryptedURL.appendingPathComponent(id + ".clawenc")
     return fileManager.fileExists(atPath: url.path) ? url : nil
   }
