@@ -32,7 +32,12 @@ class SigningKeychainIsolationTests(unittest.TestCase):
                 ["security", "list-keychains"],
                 ["security", "default-keychain"],
             ) for c in commands))
-            import_p12.assert_called_once()
+            self.assertEqual(import_p12.call_count, 4)
+            sensitive_commands = [call.args[0] for call in import_p12.call_args_list]
+            self.assertTrue(any(c[:2] == ["security", "import"] for c in sensitive_commands))
+            self.assertFalse(any(c[:2] in (["security", "list-keychains"],
+                                           ["security", "default-keychain"])
+                                 for c in sensitive_commands))
 
     def test_signing_keychain_is_deleted_even_when_no_identity_is_found(self):
         with (
