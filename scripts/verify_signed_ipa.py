@@ -121,6 +121,24 @@ def validate_profile_expiration(profile, now=None):
         raise ValueError("provisioning profile expired")
 
 
+def validate_device_installable_profile(profile):
+    """A directly installed IPA needs Ad Hoc device authorization or enterprise scope.
+
+    App Store / TestFlight distribution profiles can sign an app, but do not
+    authorize installing that IPA directly onto an iPhone.
+    """
+    if profile.get("ProvisionsAllDevices") is True:
+        return
+    devices = profile.get("ProvisionedDevices")
+    if (isinstance(devices, list) and devices
+            and all(isinstance(device, str) and device.strip() for device in devices)):
+        return
+    raise ValueError(
+        "provisioning profile is not device-installable; "
+        "use an Ad Hoc profile including the target iPhone or an enterprise profile"
+    )
+
+
 def extract_profile(profile_path):
     """Decode and validate the complete Apple CMS provisioning profile."""
     result = subprocess.run(
@@ -130,6 +148,7 @@ def extract_profile(profile_path):
     )
     profile = plistlib.loads(result.stdout)
     validate_profile_expiration(profile)
+    validate_device_installable_profile(profile)
     return profile
 
 
