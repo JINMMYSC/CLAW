@@ -266,8 +266,8 @@ def verify_ipa_source_sha(archive, expected_sha):
         raise ValueError("expected source SHA must be a lowercase 40-character commit ID")
     verify_release_bundle_manifest(archive)
     paths = [name for name in archive.namelist()
-             if re.fullmatch(r"Payload/[^/]+\\.app/Info\\.plist", name)
-             or re.fullmatch(r"Payload/[^/]+\\.app/PlugIns/[^/]+\\.appex/Info\\.plist", name)]
+             if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", name)
+             or re.fullmatch(r"Payload/[^/]+\.app/PlugIns/[^/]+\.appex/Info\.plist", name)]
     for path in paths:
         actual = plistlib.loads(archive.read(path)).get("ClawSourceCommit")
         if actual != expected_sha:
