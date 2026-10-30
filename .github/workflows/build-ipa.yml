@@ -104,6 +104,31 @@ jobs:
           print("Provisioning profiles share a developer team and compatible device scope")
           PY
 
+      - name: Verify P12 certificate matches all three profiles before Xcode build
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          P12_B64: ${{ secrets.P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          MAIN_PROFILE_B64: ${{ secrets.PROFILE_MAIN_B64 }}
+          EXT_PROFILE_B64: ${{ secrets.PROFILE_EXT_B64 }}
+          WIDGET_PROFILE_B64: ${{ secrets.PROFILE_WIDGET_B64 }}
+          CLAW_TARGET_DEVICE_UDID: ${{ secrets.CLAW_TARGET_DEVICE_UDID }}
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          printf '%s' "$P12_B64" | base64 -D > "$tmp/sign.p12"
+          printf '%s' "$MAIN_PROFILE_B64" | base64 -D > "$tmp/main.mobileprovision"
+          printf '%s' "$EXT_PROFILE_B64" | base64 -D > "$tmp/keyboard.mobileprovision"
+          printf '%s' "$WIDGET_PROFILE_B64" | base64 -D > "$tmp/widget.mobileprovision"
+          python3 scripts/sign_ipa.py \
+            --preflight-signing-assets \
+            --p12 "$tmp/sign.p12" \
+            --password-env P12_PASSWORD \
+            --main-profile "$tmp/main.mobileprovision" \
+            --bundle-profile "app.lgm.7517.123=$tmp/keyboard.mobileprovision" \
+            --bundle-profile "app.lgm.7517.widget=$tmp/widget.mobileprovision"
+
       - name: Download Rime frameworks (zgl v0.1.0)
         run: |
           set -euo pipefail
