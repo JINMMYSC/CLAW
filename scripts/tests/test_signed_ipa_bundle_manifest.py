@@ -7,12 +7,13 @@ import unittest
 import zipfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from verify_signed_ipa import verify_release_bundle_manifest
+from verify_signed_ipa import verify_release_bundle_manifest, verify_ipa_source_sha
 
 
 class SignedIPABundleManifestTests(unittest.TestCase):
     def archive(self, omit_widget=False, keyboard_id="app.lgm.7517.123",
-                widget_minimum="15.0"):
+                widget_minimum="15.0", source_sha="a" * 40,
+                widget_source_sha=None):
         buffer = io.BytesIO()
         bundles = [
             ("Payload/Hamster.app/Info.plist", "app.lgm.7517", "15.0"),
@@ -26,10 +27,16 @@ class SignedIPABundleManifestTests(unittest.TestCase):
             ))
         with zipfile.ZipFile(buffer, "w") as archive:
             for name, bundle_id, minimum in bundles:
-                archive.writestr(name, plistlib.dumps({
+                metadata = {
                     "CFBundleIdentifier": bundle_id,
                     "MinimumOSVersion": minimum,
-                }))
+                    "ClawSourceCommit": (
+                        widget_source_sha
+                        if widget_source_sha is not None and bundle_id == "app.lgm.7517.widget"
+                        else source_sha
+                    ),
+                }
+                archive.writestr(name, plistlib.dumps(metadata))
         buffer.seek(0)
         return zipfile.ZipFile(buffer)
 
@@ -51,6 +58,30 @@ class SignedIPABundleManifestTests(unittest.TestCase):
         with self.archive(widget_minimum="16.0") as archive:
             with self.assertRaisesRegex(ValueError, "iOS 15"):
                 verify_release_bundle_manifest(archive)
+
+    def test_unsigned_source_sha_matches_all_three_bundles(self):
+        with self.archive() as archive:
+            verify_ipa_source_sha(archive, "a" * 40)
+
+    def test_unsigned_source_sha_rejects_wrong_widget_commit(self):
+        with self.archive(widget_source_sha="b" * 40) as archive:
+            with self.assertRaisesRegex(ValueError, "source SHA mismatch"):
+                verify_ipa_source_sha(archive, "a" * 40)
+
+    def test_unsigned_source_sha_rejects_missing_widget_stamp(self):
+        with self.archive(widget_source_sha="") as archive:
+            with self.assertRaisesRegex(ValueError, "source SHA mismatch"):
+                verify_ipa_source_sha(archive, "a" * 40)
+
+    def test_unsigned_source_sha_rejects_invalid_expected_sha(self):
+        with self.archive() as archive:
+            with self.assertRaisesRegex(ValueError, "lowercase 40-character"):
+                verify_ipa_source_sha(archive, "A" * 40)
+
+    def test_unsigned_source_sha_requires_widget_bundle(self):
+        with self.archive(omit_widget=True) as archive:
+            with self.assertRaisesRegex(ValueError, "Widget"):
+                verify_ipa_source_sha(archive, "a" * 40)
 
 
 if __name__ == "__main__":
