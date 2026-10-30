@@ -53,6 +53,29 @@ final class ClawVoiceAndCandidatePolicyTests: XCTestCase {
     XCTAssertTrue(ClawVoiceInputService.makeOneShotRequest().shouldReportPartialResults)
   }
 
+  func testOnlineSpeechRequiresStrictBooleanConsent() {
+    XCTAssertFalse(ClawVoiceCloudConsentPolicy.permitsOnlineRecognition(nil))
+    XCTAssertFalse(ClawVoiceCloudConsentPolicy.permitsOnlineRecognition(false))
+    XCTAssertFalse(ClawVoiceCloudConsentPolicy.permitsOnlineRecognition(1))
+    XCTAssertFalse(ClawVoiceCloudConsentPolicy.permitsOnlineRecognition("true"))
+    XCTAssertTrue(ClawVoiceCloudConsentPolicy.permitsOnlineRecognition(true))
+  }
+
+  func testOnDeviceSpeechIsMandatoryWithoutCloudConsent() {
+    XCTAssertEqual(ClawVoiceRecognitionPolicy.mode(
+      supportsOnDevice: true, allowsCloud: false, prefersOnDevice: false
+    ), .onDevice)
+    XCTAssertEqual(ClawVoiceRecognitionPolicy.mode(
+      supportsOnDevice: false, allowsCloud: false, prefersOnDevice: false
+    ), .unavailable)
+    XCTAssertEqual(ClawVoiceRecognitionPolicy.mode(
+      supportsOnDevice: false, allowsCloud: true, prefersOnDevice: false
+    ), .online)
+    XCTAssertEqual(ClawVoiceRecognitionPolicy.mode(
+      supportsOnDevice: true, allowsCloud: true, prefersOnDevice: true
+    ), .onDevice)
+  }
+
   func testExpandedCandidateHeightUsesRootHeightWhenKeyboardBoundsAreNotReady() {
     XCTAssertEqual(
       CandidateExpandedLayoutMetrics.toolbarHeight(
