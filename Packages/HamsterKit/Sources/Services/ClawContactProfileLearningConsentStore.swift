@@ -118,11 +118,11 @@ public final class ClawContactProfileLearningConsentStore {
   /// A numeric/string value bridged by Foundation is not explicit user consent.
   /// Every read and authorization gate must use the same fail-closed rule.
   private func isExplicitlyGranted(in defaults: UserDefaults, for contactID: UUID) -> Bool {
-    guard let stored = defaults.object(forKey: key(for: contactID)),
-          CFGetTypeID(stored as CFTypeRef) == CFBooleanGetTypeID() else {
+    guard let stored = defaults.object(forKey: key(for: contactID)) as? NSNumber,
+          CFGetTypeID(stored) == CFBooleanGetTypeID() else {
       return false
     }
-    return (stored as? Bool) == true
+    return stored.boolValue
   }
 
   private func authorizationTokenKey(for contactID: UUID) -> String {
