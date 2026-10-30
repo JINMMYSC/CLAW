@@ -8,6 +8,7 @@ import fnmatch
 import os
 import plistlib
 import re
+import stat
 import subprocess
 import tempfile
 import zipfile
@@ -222,9 +223,39 @@ def verify_bundle_tree(app_path, require_icloud=True):
     print("verified deep signature tree:", main_identifier)
 
 
+def verify_ipa_executable_modes(archive):
+    """Require executable Host/extension Mach-O modes in the final IPA ZIP."""
+    bundle_plists = []
+    for name in archive.namelist():
+        parts = name.split("/")
+        is_host = (len(parts) == 3 and parts[0] == "Payload"
+                   and parts[1].endswith(".app") and parts[2] == "Info.plist")
+        is_extension = (len(parts) == 5 and parts[0] == "Payload"
+                        and parts[1].endswith(".app") and parts[2] == "PlugIns"
+                        and parts[3].endswith(".appex") and parts[4] == "Info.plist")
+        if is_host or is_extension:
+            bundle_plists.append(name)
+    if not bundle_plists:
+        raise ValueError("no Host or extension Info.plist in IPA")
+    for plist_path in bundle_plists:
+        info = plistlib.loads(archive.read(plist_path))
+        executable = info.get("CFBundleExecutable")
+        if not isinstance(executable, str) or not executable:
+            raise ValueError("missing CFBundleExecutable in " + plist_path)
+        executable_path = plist_path.rsplit("/", 1)[0] + "/" + executable
+        try:
+            member = archive.getinfo(executable_path)
+        except KeyError:
+            raise ValueError("missing IPA executable: " + executable_path) from None
+        if not (stat.S_IMODE(member.external_attr >> 16) & stat.S_IXUSR):
+            raise ValueError("IPA executable lost owner execute permission: "
+                             + executable_path)
+
+
 def verify_ipa(ipa_path, require_icloud=True):
     with tempfile.TemporaryDirectory() as tmp:
         with zipfile.ZipFile(ipa_path) as archive:
+            verify_ipa_executable_modes(archive)
             archive.extractall(tmp)
         payload = os.path.join(tmp, "Payload")
         apps = [name for name in os.listdir(payload) if name.endswith(".app")]
