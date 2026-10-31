@@ -131,15 +131,45 @@ public enum ClawSpotlightIndexer {
 }
 
 public struct ClawWidgetSnapshot: Codable, Equatable, Sendable {
-  public var generatedAt: Date; public var summary: String; public var openTaskCount: Int
-  public init(generatedAt: Date = Date(), summary: String, openTaskCount: Int) { self.generatedAt = generatedAt; self.summary = summary; self.openTaskCount = openTaskCount }
+  public static let privacySafeSummary = "打开 CLAW 查看今日"
+  public var generatedAt: Date
+  public var summary: String
+  public var openTaskCount: Int
+
+  public init(generatedAt: Date = Date(), summary: String, openTaskCount: Int) {
+    self.generatedAt = generatedAt
+    // Widget surfaces can expose data outside the authenticated app.
+    // Keep the legacy initializer shape, but never store task titles here.
+    _ = summary
+    self.summary = Self.privacySafeSummary
+    self.openTaskCount = max(0, openTaskCount)
+  }
 }
 
 public enum ClawWidgetSnapshotStore {
   private static let key = "claw_widget_snapshot_v1"
-  public static func save(_ snapshot: ClawWidgetSnapshot) { UserDefaults(suiteName: HamsterConstants.appGroupName)?.set(try? JSONEncoder().encode(snapshot), forKey: key) }
+
+  public static func save(_ snapshot: ClawWidgetSnapshot) {
+    // A decoded or manually mutated snapshot may still contain private text.
+    let safe = ClawWidgetSnapshot(
+      generatedAt: snapshot.generatedAt,
+      summary: snapshot.summary,
+      openTaskCount: snapshot.openTaskCount
+    )
+    guard let data = try? JSONEncoder().encode(safe) else { return }
+    UserDefaults(suiteName: HamsterConstants.appGroupName)?.set(data, forKey: key)
+  }
+
   public static func load() -> ClawWidgetSnapshot? {
-    guard let data = UserDefaults(suiteName: HamsterConstants.appGroupName)?.data(forKey: key) else { return nil }
-    return try? JSONDecoder().decode(ClawWidgetSnapshot.self, from: data)
+    guard let data = UserDefaults(suiteName: HamsterConstants.appGroupName)?.data(forKey: key),
+          let snapshot = try? JSONDecoder().decode(ClawWidgetSnapshot.self, from: data) else {
+      return nil
+    }
+    // Legacy app-group snapshots may contain a previously saved task title.
+    return ClawWidgetSnapshot(
+      generatedAt: snapshot.generatedAt,
+      summary: snapshot.summary,
+      openTaskCount: snapshot.openTaskCount
+    )
   }
 }
