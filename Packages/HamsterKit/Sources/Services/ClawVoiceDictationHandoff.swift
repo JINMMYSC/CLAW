@@ -140,6 +140,30 @@ public final class ClawVoiceDictationHandoff {
       clear()
       return nil
     }
+    // A decodable App Group record can still carry private speech text in an
+    // impossible state. Purge it before any keyboard snapshot or consumption.
+    switch record.state {
+    case .idle:
+      clear()
+      return nil
+    case .pending:
+      guard record.text == nil, record.error == nil else {
+        clear()
+        return nil
+      }
+    case .ready:
+      guard let text = record.text,
+            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            record.error == nil else {
+        clear()
+        return nil
+      }
+    case .failed:
+      guard record.text == nil else {
+        clear()
+        return nil
+      }
+    }
     return record
   }
 
