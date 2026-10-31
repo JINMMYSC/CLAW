@@ -1833,6 +1833,17 @@ private struct ClawContactDetailView: View {
   @State private var memories: [ClawMemoryItem] = []
   @State private var tasks: [ClawSecretaryTask] = []
   @State private var isSelected = false
+  @State private var isLearningConsentGranted = false
+  @State private var showLearningConsentExplanation = false
+  @State private var profileRevision = 0
+
+  private var canEnableLearning: Bool {
+    _ = profileRevision
+    guard let current = HeartTargetService.shared.profile(id: profile.id) else { return false }
+    return ClawContactProfileLearningPresentationPolicy.canSetConsent(
+      to: true, isGroup: current.isGroup, isConfirmed: !current.autoCreated
+    )
+  }
 
   var body: some View {
     List {
@@ -1846,6 +1857,34 @@ private struct ClawContactDetailView: View {
           Label("与此人对话", systemImage: "message.fill")
         }
         .accessibilityHint("设为当前人物并打开 CLAW 助手")
+      }
+      Section {
+        Toggle("允许 AI 学习此人物画像", isOn: Binding(
+          get: { isLearningConsentGranted },
+          set: { enabled in
+            let current = HeartTargetService.shared.profile(id: profile.id)
+            guard ClawContactProfileLearningPresentationPolicy.canSetConsent(
+              to: enabled,
+              isGroup: current?.isGroup ?? true,
+              isConfirmed: !(current?.autoCreated ?? true)
+            ) else { return }
+            if enabled {
+              showLearningConsentExplanation = true
+            } else {
+              ClawContactProfileLearningConsentStore.shared.setGranted(false, for: profile.id)
+              isLearningConsentGranted = false
+            }
+          }
+        ))
+        .disabled(!canEnableLearning && !isLearningConsentGranted)
+        if !canEnableLearning {
+          Text("仅已确认的个人档案可开启；群聊不能授权画像学习。")
+            .font(.footnote).foregroundColor(.secondary)
+        }
+        Text("默认关闭。开启后，此人物的聊天内容可能发送给当前配置的 AI 服务生成画像；关闭后阻止新的学习，但不会自动删除已生成内容。")
+          .font(.footnote).foregroundColor(.secondary)
+      } header: {
+        Text("画像学习授权")
       }
       Section {
         if profile.autoCreated {
@@ -1917,12 +1956,27 @@ private struct ClawContactDetailView: View {
       }
     }
     .navigationTitle(profile.displayName)
+    .alert("允许 AI 学习此人物画像？", isPresented: $showLearningConsentExplanation) {
+      Button("同意并开启") {
+        guard canEnableLearning else { return }
+        ClawContactProfileLearningConsentStore.shared.setGranted(true, for: profile.id)
+        isLearningConsentGranted = ClawContactProfileLearningConsentStore.shared.isGranted(for: profile.id)
+      }
+      Button("取消", role: .cancel) {
+        isLearningConsentGranted = ClawContactProfileLearningConsentStore.shared.isGranted(for: profile.id)
+      }
+    } message: {
+      Text("仅对此人物授权。结构化聊天内容可能发送给当前配置的 AI 服务；可随时撤销，已生成画像不会自动删除。")
+    }
     .onAppear {
       isSelected = HeartTargetService.shared.selectedProfile?.id == profile.id
+      isLearningConsentGranted = ClawContactProfileLearningConsentStore.shared.isGranted(for: profile.id)
       reloadProfileData()
     }
     .onReceive(NotificationCenter.default.publisher(for: .heartTargetProfilesDidChange)) { _ in
+      profileRevision &+= 1
       isSelected = HeartTargetService.shared.selectedProfile?.id == profile.id
+      isLearningConsentGranted = ClawContactProfileLearningConsentStore.shared.isGranted(for: profile.id)
     }
   }
 
