@@ -2,9 +2,21 @@
 """Fail closed unless a manually dispatched signed release uses one frozen SHA."""
 
 import argparse
+import os
 import re
 import subprocess
 import sys
+
+
+# Only the reviewed release-candidate branch is permitted to request signing.
+# This is an accidental-release guard, not a substitute for protected GitHub
+# environments, trusted workflows, and required signing approvals.
+SIGNED_RELEASE_REF = "refs/heads/feature/claw-ipa-build-candidate-20261030"
+
+
+def verify_release_ref(github_ref: str) -> None:
+    if github_ref != SIGNED_RELEASE_REF:
+        raise ValueError("signed release must use the audited release-candidate branch")
 
 
 def verify_frozen_release_sha(frozen_sha: str, github_sha: str, checkout_sha: str) -> None:
@@ -31,6 +43,7 @@ def main(argv=None) -> int:
         print("Signed release SHA gate FAILED: cannot read checked-out commit", file=sys.stderr)
         return 1
     try:
+        verify_release_ref(os.environ.get("GITHUB_REF", ""))
         verify_frozen_release_sha(
             args.frozen_sha, args.github_sha, result.stdout.strip()
         )
