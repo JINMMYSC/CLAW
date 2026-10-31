@@ -107,7 +107,7 @@ public struct HeartTargetProfile: Codable, Identifiable, Equatable {
 public class HeartTargetService {
   public static let shared = HeartTargetService()
 
-  private let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
+  private let defaults: UserDefaults?
   private let profilesKey = "heart_target_profiles"
   private let selectedKey = "heart_target_selected"
 
@@ -121,7 +121,9 @@ public class HeartTargetService {
 
   public var hasProfiles: Bool { !profiles.isEmpty }
 
-  init() {
+  // Test-only injection keeps privacy regressions away from the real App Group.
+  init(defaults: UserDefaults? = UserDefaults(suiteName: HamsterConstants.appGroupName)) {
+    self.defaults = defaults
     reload()
   }
 
