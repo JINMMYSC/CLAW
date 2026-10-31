@@ -79,10 +79,19 @@ public enum ClawScreenshotReviewScopePolicy {
 public final class ClawScreenshotIngestionService {
   private let store: ClawMemoryStore
   private let parser: ClawScreenshotChatParser
+  private let profileLookup: (UUID) -> HeartTargetProfile?
 
-  public init(store: ClawMemoryStore = .shared, parser: ClawScreenshotChatParser = .shared) {
+  public convenience init(store: ClawMemoryStore = .shared, parser: ClawScreenshotChatParser = .shared) {
+    self.init(store: store, parser: parser, profileLookup: { HeartTargetService.shared.profile(id: $0) })
+  }
+
+  // Internal XCTest seam; the public production initializer always consults
+  // the persisted contact authority instead of trusting a review snapshot.
+  init(store: ClawMemoryStore, parser: ClawScreenshotChatParser = .shared,
+       profileLookup: @escaping (UUID) -> HeartTargetProfile?) {
     self.store = store
     self.parser = parser
+    self.profileLookup = profileLookup
   }
 
   public func ingest(
@@ -133,6 +142,11 @@ public final class ClawScreenshotIngestionService {
     guard !profile.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       throw ClawScreenshotReviewError.missingPerson
     }
+    // The contact may have been deleted, renamed or reclassified while the
+    // review sheet was open. A stale snapshot is never write authorization.
+    guard isCurrentConfirmedIndividual(profile) else {
+      throw ClawScreenshotReviewError.missingPerson
+    }
     guard !messages.isEmpty else { throw ClawScreenshotReviewError.emptyMessages }
     guard messages.allSatisfy({
       ClawScreenshotReviewScopePolicy.permits($0, for: profile.id)
@@ -157,10 +171,24 @@ public final class ClawScreenshotIngestionService {
       candidates.append(item)
       seen.append(item)
     }
+    // Narrow the cross-process race window before the actual SQLite write.
+    guard isCurrentConfirmedIndividual(profile) else {
+      throw ClawScreenshotReviewError.missingPerson
+    }
     let inserted = try store.appendConversationsBatch(candidates)
     return ClawScreenshotImportReceipt(
       personID: profile.id, messageIDs: inserted.map(\.id)
     )
+  }
+
+  private func isCurrentConfirmedIndividual(_ snapshot: HeartTargetProfile) -> Bool {
+    guard let current = profileLookup(snapshot.id) else { return false }
+    return current.id == snapshot.id &&
+      current.name == snapshot.name &&
+      current.updatedAt == snapshot.updatedAt &&
+      current.isGroup == snapshot.isGroup &&
+      current.autoCreated == snapshot.autoCreated &&
+      !current.isGroup && !current.autoCreated
   }
 
   /// Undo only a specific, verified import receipt. Duplicate messages from
