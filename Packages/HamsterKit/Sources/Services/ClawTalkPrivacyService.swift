@@ -55,9 +55,15 @@ public final class ClawTalkPrivacyService {
   /// 切换采集状态，返回切换后的新值
   @discardableResult
   public func toggle() -> Bool {
-    let next = !isCollectionEnabled
-    isCollectionEnabled = next
-    NotificationCenter.default.post(name: .clawPrivacyDidChange, object: nil)
-    return next
+    // A keyboard extension may be denied access to its App Group container.
+    // Never report success or notify observers when the write cannot persist.
+    guard let defaults else { return false }
+    let previous = isCollectionEnabled
+    defaults.set(!previous, forKey: key)
+    let persisted = isCollectionEnabled
+    if persisted != previous {
+      NotificationCenter.default.post(name: .clawPrivacyDidChange, object: nil)
+    }
+    return persisted
   }
 }
