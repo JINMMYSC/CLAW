@@ -40,7 +40,7 @@ struct ClawAssistantRootView: View {
       _ = ClawKeyboardDeferredEventService.shared.drainIntoHostServices()
       let openTasks = (try? ClawMemoryStore.shared.tasks(status: .open, limit: 100)) ?? []
       ClawWidgetSnapshotStore.save(.init(
-        summary: openTasks.first?.title ?? "打开 CLAW 查看今日",
+        summary: ClawWidgetSnapshot.privacySafeSummary,
         openTaskCount: openTasks.count
       ))
       // Never expose personal memory text to system Spotlight by default.
