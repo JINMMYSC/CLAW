@@ -115,6 +115,8 @@ public class HeartTargetService {
   public private(set) var selectedIndex: Int = -1
 
   public var selectedProfile: HeartTargetProfile? {
+    // Host and Keyboard have separate processes; never expose a deleted contact.
+    reload()
     guard selectedIndex >= 0, selectedIndex < profiles.count else { return nil }
     return profiles[selectedIndex]
   }
@@ -152,6 +154,8 @@ public class HeartTargetService {
 
   @discardableResult
   public func upsert(_ profile: HeartTargetProfile) -> HeartTargetProfile {
+    // Preserve contacts saved by another process since this instance loaded.
+    reload()
     var profile = profile
     profile.updatedAt = Date()
     if let idx = profiles.firstIndex(where: { $0.id == profile.id }) {
@@ -213,19 +217,27 @@ public class HeartTargetService {
   }
 
   public func select(at index: Int) {
+    // Resolve the displayed person's stable ID before the persisted list changes.
     guard index >= 0, index < profiles.count else { return }
-    selectedIndex = index
+    let selectedID = profiles[index].id
+    reload()
+    guard let currentIndex = profiles.firstIndex(where: { $0.id == selectedID }) else { return }
+    selectedIndex = currentIndex
     persist()
   }
 
   public func select(id: UUID) {
+    reload()
     if let idx = profiles.firstIndex(where: { $0.id == id }) {
-      select(at: idx)
+      selectedIndex = idx
+      persist()
     }
   }
 
   /// 全局模式：只使用用户全局记忆，不混合任何联系人档案。
   public func clearSelection() {
+    // A stale keyboard process must not overwrite newer shared contacts.
+    reload()
     selectedIndex = -1
     persist()
   }
