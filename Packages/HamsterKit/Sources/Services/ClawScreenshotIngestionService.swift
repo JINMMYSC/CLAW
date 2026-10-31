@@ -102,9 +102,13 @@ public final class ClawScreenshotIngestionService {
 
   private func isCurrentProfile(_ snapshot: HeartTargetProfile) -> Bool {
     guard let current = profileLookup(snapshot.id) else { return false }
+    // An OCR-created or group profile is not confirmed individual authority.
+    // Also reject snapshots whose confirmation state changed after review.
     return current.updatedAt == snapshot.updatedAt &&
       current.name == snapshot.name &&
-      current.isGroup == snapshot.isGroup
+      current.isGroup == snapshot.isGroup &&
+      current.autoCreated == snapshot.autoCreated &&
+      !current.isGroup && !current.autoCreated
   }
 
   public func ingest(
