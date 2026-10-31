@@ -162,7 +162,7 @@ public class HeartTargetService {
       profiles[idx] = profile
     } else {
       profiles.append(profile)
-      if selectedIndex < 0 { selectedIndex = 0 }
+      // New contacts must not silently leave global mode.
     }
     persist()
     return profile
