@@ -116,12 +116,33 @@ public final class ClawScreenshotIngestionService {
     // write screenshot-derived memories or tasks without explicit approval.
     requireUserReview: Bool = true
   ) throws -> ClawScreenshotIngestionResult {
-    let preview = parser.parse(lines: lines, contactID: selectedProfile?.id, contactName: selectedProfile?.displayName, capturedAt: capturedAt, sourceRef: sourceRef)
-    let resolution = selectedProfile.map { ClawContactResolution(profile: $0, confidence: 1, created: false, reason: "selected") }
-      // Screenshot OCR is not an authorization to create a person. Unknown or
-      // ambiguously matched titles must remain in review until the user chooses
-      // a person explicitly. Avoid changing the current person as a side effect.
-      ?? ClawContactIdentityResolver.shared.resolve(displayTitle: preview.detectedTitle, allowCreate: false)
+    // A selected profile is a snapshot. It may have been deleted, renamed or
+    // reclassified while the OCR sheet was open; never prefill private identity
+    // from an outdated selection, even when its old title is still visible.
+    let staleSelection = selectedProfile.map { !isCurrentProfile($0) } ?? false
+    let trustedSelection = staleSelection ? nil : selectedProfile
+    let preview = parser.parse(
+      lines: lines, contactID: trustedSelection?.id,
+      contactName: trustedSelection?.displayName,
+      capturedAt: capturedAt, sourceRef: sourceRef
+    )
+    let resolution: ClawContactResolution
+    if staleSelection {
+      // Do not fall back to an OCR title match for a stale explicit selection.
+      // Require the user to choose the current contact again.
+      resolution = ClawContactResolution(
+        profile: nil, confidence: 0, created: false, reason: "stale-selection"
+      )
+    } else if let trustedSelection {
+      resolution = ClawContactResolution(
+        profile: trustedSelection, confidence: 1, created: false, reason: "selected"
+      )
+    } else {
+      // OCR is not authorization to create or change a person.
+      resolution = ClawContactIdentityResolver.shared.resolve(
+        displayTitle: preview.detectedTitle, allowCreate: false
+      )
+    }
     let parsed = parser.parse(lines: lines, contactID: resolution.profile?.id, contactName: resolution.profile?.displayName, capturedAt: capturedAt, sourceRef: sourceRef)
     // OCR confidence and even an explicitly selected person do not constitute
     // consent to save private conversations, derive tasks or build a profile.
