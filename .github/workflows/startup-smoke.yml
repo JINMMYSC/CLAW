@@ -95,27 +95,45 @@ jobs:
           xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
             >smoke-first-launch-console.log 2>&1 &
           monitor=$!
+          # A first-install RIME deployment can stall transiently on a busy
+          # hosted simulator. Retry once with the same installed app; do not
+          # skip readiness, liveness, or the later migration/UI assertions.
           ready=0
-          # First launch unpacks RIME resources and compiles schemas. On a loaded
-          # macOS runner this legitimately takes well over 90s, so the wait window
-          # is generous; a real hang still fails via the liveness check below.
-          for _ in $(seq 1 48); do
-            sleep 5
-            if grep -Eq "\[clawTalk\] first-launch (ready|deployment completed)$" smoke-first-launch-console.log; then
-              ready=1
-              break
+          for attempt in 1 2; do
+            if [ "$attempt" -eq 2 ]; then
+              echo "First-launch did not become ready after 240s; retrying once"
+              kill "$monitor" 2>/dev/null || true
+              xcrun simctl terminate "$SIMULATOR_UDID" app.lgm.7517 || true
+              wait "$monitor" 2>/dev/null || true
+              xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
+                >smoke-first-launch-retry-console.log 2>&1 &
+              monitor=$!
+              current_log=smoke-first-launch-retry-console.log
+            else
+              current_log=smoke-first-launch-console.log
             fi
-            if ! kill -0 "$monitor" 2>/dev/null; then
-              echo "App exited while seeding first-launch data"
-              cat smoke-first-launch-console.log
-              exit 1
-            fi
+            for _ in $(seq 1 48); do
+              sleep 5
+              if grep -Eq "\[clawTalk\] first-launch (ready|deployment completed)$" "$current_log"; then
+                ready=1
+                break
+              fi
+              if ! kill -0 "$monitor" 2>/dev/null; then
+                echo "App exited while seeding first-launch data (attempt $attempt)"
+                cat "$current_log"
+                exit 1
+              fi
+            done
+            if [ "$ready" -eq 1 ]; then break; fi
+            echo "First-launch attempt $attempt timed out; recent stages:"
+            grep "claw-bootstrap:" "$current_log" | tail -n 12 || true
           done
           if [ "$ready" -ne 1 ]; then
-            echo "First-launch deployment did not complete within 240 seconds"
-            echo "Most recent initialization stages:"
-            grep "claw-bootstrap:" smoke-first-launch-console.log | tail -n 12 || true
+            echo "First-launch deployment did not complete after two 240s attempts"
             cat smoke-first-launch-console.log
+            if [ -f smoke-first-launch-retry-console.log ]; then
+              cat smoke-first-launch-retry-console.log
+            fi
             exit 1
           fi
           kill "$monitor" 2>/dev/null || true
@@ -258,6 +276,7 @@ jobs:
           path: |
             smoke-build.log
             smoke-first-launch-console.log
+            smoke-first-launch-retry-console.log
             smoke-console.log
             smoke-system.log
             smoke-screen-start.png
