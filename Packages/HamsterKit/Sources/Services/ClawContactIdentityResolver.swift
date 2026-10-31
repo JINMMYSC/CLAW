@@ -52,6 +52,12 @@ public final class ClawContactIdentityResolver {
         return ClawContactResolution(profile: nil, confidence: 0, created: false, reason: "ambiguous-avatar")
       }
       if let profile = matchingAvatars.first {
+        // A reused avatar or an OCR title belonging to someone else must
+        // never silently redirect private chat evidence to this person.
+        let titleMatches = profiles.filter { $0.matches(displayTitle: title) }
+        guard titleMatches.count == 1, titleMatches.first?.id == profile.id else {
+          return ClawContactResolution(profile: nil, confidence: 0, created: false, reason: "avatar-title-conflict")
+        }
         // OCR preview cannot persist or change the selected person.
         if allowCreate { touch(profile) }
         return ClawContactResolution(profile: profile, confidence: 0.995, created: false, reason: "avatar")
@@ -72,11 +78,10 @@ public final class ClawContactIdentityResolver {
       guard min(name.count, title.count) >= 2 else { return false }
       return name.contains(title) || title.contains(name)
     }
-    if fuzzy.count == 1, let profile = fuzzy.first {
-      // Preview-only resolution must not update lastSeenAt or persist the
-      // profile before the user explicitly approves the OCR import.
-      if allowCreate { touch(profile) }
-      return ClawContactResolution(profile: profile, confidence: 0.82, created: false, reason: "unique-fuzzy-title")
+    if !fuzzy.isEmpty {
+      // Substring matches are suggestions, not proof of identity.
+      // Require an explicit person selection before importing private data.
+      return ClawContactResolution(profile: nil, confidence: 0, created: false, reason: "fuzzy-title-requires-review")
     }
 
     guard allowCreate else {
