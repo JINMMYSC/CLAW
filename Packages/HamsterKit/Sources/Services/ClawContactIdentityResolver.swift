@@ -60,7 +60,13 @@ public final class ClawContactIdentityResolver {
         guard titleMatches.count == 1, titleMatches.first?.id == profile.id else {
           return ClawContactResolution(profile: nil, confidence: 0, created: false, reason: "avatar-title-conflict")
         }
-        // OCR preview cannot persist or change the selected person.
+        // A machine-created or group profile is not consent to attach a
+        // private individual screenshot, even when its avatar/title match.
+        guard permitsReadOnlyPreview(profile, allowCreate: allowCreate) else {
+          return ClawContactResolution(
+            profile: nil, confidence: 0, created: false, reason: "unconfirmed-person"
+          )
+        }
         if allowCreate { touch(profile) }
         return ClawContactResolution(profile: profile, confidence: 0.995, created: false, reason: "avatar")
       }
@@ -71,6 +77,11 @@ public final class ClawContactIdentityResolver {
       return ClawContactResolution(profile: nil, confidence: 0, created: false, reason: "ambiguous-name-or-alias")
     }
     if let profile = exactMatches.first {
+      guard permitsReadOnlyPreview(profile, allowCreate: allowCreate) else {
+        return ClawContactResolution(
+          profile: nil, confidence: 0, created: false, reason: "unconfirmed-person"
+        )
+      }
       if allowCreate { touch(profile) }
       return ClawContactResolution(profile: profile, confidence: 0.98, created: false, reason: "name-or-alias")
     }
@@ -102,6 +113,14 @@ public final class ClawContactIdentityResolver {
     let saved = service.upsert(profile)
     service.select(id: saved.id)
     return ClawContactResolution(profile: saved, confidence: 0.78, created: true, reason: "auto-created")
+  }
+
+  private func permitsReadOnlyPreview(
+    _ profile: HeartTargetProfile, allowCreate: Bool
+  ) -> Bool {
+    // Ingest's allowCreate:false is read-only OCR preview, not proof that an
+    // auto-created or group contact is a confirmed individual.
+    allowCreate || (!profile.autoCreated && !profile.isGroup)
   }
 
   private func touch(_ profile: HeartTargetProfile) {
