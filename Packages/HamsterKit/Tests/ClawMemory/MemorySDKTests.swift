@@ -100,6 +100,20 @@ final class MemorySDKTests: XCTestCase {
     XCTAssertEqual(try store.memoryV2VersionCount(id: record.id), 1)
   }
 
+  func testGlobalProjectionCannotExposeAnotherPersonsPrivateMemory() throws {
+    let global = makeRecord(content: "我的全局沟通偏好")
+    let privateContact = makeRecord(
+      content: "其他联系人的私人偏好",
+      scope: .person,
+      personID: UUID()
+    )
+    try sdk.remember(global)
+    try sdk.remember(privateContact)
+
+    let records = try sdk.projection(.communication, limit: 10).records
+    XCTAssertEqual(records.map(\.id), [global.id])
+  }
+
   func testFlushBatchWritesAllVersionsLegacyAndEvidence() throws {
     let sessionID = UUID()
     let raw = RawMemoryEvent(kind: "chat", content: "双方确认")
