@@ -30,6 +30,7 @@ from verify_signed_ipa import (
     extract_profile_entitlements,
     extract_profile,
     verify_bundle_tree,
+    reject_duplicate_archive_members,
     validate_common_installable_devices,
 )
 
@@ -188,6 +189,7 @@ def locate_ipa(input_path, tmp):
 
 def extract_ipa_archive(archive, destination):
     """Extract IPA files without losing executable modes needed by iOS."""
+    reject_duplicate_archive_members(archive)
     members = archive.infolist()
     for member in members:
         name = member.filename

@@ -293,8 +293,18 @@ EXPECTED_RELEASE_BUNDLE_IDS = frozenset({
 })
 
 
+def reject_duplicate_archive_members(archive):
+    """Reject ambiguous ZIP paths before trusting metadata or extracting an IPA."""
+    seen = set()
+    for member in archive.infolist():
+        if member.filename in seen:
+            raise ValueError("duplicate IPA archive member")
+        seen.add(member.filename)
+
+
 def verify_release_bundle_manifest(archive):
     """Fail closed if a signed release drops a target or raises the iOS 15 floor."""
+    reject_duplicate_archive_members(archive)
     names = archive.namelist()
     hosts = [name for name in names
              if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", name)]

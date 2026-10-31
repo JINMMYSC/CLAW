@@ -107,7 +107,7 @@ public struct HeartTargetProfile: Codable, Identifiable, Equatable {
 public class HeartTargetService {
   public static let shared = HeartTargetService()
 
-  private let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
+  private let defaults: UserDefaults?
   private let profilesKey = "heart_target_profiles"
   private let selectedKey = "heart_target_selected"
 
@@ -115,13 +115,17 @@ public class HeartTargetService {
   public private(set) var selectedIndex: Int = -1
 
   public var selectedProfile: HeartTargetProfile? {
+    // Host and Keyboard have separate processes; never expose a deleted contact.
+    reload()
     guard selectedIndex >= 0, selectedIndex < profiles.count else { return nil }
     return profiles[selectedIndex]
   }
 
   public var hasProfiles: Bool { !profiles.isEmpty }
 
-  init() {
+  // Test-only injection keeps privacy regressions away from the real App Group.
+  init(defaults: UserDefaults? = UserDefaults(suiteName: HamsterConstants.appGroupName)) {
+    self.defaults = defaults
     reload()
   }
 
@@ -129,9 +133,17 @@ public class HeartTargetService {
     if let data = defaults?.data(forKey: profilesKey),
        let decoded = try? JSONDecoder().decode([HeartTargetProfile].self, from: data) {
       profiles = decoded
+    } else {
+      // Missing or corrupt shared storage must not retain a private contact.
+      profiles = []
     }
-    selectedIndex = defaults?.integer(forKey: selectedKey) ?? -1
-    if selectedIndex >= profiles.count { selectedIndex = -1 }
+    // integer(forKey:) returns zero when the selection key is absent.
+    if let stored = defaults?.object(forKey: selectedKey) as? Int,
+       stored >= 0, stored < profiles.count {
+      selectedIndex = stored
+    } else {
+      selectedIndex = -1
+    }
   }
 
   private func persist() {
@@ -142,6 +154,8 @@ public class HeartTargetService {
 
   @discardableResult
   public func upsert(_ profile: HeartTargetProfile) -> HeartTargetProfile {
+    // Preserve contacts saved by another process since this instance loaded.
+    reload()
     var profile = profile
     profile.updatedAt = Date()
     if let idx = profiles.firstIndex(where: { $0.id == profile.id }) {
@@ -203,19 +217,27 @@ public class HeartTargetService {
   }
 
   public func select(at index: Int) {
+    // Resolve the displayed person's stable ID before the persisted list changes.
     guard index >= 0, index < profiles.count else { return }
-    selectedIndex = index
+    let selectedID = profiles[index].id
+    reload()
+    guard let currentIndex = profiles.firstIndex(where: { $0.id == selectedID }) else { return }
+    selectedIndex = currentIndex
     persist()
   }
 
   public func select(id: UUID) {
+    reload()
     if let idx = profiles.firstIndex(where: { $0.id == id }) {
-      select(at: idx)
+      selectedIndex = idx
+      persist()
     }
   }
 
   /// 全局模式：只使用用户全局记忆，不混合任何联系人档案。
   public func clearSelection() {
+    // A stale keyboard process must not overwrite newer shared contacts.
+    reload()
     selectedIndex = -1
     persist()
   }
