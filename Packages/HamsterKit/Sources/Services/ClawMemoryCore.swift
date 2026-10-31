@@ -1628,6 +1628,101 @@ public final class ClawMemoryStore {
     return result
   }
 
+  /// Local-only projection for legacy views. Use the requested owner and kind
+  /// as SQL predicates BEFORE LIMIT so unrelated, expired or inactive records
+  /// cannot displace a permitted older record. A nil owner never means all.
+  public func projectedMemoryV2(
+    kind: MemoryProjectionKind,
+    personID: UUID? = nil,
+    projectID: UUID? = nil,
+    limit: Int = 100,
+    now: Date = Date()
+  ) throws -> [MemoryV2Record] {
+    lock.lock(); defer { lock.unlock() }
+
+    let ownerPredicate: String
+    var ownerBindings: [String] = []
+    switch (personID, projectID) {
+    case (nil, nil):
+      ownerPredicate = "scope = 'global' AND person_id IS NULL AND project_id IS NULL"
+    case (let person?, nil):
+      ownerPredicate = "scope IN ('person','relationship') AND person_id = ? AND project_id IS NULL"
+      ownerBindings = [person.uuidString]
+    case (nil, let project?):
+      ownerPredicate = "scope = 'project' AND person_id IS NULL AND project_id = ?"
+      ownerBindings = [project.uuidString]
+    case (let person?, let project?):
+      ownerPredicate = "scope IN ('person','relationship','project') AND person_id = ? AND project_id = ?"
+      ownerBindings = [person.uuidString, project.uuidString]
+    }
+
+    let kindPredicate: String
+    switch kind {
+    case .relationship: kindPredicate = "(type = 'people' OR scope = 'relationship')"
+    case .project: kindPredicate = "(type = 'project' OR scope = 'project')"
+    case .episode: kindPredicate = "type = 'episodic'"
+    case .knowledge: kindPredicate = "type IN ('knowledge','semantic')"
+    case .communication: kindPredicate = "type IN ('communication','preference')"
+    }
+
+    let sql = """
+      SELECT payload FROM memory_v2
+      WHERE state IN ('active','confirmed')
+        AND (expires_at IS NULL OR expires_at > ?)
+        AND (\(ownerPredicate)) AND \(kindPredicate)
+      ORDER BY updated_at DESC LIMIT ?;
+      """
+    let statement = try prepare(sql)
+    defer { sqlite3_finalize(statement) }
+    sqlite3_bind_double(statement, 1, now.timeIntervalSince1970)
+    for (index, value) in ownerBindings.enumerated() {
+      bindText(value, at: Int32(index + 2), in: statement)
+    }
+    sqlite3_bind_int(statement, Int32(ownerBindings.count + 2), Int32(max(1, limit)))
+
+    var records: [MemoryV2Record] = []
+    while true {
+      let rc = sqlite3_step(statement)
+      if rc == SQLITE_DONE { break }
+      guard rc == SQLITE_ROW else {
+        throw ClawMemoryStoreError.sqlite(message: String(cString: sqlite3_errmsg(try requireDB())))
+      }
+      guard let blob = sqlite3_column_blob(statement, 0) else { continue }
+      let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0)))
+      guard let record = try? JSONDecoder().decode(MemoryV2Record.self, from: data) else { continue }
+      // Defense in depth if a migrated database has a stale SQL index column
+      // that disagrees with the source-of-truth encoded payload.
+      guard record.state == .active || record.state == .confirmed else { continue }
+      guard record.expiresAt.map({ $0 > now }) ?? true else { continue }
+      switch (personID, projectID) {
+      case (nil, nil):
+        guard record.scope == .global && record.personID == nil && record.projectID == nil else { continue }
+      case (let person?, nil):
+        guard (record.scope == .person || record.scope == .relationship),
+              record.personID == person && record.projectID == nil else { continue }
+      case (nil, let project?):
+        guard record.scope == .project && record.personID == nil && record.projectID == project else { continue }
+      case (let person?, let project?):
+        guard (record.scope == .person || record.scope == .relationship || record.scope == .project),
+              record.personID == person && record.projectID == project else { continue }
+      }
+      switch kind {
+      case .relationship:
+        guard record.type == .people || record.scope == .relationship else { continue }
+      case .project:
+        guard record.type == .project || record.scope == .project else { continue }
+      case .episode:
+        guard record.type == .episodic else { continue }
+      case .knowledge:
+        guard record.type == .knowledge || record.type == .semantic else { continue }
+      case .communication:
+        guard record.type == .communication || record.type == .preference else { continue }
+      }
+      records.append(record)
+    }
+    return records
+  }
+
   /// 按作用域/人物/状态筛选 V2 记忆，按最近更新排序。
   public func memoryV2(
     scope: MemoryScope? = nil,

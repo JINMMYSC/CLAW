@@ -219,19 +219,12 @@ public final class DefaultMemorySDK: MemorySDK {
   }
 
   public func projection(_ kind: MemoryProjectionKind, personID: UUID? = nil, projectID: UUID? = nil, limit: Int = 100) throws -> MemoryProjection {
-    let records = try store.memoryV2(limit: max(limit * 4, limit)).filter { record in
-      guard record.state == .active || record.state == .confirmed else { return false }
-      if let personID, record.personID != personID { return false }
-      if let projectID, record.projectID != projectID { return false }
-      switch kind {
-      case .relationship: return record.type == .people || record.scope == .relationship
-      case .project: return record.type == .project || record.scope == .project
-      case .episode: return record.type == .episodic
-      case .knowledge: return record.type == .knowledge || record.type == .semantic
-      case .communication: return record.type == .communication || record.type == .preference
-      }
-    }
-    return MemoryProjection(kind: kind, records: Array(records.prefix(max(1, limit))))
+    // Apply owner, lifecycle and kind constraints in SQLite before LIMIT.
+    // A missing owner means unowned global records only.
+    let records = try store.projectedMemoryV2(
+      kind: kind, personID: personID, projectID: projectID, limit: max(1, limit)
+    )
+    return MemoryProjection(kind: kind, records: records)
   }
 
   /// Internal compatibility projection used by the transactional screenshot
