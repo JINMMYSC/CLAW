@@ -41,4 +41,40 @@ final class ClawContactIdentityResolverTests: XCTestCase {
     XCTAssertFalse(result.created)
     XCTAssertEqual(HeartTargetService.shared.selectedProfile?.id, beforeSelection)
   }
+
+  // OCR preview-only resolution must not treat a machine-created or group
+  // profile as a confirmed person, even if its title matches exactly.
+  func testPreviewOnlyExactNameRejectsAutoCreatedProfile() {
+    let unconfirmed = HeartTargetProfile(name: "未确认OCR对象", autoCreated: true)
+    let result = ClawContactIdentityResolver(profilesProvider: { [unconfirmed] })
+      .resolve(displayTitle: "未确认OCR对象", allowCreate: false)
+    XCTAssertNil(result.profile)
+    XCTAssertFalse(result.created)
+  }
+
+  func testPreviewOnlyExactNameRejectsGroupProfile() {
+    let group = HeartTargetProfile(name: "群聊示例", isGroup: true)
+    let result = ClawContactIdentityResolver(profilesProvider: { [group] })
+      .resolve(displayTitle: "群聊示例", allowCreate: false)
+    XCTAssertNil(result.profile)
+    XCTAssertFalse(result.created)
+  }
+
+  func testPreviewOnlyAvatarMatchRejectsUnconfirmedProfile() {
+    let unconfirmed = HeartTargetProfile(
+      name: "未确认头像对象", autoCreated: true, avatarFingerprint: "ocr-avatar-fixture"
+    )
+    let result = ClawContactIdentityResolver(profilesProvider: { [unconfirmed] })
+      .resolve(displayTitle: "未确认头像对象",
+               avatarFingerprint: "ocr-avatar-fixture", allowCreate: false)
+    XCTAssertNil(result.profile)
+    XCTAssertFalse(result.created)
+  }
+
+  func testPreviewOnlyConfirmedIndividualStillResolves() {
+    let confirmed = HeartTargetProfile(name: "已确认人物")
+    let result = ClawContactIdentityResolver(profilesProvider: { [confirmed] })
+      .resolve(displayTitle: "已确认人物", allowCreate: false)
+    XCTAssertEqual(result.profile?.id, confirmed.id)
+  }
 }
