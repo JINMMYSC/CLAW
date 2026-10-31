@@ -2,6 +2,15 @@ import XCTest
 @testable import HamsterKit
 
 final class ClawScreenshotIngestionTests: XCTestCase {
+  private func makeService(
+    store: ClawMemoryStore,
+    profiles: [HeartTargetProfile]
+  ) -> ClawScreenshotIngestionService {
+    ClawScreenshotIngestionService(store: store, profileLookup: { id in
+      profiles.first(where: { $0.id == id })
+    })
+  }
+
   func testUnknownScreenshotTitleRequiresReviewWithoutCreatingOrSelectingPerson() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("screenshot-ingest-\(UUID())")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -33,7 +42,7 @@ final class ClawScreenshotIngestionTests: XCTestCase {
       VisionOCRService.OCRLine(text: "审核联系人", boundingBox: .init(x: 0.35, y: 0.9, width: 0.3, height: 0.04), confidence: 0.99),
       VisionOCRService.OCRLine(text: "明天下午提交设计", boundingBox: .init(x: 0.1, y: 0.5, width: 0.3, height: 0.04), confidence: 0.99),
     ]
-    let service = ClawScreenshotIngestionService(store: store)
+    let service = makeService(store: store, profiles: [profile])
     let preview = try service.ingest(lines: lines, selectedProfile: profile, sourceRef: "test", requireUserReview: true)
     XCTAssertTrue(preview.requiresReview)
     XCTAssertEqual(try store.conversation(contactID: profile.id).count, 0)
@@ -59,7 +68,7 @@ final class ClawScreenshotIngestionTests: XCTestCase {
       VisionOCRService.OCRLine(text: "重复截图", boundingBox: .init(x: 0.4, y: 0.9, width: 0.2, height: 0.04), confidence: 0.99),
       VisionOCRService.OCRLine(text: "周五提交方案", boundingBox: .init(x: 0.1, y: 0.5, width: 0.25, height: 0.04), confidence: 0.95)
     ]
-    let service = ClawScreenshotIngestionService(store: store)
+    let service = makeService(store: store, profiles: [profile])
     let source = "screenshot-digest:fixture"
     let firstPreview = try service.ingest(lines: lines, selectedProfile: profile,
       capturedAt: Date(timeIntervalSince1970: 1000), sourceRef: source, requireUserReview: true)
@@ -78,8 +87,9 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("overlap-\(UUID())")
     defer { try? FileManager.default.removeItem(at: root) }
     let store = ClawMemoryStore(databaseURL: root.appendingPathComponent("memory.sqlite"))
-    let service = ClawScreenshotIngestionService(store: store)
     let person = HeartTargetProfile(name: "A")
+    let anotherPerson = HeartTargetProfile(name: "B")
+    let service = makeService(store: store, profiles: [person, anotherPerson])
     let longText = "这份完整的项目验收方案需要下周五之前交给客户确认"
     let a = ClawConversationMessage(contactID: person.id, speaker: .other,
       content: longText, sourceType: "screenshot", sourceRef: "screenshot-digest:a")
@@ -98,7 +108,6 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     XCTAssertEqual(try service.confirmReviewed(messages: [short2], for: person), 1)
     XCTAssertEqual(try store.conversation(contactID: person.id).count, 3)
 
-    let anotherPerson = HeartTargetProfile(name: "B")
     XCTAssertThrowsError(try service.confirmReviewed(messages: [b], for: anotherPerson))
     XCTAssertEqual(try store.conversation(contactID: anotherPerson.id).count, 0)
   }
@@ -122,9 +131,9 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("undo-\(UUID())")
     defer { try? FileManager.default.removeItem(at: root) }
     let store = ClawMemoryStore(databaseURL: root.appendingPathComponent("memory.sqlite"))
-    let service = ClawScreenshotIngestionService(store: store)
     let profile = HeartTargetProfile(name: "A")
     let other = HeartTargetProfile(name: "B")
+    let service = makeService(store: store, profiles: [profile, other])
     let old = ClawConversationMessage(contactID: profile.id, speaker: .other,
       content: "上一次导入", sourceType: "screenshot", sourceRef: "screenshot-digest:old")
     let fresh = ClawConversationMessage(contactID: profile.id, speaker: .other,
@@ -153,7 +162,7 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     let unknown = ClawConversationMessage(
       contactID: nil, speaker: .unknown, content: "今晚发方案", sourceType: "screenshot"
     )
-    XCTAssertThrowsError(try ClawScreenshotIngestionService(store: store).confirmReviewed(messages: [unknown], for: profile))
+    XCTAssertThrowsError(try makeService(store: store, profiles: [profile]).confirmReviewed(messages: [unknown], for: profile))
     XCTAssertTrue(try store.conversation(contactID: profile.id).isEmpty)
   }
 
@@ -183,7 +192,7 @@ final class ClawScreenshotIngestionTests: XCTestCase {
       VisionOCRService.OCRLine(text: "周五提交方案", boundingBox: .init(x: 0.1, y: 0.5, width: 0.25, height: 0.04), confidence: 0.95),
     ]
 
-    let service = ClawScreenshotIngestionService(store: store)
+    let service = makeService(store: store, profiles: [profile])
     let result = try service.ingest(lines: lines, selectedProfile: profile, sourceRef: "test")
 
     XCTAssertTrue(result.requiresReview)
@@ -216,7 +225,7 @@ final class ClawScreenshotIngestionTests: XCTestCase {
     let profile = HeartTargetProfile(name: "已确认")
     let unrelated = ClawConversationMessage(contactID: profile.id, speaker: .other,
       content: "不能借截图审核写入其他来源消息", sourceType: "manual")
-    XCTAssertThrowsError(try ClawScreenshotIngestionService(store: store)
+    XCTAssertThrowsError(try makeService(store: store, profiles: [profile])
       .confirmReviewed(messages: [unrelated], for: profile))
     XCTAssertTrue(try store.conversation(contactID: profile.id).isEmpty)
   }

@@ -79,10 +79,32 @@ public enum ClawScreenshotReviewScopePolicy {
 public final class ClawScreenshotIngestionService {
   private let store: ClawMemoryStore
   private let parser: ClawScreenshotChatParser
+  private let profileLookup: (UUID) -> HeartTargetProfile?
 
   public init(store: ClawMemoryStore = .shared, parser: ClawScreenshotChatParser = .shared) {
     self.store = store
     self.parser = parser
+    // Always resolve a fresh, persisted contact at the write boundary.
+    self.profileLookup = { HeartTargetService.shared.profile(id: $0) }
+  }
+
+  // Internal dependency injection for isolated native tests. Production
+  // callers use the public initializer and the live App Group profile store.
+  init(
+    store: ClawMemoryStore,
+    parser: ClawScreenshotChatParser = .shared,
+    profileLookup: @escaping (UUID) -> HeartTargetProfile?
+  ) {
+    self.store = store
+    self.parser = parser
+    self.profileLookup = profileLookup
+  }
+
+  private func isCurrentProfile(_ snapshot: HeartTargetProfile) -> Bool {
+    guard let current = profileLookup(snapshot.id) else { return false }
+    return current.updatedAt == snapshot.updatedAt &&
+      current.name == snapshot.name &&
+      current.isGroup == snapshot.isGroup
   }
 
   public func ingest(
@@ -133,6 +155,9 @@ public final class ClawScreenshotIngestionService {
     guard !profile.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       throw ClawScreenshotReviewError.missingPerson
     }
+    // A stale review sheet must not resurrect a deleted, renamed or
+    // reclassified contact, even when the OCR speaker rows look valid.
+    guard isCurrentProfile(profile) else { throw ClawScreenshotReviewError.missingPerson }
     guard !messages.isEmpty else { throw ClawScreenshotReviewError.emptyMessages }
     guard messages.allSatisfy({
       ClawScreenshotReviewScopePolicy.permits($0, for: profile.id)
@@ -157,6 +182,9 @@ public final class ClawScreenshotIngestionService {
       candidates.append(item)
       seen.append(item)
     }
+    // Reduce the race window after potentially slow overlap queries.
+    // App Group defaults and SQLite cannot share a cross-process transaction.
+    guard isCurrentProfile(profile) else { throw ClawScreenshotReviewError.missingPerson }
     let inserted = try store.appendConversationsBatch(candidates)
     return ClawScreenshotImportReceipt(
       personID: profile.id, messageIDs: inserted.map(\.id)
