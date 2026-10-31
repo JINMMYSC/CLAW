@@ -132,9 +132,19 @@ public class HeartTargetService {
     if let data = defaults?.data(forKey: profilesKey),
        let decoded = try? JSONDecoder().decode([HeartTargetProfile].self, from: data) {
       profiles = decoded
+    } else {
+      // A missing or corrupted App Group record must not leave a deleted
+      // person's private profile in this process's memory.
+      profiles = []
     }
-    selectedIndex = defaults?.integer(forKey: selectedKey) ?? -1
-    if selectedIndex >= profiles.count { selectedIndex = -1 }
+    // UserDefaults.integer(forKey:) returns 0 for an absent key, which would
+    // silently select the first private contact instead of global mode.
+    if let stored = defaults?.object(forKey: selectedKey) as? Int,
+       stored >= 0, stored < profiles.count {
+      selectedIndex = stored
+    } else {
+      selectedIndex = -1
+    }
   }
 
   private func persist() {
