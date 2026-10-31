@@ -38,11 +38,13 @@ public final class ClawContactIdentityResolver {
     let service = HeartTargetService.shared
     let profiles = profilesProvider()
     guard let rawTitle = displayTitle else {
-      return ClawContactResolution(profile: service.selectedProfile, confidence: service.selectedProfile == nil ? 0 : 0.65, created: false, reason: "no-title")
+      // A missing title is not evidence that the selected keyboard person owns this screenshot.
+      return ClawContactResolution(profile: nil, confidence: 0, created: false, reason: "no-title")
     }
     let title = normalized(rawTitle)
     guard isValidTitle(title) else {
-      return ClawContactResolution(profile: service.selectedProfile, confidence: service.selectedProfile == nil ? 0 : 0.55, created: false, reason: "generic-title")
+      // Generic or invalid OCR text must not inherit a stale private selection.
+      return ClawContactResolution(profile: nil, confidence: 0, created: false, reason: "generic-title")
     }
 
     if let fingerprint = avatarFingerprint {
