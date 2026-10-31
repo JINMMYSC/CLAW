@@ -6,17 +6,6 @@ on:
     branches: [main]
   push:
     branches: [main, work/claw-voice-keyboard-bg, work/claw-productization-20261006, 'work/claw-ux-*', 'feature/claw-ipa-build-candidate-*']
-    paths:
-      - "Hamster/**"
-      - "HamsterKeyboard/**"
-      - "ClawWidgets/**"
-      - "Packages/HamsterKit/**"
-      - "Packages/HamsterKeyboardKit/**"
-      - "Packages/HamsteriOS/**"
-      - "Hamster.xcodeproj/**"
-      - "scripts/**"
-      - ".github/workflows/build-ipa.yml"
-      - ".github/workflows/startup-smoke.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
