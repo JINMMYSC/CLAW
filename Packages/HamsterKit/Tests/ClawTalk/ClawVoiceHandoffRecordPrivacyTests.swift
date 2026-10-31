@@ -19,6 +19,27 @@ final class ClawVoiceHandoffRecordPrivacyTests: XCTestCase {
     return (ClawVoiceDictationHandoff(defaults: defaults), defaults, suite)
   }
 
+  func testFailedRecordWithTranscriptIsPurgedBeforeKeyboardSnapshot() throws {
+    let (handoff, defaults, suite) = try makeStoredRecord(
+      state: "failed", text: "private speech from an invalid failed record")
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    XCTAssertEqual(handoff.snapshot.state, .idle)
+    XCTAssertNil(handoff.snapshot.text)
+    XCTAssertNil(handoff.snapshot.error)
+    XCTAssertNil(defaults.data(forKey: key))
+  }
+
+  func testIdleRecordWithTranscriptIsPurgedBeforeKeyboardSnapshot() throws {
+    let (handoff, defaults, suite) = try makeStoredRecord(
+      state: "idle", text: "private speech from an invalid idle record")
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    XCTAssertEqual(handoff.snapshot.state, .idle)
+    XCTAssertNil(handoff.snapshot.text)
+    XCTAssertNil(defaults.data(forKey: key))
+  }
+
   func testPendingRecordWithTranscriptIsPurgedBeforeKeyboardSnapshot() throws {
     let (handoff, defaults, suite) = try makeStoredRecord(
       state: "pending", text: "private transcript must not appear")
