@@ -21,6 +21,15 @@ final class HeartTargetGlobalSelectionPrivacyTests: XCTestCase {
     XCTAssertNil(service.selectedProfile, "Creating a contact must not select it without user action")
   }
 
+  func testExplicitSelectionStillWorksAfterAddingContact() {
+    let (service, defaults, suite) = isolatedService()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    service.clearSelection()
+    let person = service.upsert(HeartTargetProfile(name: "Explicitly selected"))
+    service.select(id: person.id)
+    XCTAssertEqual(service.selectedProfile?.id, person.id)
+  }
+
   func testAddingSecondContactAfterClearSelectionPreservesGlobalMode() {
     let (service, defaults, suite) = isolatedService()
     defer { defaults.removePersistentDomain(forName: suite) }
