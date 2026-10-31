@@ -96,6 +96,8 @@ public struct HeartTargetProfile: Codable, Identifiable, Equatable {
 
   public func matches(displayTitle: String) -> Bool {
     let normalized = displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    // An absent OCR title must not match an unnamed profile or blank alias.
+    guard !normalized.isEmpty else { return false }
     if normalized == name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() { return true }
     return aliases.contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized }
   }
