@@ -77,4 +77,39 @@ final class ClawContactIdentityResolverTests: XCTestCase {
       .resolve(displayTitle: "已确认人物", allowCreate: false)
     XCTAssertEqual(result.profile?.id, confirmed.id)
   }
+
+  // An observed avatar that conflicts with a previously stored fingerprint
+  // cannot silently attach screenshot text to a name or alias match.
+  func testPreviewExactNameRejectsConflictingObservedAvatar() {
+    let profile = HeartTargetProfile(name: "李四", avatarFingerprint: "saved-avatar")
+    let result = ClawContactIdentityResolver(profilesProvider: { [profile] })
+      .resolve(displayTitle: "李四", avatarFingerprint: "different-avatar", allowCreate: false)
+    XCTAssertNil(result.profile)
+    XCTAssertFalse(result.created)
+    XCTAssertEqual(result.reason, "avatar-title-conflict")
+  }
+
+  func testPreviewAliasRejectsConflictingObservedAvatar() {
+    let profile = HeartTargetProfile(
+      name: "李四", aliases: ["阿四"], avatarFingerprint: "saved-avatar"
+    )
+    let result = ClawContactIdentityResolver(profilesProvider: { [profile] })
+      .resolve(displayTitle: "阿四", avatarFingerprint: "different-avatar", allowCreate: false)
+    XCTAssertNil(result.profile)
+    XCTAssertEqual(result.reason, "avatar-title-conflict")
+  }
+
+  func testPreviewExactNameAllowsObservedAvatarWhenNoStoredFingerprint() {
+    let profile = HeartTargetProfile(name: "李四")
+    let result = ClawContactIdentityResolver(profilesProvider: { [profile] })
+      .resolve(displayTitle: "李四", avatarFingerprint: "new-avatar", allowCreate: false)
+    XCTAssertEqual(result.profile?.id, profile.id)
+  }
+
+  func testPreviewExactNameAllowsMatchingStoredAvatar() {
+    let profile = HeartTargetProfile(name: "李四", avatarFingerprint: "same-avatar")
+    let result = ClawContactIdentityResolver(profilesProvider: { [profile] })
+      .resolve(displayTitle: "李四", avatarFingerprint: "same-avatar", allowCreate: false)
+    XCTAssertEqual(result.profile?.id, profile.id)
+  }
 }
