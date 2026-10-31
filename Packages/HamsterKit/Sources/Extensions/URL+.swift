@@ -5,6 +5,7 @@
 //  Created by morse on 2023/7/4.
 //
 
+import CoreFoundation
 import Foundation
 import os
 import Yams
@@ -54,6 +55,23 @@ public extension URL {
 
 // MARK: iCloud 相关地址
 
+/// Public-API iCloud access gate. The signed-build marker is a fail-closed
+/// prerequisite; FileManager must resolve CLAW's *exact* container before
+/// any backup or restore may access the returned Documents URL.
+struct ClawICloudAccessGate {
+  let readCapability: () -> Any?
+  let resolveContainer: (String) -> URL?
+
+  func documentsURL() -> URL? {
+    guard let marker = readCapability() as? NSNumber,
+          CFGetTypeID(marker) == CFBooleanGetTypeID(),
+          marker.boolValue else { return nil }
+    guard let container = resolveContainer(HamsterConstants.iCloudID) else { return nil }
+    return container.appendingPathComponent("Documents")
+  }
+}
+
+
 /// iCloud 不可用：未登录 iCloud、关闭了 iCloud Drive，或该 App 的 iCloud 开关未打开。
 public enum ICloudPathError: LocalizedError {
   case unavailable
@@ -68,8 +86,15 @@ public extension URL {
   // 注意：appendingPathComponent("Documents")是非常重要的一点，如果没有它，你的文件夹将不会显示在iCloud Drive里面。
   /// 每次求值、不做缓存：用户中途登录 iCloud 后无需重启 App 即可生效。
   static var iCloudDocumentURL: URL? {
-    guard let icloudURL = FileManager.default.url(forUbiquityContainerIdentifier: nil) else { return nil }
-    return icloudURL.appendingPathComponent("Documents")
+    let gate = ClawICloudAccessGate(
+      readCapability: {
+        Bundle.main.object(forInfoDictionaryKey: "ClawICloudContainerEntitled")
+      },
+      resolveContainer: { identifier in
+        FileManager.default.url(forUbiquityContainerIdentifier: identifier)
+      }
+    )
+    return gate.documentsURL()
   }
 
   // iCloud中RIME使用文件路径
