@@ -77,6 +77,15 @@ public final class ClawContactIdentityResolver {
       return ClawContactResolution(profile: nil, confidence: 0, created: false, reason: "ambiguous-name-or-alias")
     }
     if let profile = exactMatches.first {
+      // A matching name or alias cannot override contradictory avatar
+      // evidence. An unknown stored avatar remains eligible for title review.
+      if let observed = avatarFingerprint, !observed.isEmpty,
+         let saved = profile.avatarFingerprint, !saved.isEmpty,
+         observed != saved {
+        return ClawContactResolution(
+          profile: nil, confidence: 0, created: false, reason: "avatar-title-conflict"
+        )
+      }
       guard permitsReadOnlyPreview(profile, allowCreate: allowCreate) else {
         return ClawContactResolution(
           profile: nil, confidence: 0, created: false, reason: "unconfirmed-person"
