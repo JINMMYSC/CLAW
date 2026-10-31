@@ -107,7 +107,7 @@ public struct HeartTargetProfile: Codable, Identifiable, Equatable {
 public class HeartTargetService {
   public static let shared = HeartTargetService()
 
-  private let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
+  private let defaults: UserDefaults?
   private let profilesKey = "heart_target_profiles"
   private let selectedKey = "heart_target_selected"
 
@@ -121,7 +121,10 @@ public class HeartTargetService {
 
   public var hasProfiles: Bool { !profiles.isEmpty }
 
-  init() {
+  // Injectable defaults keep native privacy tests out of the real App Group.
+  // Production continues to use the existing shared container.
+  init(defaults: UserDefaults? = UserDefaults(suiteName: HamsterConstants.appGroupName)) {
+    self.defaults = defaults
     reload()
   }
 
