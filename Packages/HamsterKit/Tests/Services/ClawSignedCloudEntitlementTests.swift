@@ -1,24 +1,47 @@
+import CoreFoundation
 import Foundation
 import XCTest
 @testable import HamsterKit
 
 final class ClawSignedCloudEntitlementTests: XCTestCase {
-  func testCloudDocumentsCannotBeAuthorizedWithoutSignedServicesAndContainer() {
-    let expected = "iCloud.dev.fuxiao.app.hamsterapp"
-    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
-      services: nil, containers: [expected], expectedContainer: expected
-    ))
-    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
-      services: ["CloudDocuments"], containers: nil, expectedContainer: expected
-    ))
-    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
-      services: ["CloudKit"], containers: [expected], expectedContainer: expected
-    ))
-    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
-      services: ["CloudDocuments"], containers: ["iCloud.other.container"], expectedContainer: expected
-    ))
-    XCTAssertTrue(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
-      services: ["CloudDocuments", "CloudKit"], containers: [expected], expectedContainer: expected
-    ))
+  func testExplicitCLAWContainerIsResolvedOnlyWithBooleanCapability() {
+    var requestedIdentifiers: [String] = []
+    let gate = ClawICloudAccessGate(
+      readCapability: { true },
+      resolveContainer: { identifier in
+        requestedIdentifiers.append(identifier)
+        return URL(fileURLWithPath: "/tmp/claw-icloud")
+      }
+    )
+    XCTAssertEqual(gate.documentsURL()?.lastPathComponent, "Documents")
+    XCTAssertEqual(requestedIdentifiers, [HamsterConstants.iCloudID])
+  }
+
+  func testAbsentOrNonBooleanCapabilityNeverResolvesCloudContainer() {
+    for marker: Any? in [nil, false, "true", NSNumber(value: 1)] {
+      var attempted = false
+      let gate = ClawICloudAccessGate(
+        readCapability: { marker },
+        resolveContainer: { _ in
+          attempted = true
+          return URL(fileURLWithPath: "/tmp/unexpected")
+        }
+      )
+      XCTAssertNil(gate.documentsURL())
+      XCTAssertFalse(attempted)
+    }
+  }
+
+  func testMissingExplicitContainerCannotFallbackToDefault() {
+    var requestedIdentifiers: [String] = []
+    let gate = ClawICloudAccessGate(
+      readCapability: { true },
+      resolveContainer: { identifier in
+        requestedIdentifiers.append(identifier)
+        return nil
+      }
+    )
+    XCTAssertNil(gate.documentsURL())
+    XCTAssertEqual(requestedIdentifiers, [HamsterConstants.iCloudID])
   }
 }
