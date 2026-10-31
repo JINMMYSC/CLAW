@@ -53,6 +53,12 @@ public final class ClawPrivacyVaultService {
     lockNow()
   }
 
+  /// Biometric unlocks are never indefinite, even for malformed durations.
+  static func boundedUnlockDuration(_ duration: TimeInterval) -> TimeInterval {
+    guard duration.isFinite else { return 5 * 60 }
+    return min(max(30, duration), 5 * 60)
+  }
+
   /// Uses biometrics when available and falls back to the device passcode.
   /// Successful unlock lasts only for the requested short session.
   public func unlock(
@@ -73,7 +79,7 @@ public final class ClawPrivacyVaultService {
         return
       }
       self?.lock.lock()
-      self?.unlockedUntil = Date().addingTimeInterval(max(30, duration))
+      self?.unlockedUntil = Date().addingTimeInterval(Self.boundedUnlockDuration(duration))
       self?.lock.unlock()
       completion(true, nil)
     }

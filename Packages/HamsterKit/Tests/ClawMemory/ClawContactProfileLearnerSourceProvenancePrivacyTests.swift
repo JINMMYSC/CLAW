@@ -30,4 +30,17 @@ final class ClawContactProfileLearnerSourceProvenancePrivacyTests: XCTestCase {
     }
     XCTAssertTrue(ClawContactProfileLearner.humanEvidence(from: rows).isEmpty)
   }
+  func testNamespacedGeneratedContentCannotImpersonateHumanContactEvidence() {
+    let contactID = UUID()
+    let generatedSources = [
+      "generated:ocr", "generated/ocr", "generated.ocr",
+      "generated-ocr", "generated_ocr", " generated : ocr "
+    ]
+    let rows = generatedSources.map { source in
+      ClawConversationMessage(contactID: contactID, speaker: .other,
+        content: "Unverified generated text", sourceType: source)
+    }
+    XCTAssertTrue(ClawContactProfileLearner.humanEvidence(from: rows).isEmpty)
+  }
+
 }

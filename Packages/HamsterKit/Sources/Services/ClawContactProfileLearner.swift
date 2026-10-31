@@ -88,7 +88,7 @@ public final class ClawContactProfileLearner {
       // contact profile from these unverified tool or model outputs.
       let nonHumanSourcePrefixes = [
         "assistant:", "system:", "ai:", "model:", "llm:",
-        "tool:", "plugin:", "automation:"
+        "tool:", "plugin:", "automation:", "generated:"
       ]
       guard !nonHumanSourcePrefixes.contains(where: { normalizedSourceType.hasPrefix($0) }) else {
         return false
@@ -104,7 +104,7 @@ public final class ClawContactProfileLearner {
       // as a human. Keep reviewed screenshot and keyboard sources eligible.
       let generatedSourceRoots = [
         "assistant", "system", "ai", "model", "llm",
-        "tool", "plugin", "automation", "skill"
+        "tool", "plugin", "automation", "skill", "generated"
       ]
       let generatedSourceSeparators = ["/", ".", "-", "_"]
       guard !generatedSourceRoots.contains(where: { root in
