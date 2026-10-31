@@ -115,6 +115,9 @@ public class HeartTargetService {
   public private(set) var selectedIndex: Int = -1
 
   public var selectedProfile: HeartTargetProfile? {
+    // The Host and Keyboard run in separate processes. Never return a cached
+    // person after another process deleted it or revoked the selection.
+    reload()
     guard selectedIndex >= 0, selectedIndex < profiles.count else { return nil }
     return profiles[selectedIndex]
   }
@@ -127,12 +130,13 @@ public class HeartTargetService {
   }
 
   func reload() {
-    if let data = defaults?.data(forKey: profilesKey),
-       let decoded = try? JSONDecoder().decode([HeartTargetProfile].self, from: data) {
-      profiles = decoded
-    }
-    selectedIndex = defaults?.integer(forKey: selectedKey) ?? -1
-    if selectedIndex >= profiles.count { selectedIndex = -1 }
+    // Invalid or unavailable App Group data cannot authorize a stale profile.
+    profiles = defaults?.data(forKey: profilesKey)
+      .flatMap { try? JSONDecoder().decode([HeartTargetProfile].self, from: $0) } ?? []
+    // integer(forKey:) returns zero for a missing key, which would silently
+    // select the first private contact instead of the global/unselected mode.
+    let persistedIndex = defaults?.object(forKey: selectedKey) as? Int ?? -1
+    selectedIndex = (0..<profiles.count).contains(persistedIndex) ? persistedIndex : -1
   }
 
   private func persist() {
@@ -143,6 +147,8 @@ public class HeartTargetService {
 
   @discardableResult
   public func upsert(_ profile: HeartTargetProfile) -> HeartTargetProfile {
+    // Merge against the latest persisted list, not this process's snapshot.
+    reload()
     var profile = profile
     profile.updatedAt = Date()
     if let idx = profiles.firstIndex(where: { $0.id == profile.id }) {
@@ -204,19 +210,27 @@ public class HeartTargetService {
   }
 
   public func select(at index: Int) {
+    // UI indices refer to the previously displayed list. Resolve its stable
+    // ID before refreshing, then find that ID in the latest persisted order.
     guard index >= 0, index < profiles.count else { return }
-    selectedIndex = index
+    let selectedID = profiles[index].id
+    reload()
+    guard let currentIndex = profiles.firstIndex(where: { $0.id == selectedID }) else { return }
+    selectedIndex = currentIndex
     persist()
   }
 
   public func select(id: UUID) {
+    reload()
     if let idx = profiles.firstIndex(where: { $0.id == id }) {
-      select(at: idx)
+      selectedIndex = idx
+      persist()
     }
   }
 
   /// 全局模式：只使用用户全局记忆，不混合任何联系人档案。
   public func clearSelection() {
+    reload()
     selectedIndex = -1
     persist()
   }

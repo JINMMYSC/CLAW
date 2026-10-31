@@ -42,7 +42,9 @@ final class HeartTargetCrossProcessSelectionPrivacyTests: XCTestCase {
 
     defaults.set(try JSONEncoder().encode([bob, alice]), forKey: "heart_target_profiles")
     reader.select(at: 0)
-    XCTAssertEqual(HeartTargetService(defaults: defaults).selectedProfile?.id, alice.id)
+    let fresh = HeartTargetService(defaults: defaults)
+    XCTAssertEqual(fresh.selectedProfile?.id, alice.id)
+    XCTAssertEqual(fresh.profiles.map(\.id), [bob.id, alice.id])
   }
 
   func testMissingSelectionKeyDoesNotImplicitlySelectFirstPerson() throws {
