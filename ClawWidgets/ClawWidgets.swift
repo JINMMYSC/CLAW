@@ -11,7 +11,7 @@ private struct ClawTimelineProvider: TimelineProvider {
     let data = UserDefaults(suiteName: "group.7518554")?.data(forKey: "claw_widget_snapshot_v1")
     struct Snapshot: Decodable { let summary: String; let openTaskCount: Int }
     let snapshot = data.flatMap { try? JSONDecoder().decode(Snapshot.self, from: $0) }
-    let entry = ClawTimelineEntry(date: Date(), summary: snapshot?.summary ?? "打开 CLAW 查看今日", taskCount: snapshot?.openTaskCount ?? 0)
+    let entry = ClawTimelineEntry(date: Date(), summary: "打开 CLAW 查看今日", taskCount: max(0, snapshot?.openTaskCount ?? 0))
     completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(30 * 60))))
   }
 }

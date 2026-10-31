@@ -9,6 +9,7 @@ on:
     paths:
       - "Hamster/**"
       - "HamsterKeyboard/**"
+      - "ClawWidgets/**"
       - "Packages/HamsterKit/**"
       - "Packages/HamsterKeyboardKit/**"
       - "Packages/HamsteriOS/**"
