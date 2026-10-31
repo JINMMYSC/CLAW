@@ -131,9 +131,17 @@ public class HeartTargetService {
     if let data = defaults?.data(forKey: profilesKey),
        let decoded = try? JSONDecoder().decode([HeartTargetProfile].self, from: data) {
       profiles = decoded
+    } else {
+      // Missing or corrupt shared storage must not retain a private contact.
+      profiles = []
     }
-    selectedIndex = defaults?.integer(forKey: selectedKey) ?? -1
-    if selectedIndex >= profiles.count { selectedIndex = -1 }
+    // integer(forKey:) returns zero when the selection key is absent.
+    if let stored = defaults?.object(forKey: selectedKey) as? Int,
+       stored >= 0, stored < profiles.count {
+      selectedIndex = stored
+    } else {
+      selectedIndex = -1
+    }
   }
 
   private func persist() {
