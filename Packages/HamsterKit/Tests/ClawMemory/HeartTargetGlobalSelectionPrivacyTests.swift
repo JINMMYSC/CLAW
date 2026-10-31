@@ -21,6 +21,16 @@ final class HeartTargetGlobalSelectionPrivacyTests: XCTestCase {
     XCTAssertNil(service.selectedProfile, "Creating a contact must not select it without user action")
   }
 
+  func testMissingSelectionKeyDefaultsToGlobalMode() {
+    let (service, defaults, suite) = isolatedService()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    // No call to clearSelection(): exercise a fresh App Group defaults suite.
+    XCTAssertNil(service.selectedProfile)
+    let person = service.upsert(HeartTargetProfile(name: "Fresh contact"))
+    XCTAssertNotNil(service.profile(id: person.id))
+    XCTAssertNil(service.selectedProfile, "A missing selection key must never imply contact zero")
+  }
+
   func testExplicitSelectionStillWorksAfterAddingContact() {
     let (service, defaults, suite) = isolatedService()
     defer { defaults.removePersistentDomain(forName: suite) }
