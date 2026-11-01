@@ -10,4 +10,18 @@ final class ClawContactProfileLearnerGroupGateTests: XCTestCase {
       HeartTargetProfile(name: "Contact", isGroup: false)
     ))
   }
+
+  func testUnconfirmedAutoCreatedContactCannotBeLearnedAsAnIndividualProfile() {
+    let unconfirmed = HeartTargetProfile(
+      name: "OCR-only unconfirmed contact", autoCreated: true, isGroup: false
+    )
+    XCTAssertFalse(ClawContactProfileLearner.isEligibleForIndividualLearning(unconfirmed))
+  }
+
+  func testConfirmedIndividualContactRemainsEligibleForLearning() {
+    let confirmed = HeartTargetProfile(
+      name: "Confirmed contact", autoCreated: false, isGroup: false
+    )
+    XCTAssertTrue(ClawContactProfileLearner.isEligibleForIndividualLearning(confirmed))
+  }
 }
