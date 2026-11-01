@@ -82,7 +82,7 @@ jobs:
           test -n "$app"
           xcrun simctl install "$SIMULATOR_UDID" "$app"
           rm -f smoke-first-launch-console.log
-          xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
+          xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 -clawSmokeTraceSpeechAuthorization \
             >smoke-first-launch-console.log 2>&1 &
           monitor=$!
           # A first-install RIME deployment can stall transiently on a busy
@@ -95,7 +95,7 @@ jobs:
               kill "$monitor" 2>/dev/null || true
               xcrun simctl terminate "$SIMULATOR_UDID" app.lgm.7517 || true
               wait "$monitor" 2>/dev/null || true
-              xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
+              xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 -clawSmokeTraceSpeechAuthorization \
                 >smoke-first-launch-retry-console.log 2>&1 &
               monitor=$!
               current_log=smoke-first-launch-retry-console.log
@@ -135,7 +135,7 @@ jobs:
           set -euo pipefail
           rm -f smoke-console.log
           rm -f smoke-screen-start.png smoke-screen-45s.png
-          xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 \
+          xcrun simctl launch --console "$SIMULATOR_UDID" app.lgm.7517 -clawSmokeTraceSpeechAuthorization \
             -clawTalkForceV1Migration \
             >smoke-console.log 2>&1 &
           monitor=$!
