@@ -145,7 +145,9 @@ public final class ClawContactProfileLearner {
   /// Group conversations contain messages from multiple people. Never
   /// collapse their speakers into an individual contact's learned profile.
   static func isEligibleForIndividualLearning(_ profile: HeartTargetProfile) -> Bool {
-    return !profile.isGroup
+    // An OCR-created contact is not a verified individual. Explicit consent
+    // alone must not promote an unconfirmed identity into a learned profile.
+    return !profile.isGroup && !profile.autoCreated
   }
 
   /// Re-read the persisted contact immediately before dispatching private
