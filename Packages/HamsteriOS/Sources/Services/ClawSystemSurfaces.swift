@@ -43,7 +43,7 @@ public final class ClawPermissionCoordinator: NSObject, CLLocationManagerDelegat
     case .microphone: AVAudioSession.sharedInstance().requestRecordPermission { _ in DispatchQueue.main.async(execute: completion) }
     case .speech:
       #if DEBUG
-      print("[clawVoiceAuth] permission guide explicitly requested Speech access")
+      FileHandle.standardError.write(Data("[clawVoiceAuth] permission guide explicitly requested Speech access\n".utf8))
       #endif
       SFSpeechRecognizer.requestAuthorization { _ in DispatchQueue.main.async(execute: completion) }
     }
