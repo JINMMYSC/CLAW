@@ -5,13 +5,11 @@
 //  Created by morse on 2023/6/13.
 //
 
-import AVFoundation
 import Combine
 import HamsterKeyboardKit
 import HamsterKit
 import OSLog
 import ProgressHUD
-import Speech
 import UIKit
 
 public class SettingsViewModel: ObservableObject {
@@ -269,23 +267,6 @@ extension SettingsViewModel {
   }
 #endif
 
-  /// 宿主首启申请麦克风 + 语音识别权限（仅未决定时弹一次）
-  private func requestVoicePermissionsIfNeeded() async {
-    let speech = SFSpeechRecognizer.authorizationStatus()
-    if speech == .notDetermined {
-      _ = await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-        SFSpeechRecognizer.requestAuthorization { _ in cont.resume() }
-      }
-    }
-    let mic = AVAudioSession.sharedInstance().recordPermission
-    if mic == .undetermined {
-      _ = await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-        AVAudioSession.sharedInstance().requestRecordPermission { _ in cont.resume() }
-      }
-    }
-  }
-
-
   /// 启动加载数据
   func loadAppData() async throws {
 #if DEBUG
@@ -475,8 +456,9 @@ extension SettingsViewModel {
       )
 #endif
 
-      // 首次启动在宿主上下文申请语音权限（键盘扩展不弹权限框，避免闪退）
-      await requestVoicePermissionsIfNeeded()
+      // Do not request Speech or microphone access during first-install RIME
+      // deployment. The Host requests both only after a user-initiated voice
+      // action through ClawAssistantRootView.withVoiceAuthorization().
 
       await ProgressHUD.success(alreadyDeployed ? "已就绪" : "部署完成", interaction: false, delay: 1.5)
     } catch {
