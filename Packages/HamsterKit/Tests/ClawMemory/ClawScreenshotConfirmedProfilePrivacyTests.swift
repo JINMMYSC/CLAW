@@ -39,6 +39,48 @@ final class ClawScreenshotConfirmedProfilePrivacyTests: XCTestCase {
     XCTAssertTrue(try store.conversation(contactID: group.id).isEmpty)
   }
 
+  func testChangedAvatarFingerprintInvalidatesStaleScreenshotReview() throws {
+    let (store, root) = makeStore()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let snapshot = HeartTargetProfile(
+      name: "Confirmed person", avatarFingerprint: "avatar-original"
+    )
+    var current = snapshot
+    current.avatarFingerprint = "avatar-replaced"
+    // A stale external snapshot may retain the same timestamp. Identity
+    // changes must be checked independently of updatedAt.
+    XCTAssertEqual(current.updatedAt, snapshot.updatedAt)
+    let service = ClawScreenshotIngestionService(
+      store: store, profileLookup: { $0 == snapshot.id ? current : nil }
+    )
+    let message = ClawConversationMessage(
+      contactID: snapshot.id, speaker: .other,
+      content: "Private avatar evidence", sourceType: "screenshot"
+    )
+    XCTAssertThrowsError(try service.confirmReviewed(messages: [message], for: snapshot))
+    XCTAssertTrue(try store.conversation(contactID: snapshot.id).isEmpty)
+  }
+
+  func testChangedAliasesInvalidateStaleScreenshotReview() throws {
+    let (store, root) = makeStore()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let snapshot = HeartTargetProfile(
+      name: "Confirmed person", aliases: ["old-chat-title"]
+    )
+    var current = snapshot
+    current.aliases = ["different-person-title"]
+    XCTAssertEqual(current.updatedAt, snapshot.updatedAt)
+    let service = ClawScreenshotIngestionService(
+      store: store, profileLookup: { $0 == snapshot.id ? current : nil }
+    )
+    let message = ClawConversationMessage(
+      contactID: snapshot.id, speaker: .other,
+      content: "Private alias evidence", sourceType: "screenshot"
+    )
+    XCTAssertThrowsError(try service.confirmReviewed(messages: [message], for: snapshot))
+    XCTAssertTrue(try store.conversation(contactID: snapshot.id).isEmpty)
+  }
+
   func testExplicitlyConfirmedIndividualStillImportsReviewedScreenshot() throws {
     let (store, root) = makeStore()
     defer { try? FileManager.default.removeItem(at: root) }
