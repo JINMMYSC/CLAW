@@ -46,6 +46,8 @@ def has_cloud_documents_entitlement(entitlements):
     return (
         DEFAULT_ICLOUD_CONTAINER in
         (entitlements.get("com.apple.developer.icloud-container-identifiers", []) or [])
+        and DEFAULT_ICLOUD_CONTAINER in
+        (entitlements.get("com.apple.developer.ubiquity-container-identifiers", []) or [])
         and "CloudDocuments" in
         (entitlements.get("com.apple.developer.icloud-services", []) or [])
     )
