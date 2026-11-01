@@ -17,28 +17,21 @@ final class ClawRuntimeCapabilityInspectorTests: XCTestCase {
     XCTAssertEqual(ClawRuntimeCapabilityInspector.sync(entitled: nil, signedIn: nil).status, .unknown)
   }
 
-  func testSignedCloudDocumentsRequiresAllThreeEntitlementLists() {
-    let container = "iCloud.dev.fuxiao.app.hamsterapp"
-    XCTAssertTrue(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
-      services: ["CloudDocuments", "CloudKit"],
-      containers: [container], ubiquityContainers: [container],
-      expectedContainer: container
+  func testCloudDocumentsReadinessRequiresBooleanStampIdentityAndContainer() {
+    XCTAssertTrue(ClawRuntimeCapabilityInspector.cloudDocumentsReady(
+      stamp: NSNumber(value: true), identityAvailable: true, containerAvailable: true
     ))
-    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
-      services: ["CloudKit"], containers: [container],
-      ubiquityContainers: [container], expectedContainer: container
+    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsReady(
+      stamp: NSNumber(value: 1), identityAvailable: true, containerAvailable: true
     ))
-    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
-      services: ["CloudDocuments"], containers: [container],
-      ubiquityContainers: nil, expectedContainer: container
+    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsReady(
+      stamp: "true", identityAvailable: true, containerAvailable: true
     ))
-    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
-      services: ["CloudDocuments"], containers: ["other"],
-      ubiquityContainers: [container], expectedContainer: container
+    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsReady(
+      stamp: NSNumber(value: true), identityAvailable: false, containerAvailable: true
     ))
-    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
-      services: ["CloudDocuments"], containers: [container],
-      ubiquityContainers: ["other"], expectedContainer: container
+    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsReady(
+      stamp: NSNumber(value: true), identityAvailable: true, containerAvailable: false
     ))
   }
 
