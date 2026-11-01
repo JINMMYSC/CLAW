@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreFoundation
 import Foundation
 import Speech
 
@@ -17,6 +18,16 @@ public struct ClawDiagnosticCapabilityObservation {
 }
 
 public enum ClawRuntimeCapabilityInspector {
+  /// Only a real property-list boolean is a trustworthy capability stamp.
+  /// NSNumber(1) and strings must not be treated as signed entitlement proof.
+  public static func signedCloudDocumentsEntitlement(from raw: Any?) -> Bool? {
+    guard let value = raw as? NSNumber,
+          CFGetTypeID(value) == CFBooleanGetTypeID() else {
+      return nil
+    }
+    return value.boolValue
+  }
+
   public static func voice(speech: String, microphone: String) -> ClawDiagnosticCapabilityObservation {
     let allowedSpeech: Set<String> = ["authorized", "denied", "restricted", "notDetermined"]
     let allowedMic: Set<String> = ["granted", "denied", "undetermined"]
@@ -72,7 +83,7 @@ public enum ClawRuntimeCapabilityInspector {
     guard Bundle.main.bundleURL.pathExtension.lowercased() != "appex" else {
       return .init(status: .unavailable, message: "键盘扩展不执行主程序 iCloud 文件复制。")
     }
-    let entitled = Bundle.main.object(forInfoDictionaryKey: "ClawICloudContainerEntitled") as? Bool
+    let entitled = signedCloudDocumentsEntitlement(from: Bundle.main.object(forInfoDictionaryKey: "ClawICloudContainerEntitled"))
     let signedIn = entitled == true ? FileManager.default.ubiquityIdentityToken != nil : nil
     return sync(entitled: entitled, signedIn: signedIn)
   }
