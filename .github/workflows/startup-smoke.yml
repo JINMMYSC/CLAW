@@ -258,9 +258,9 @@ jobs:
       - name: Capture diagnostics
         if: always()
         run: |
-          xcrun simctl spawn "$SIMULATOR_UDID" log show --last 3m \
-            --style compact \
-            --predicate 'process == "Hamster" OR eventMessage CONTAINS "app.lgm.7517"' \
+          xcrun simctl spawn "$SIMULATOR_UDID" log show --last 15m \
+            --style compact --info \
+            --predicate 'process == "Hamster" OR eventMessage CONTAINS "app.lgm.7517" OR (process == "tccd" AND eventMessage CONTAINS[c] "Speech")' \
             > smoke-system.log || true
           find "$HOME/Library/Logs/DiagnosticReports" -type f \
             \( -name 'Hamster*.crash' -o -name 'Hamster*.ips' \) \
