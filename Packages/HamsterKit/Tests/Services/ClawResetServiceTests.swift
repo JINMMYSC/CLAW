@@ -105,6 +105,49 @@ final class ClawResetServiceTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: learning.path))
   }
 
+  func testStopRimeFailureAbortsDestructiveResetOperations() {
+    enum StopFailure: Error { case stillRunning }
+    let state = ResetState()
+    let service = ClawResetService(actions: .init(
+      stopRime: {
+        state.events.append("stop")
+        throw StopFailure.stillRunning
+      },
+      clearApplicationData: { state.events.append("data") },
+      clearInputLearning: { state.events.append("learning") },
+      resetConfiguration: { state.events.append("configuration") },
+      redeployRime: { state.events.append("redeploy") }
+    ))
+
+    let report = service.perform(.full)
+
+    XCTAssertFalse(report.succeeded)
+    XCTAssertEqual(report.results.map(\\.step), [.stopRime])
+    XCTAssertEqual(report.results.filter { !$0.succeeded }.map(\\.step), [.stopRime])
+    XCTAssertEqual(state.events, ["stop"])
+    XCTAssertEqual(state.memories, 3)
+    XCTAssertEqual(state.userDictionaryEntries, 6)
+  }
+
+  func testLearningCleanupPreservesUserDatabaseBackups() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let backup = root.appendingPathComponent("custom.userdb.backup", isDirectory: true)
+    let learning = root.appendingPathComponent("custom.userdb", isDirectory: true)
+    let learningIndex = root.appendingPathComponent("custom.userdb.kct")
+    try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: learning, withIntermediateDirectories: true)
+    try Data("backup".utf8).write(to: backup.appendingPathComponent("data.bin"))
+    try Data("index".utf8).write(to: learningIndex)
+
+    try ClawResetService.removeInputLearningFiles(in: [root])
+
+    XCTAssertTrue(FileManager.default.fileExists(atPath: backup.appendingPathComponent("data.bin").path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: learning.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: learningIndex.path))
+  }
+
   func testMemoryStoreResetClearsUserRowsAndRestoresBuiltInSkills() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
