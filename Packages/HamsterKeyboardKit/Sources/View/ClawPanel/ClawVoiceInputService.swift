@@ -163,6 +163,12 @@ public final class ClawVoiceInputService: NSObject {
 
   public var authorizationStatus: ClawVoiceAuth {
     let speech = SFSpeechRecognizer.authorizationStatus()
+#if DEBUG
+    if speech == .notDetermined {
+      // Record only the call path, never audio, transcription, or user data.
+      FileHandle.standardError.write(Data(("[clawVoiceAuth] status checked while undetermined; stack=\(Thread.callStackSymbols.prefix(6).joined(separator: " | "))\n").utf8))
+    }
+#endif
     let mic = AVAudioSession.sharedInstance().recordPermission
     if speech == .authorized, mic == .granted { return .authorized }
     if speech == .denied || speech == .restricted || mic == .denied {
