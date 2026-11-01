@@ -634,7 +634,7 @@ private struct ClawAssistantChatView: View {
       let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
       #if DEBUG
       // Smoke diagnostics: record only request-state booleans, never speech text.
-      FileHandle.standardError.write(Data("[clawVoiceAuth] composer appeared; voiceFlag=\(defaults?.bool(forKey: HamsterConstants.clawVoiceInputLaunchKey) == true) pending=\(ClawVoiceDictationHandoff.shared.snapshot.state == .pending) screenshot=\(ClawComposerScreenshotFixture.state != nil)\n".utf8))
+      FileHandle.standardError.write(Data("[clawVoiceAuth] composer appeared; voiceFlag=\(defaults?.bool(forKey: HamsterConstants.clawVoiceInputLaunchKey) == true) pending=\(ClawVoiceDictationHandoff.shared.snapshot.state == .pending) callFlag=\(defaults?.bool(forKey: HamsterConstants.clawVoiceCallLaunchKey) == true) screenshot=\(ClawComposerScreenshotFixture.state != nil)\n".utf8))
       #endif
       // Fallback when iOS declines to open the containing app from the keyboard.
       if defaults?.bool(forKey: HamsterConstants.clawVoiceInputLaunchKey) == true ||
@@ -1165,6 +1165,9 @@ private struct ClawAssistantChatView: View {
   }
 
   private func startHandsFreeCall() {
+#if DEBUG
+    FileHandle.standardError.write(Data("[clawVoiceAuth] startHandsFreeCall entered; active=\(callActive) screenshot=\(ClawComposerScreenshotFixture.state != nil)\n".utf8))
+#endif
     guard !callActive else { return }
     withVoiceAuthorization {
       callActive = true
@@ -1244,6 +1247,9 @@ private struct ClawAssistantChatView: View {
   }
 
   private func withVoiceAuthorization(_ action: @escaping () -> Void) {
+#if DEBUG
+    FileHandle.standardError.write(Data("[clawVoiceAuth] withVoiceAuthorization entered; callActive=\(callActive) recording=\(recording) screenshot=\(ClawComposerScreenshotFixture.state != nil)\n".utf8))
+#endif
     let requestID = UUID()
     voiceAuthorizationRequestID = requestID
     switch ClawVoiceInputService.shared.authorizationStatus {
