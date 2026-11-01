@@ -79,6 +79,17 @@ def validate_bundle_entitlements(
         if container not in signed_containers or not _entitlement_allows(profile_containers, container):
             raise ValueError("missing required iCloud container: %s" % container)
 
+    # A CloudDocuments release must also be authorized for its ubiquity container.
+    ubiquity_key = "com.apple.developer.ubiquity-container-identifiers"
+    profile_ubiquity = profile_entitlements.get(ubiquity_key, []) or []
+    signed_ubiquity = signed_entitlements.get(ubiquity_key, []) or []
+    for container in signed_ubiquity:
+        if not _entitlement_allows(profile_ubiquity, container):
+            raise ValueError("signed ubiquity container is not permitted by provisioning profile")
+    for container in required_icloud_containers:
+        if container not in signed_ubiquity or not _entitlement_allows(profile_ubiquity, container):
+            raise ValueError("missing required ubiquity container in profile or signature")
+
     # A container identifier alone does not grant iCloud Documents or CloudKit.
     # The CLAW Host release requires both services, and neither may silently
     # disappear from the profile or from the final code signature.
@@ -98,6 +109,8 @@ def has_cloud_documents_entitlement(entitlements):
     return (
         DEFAULT_ICLOUD_CONTAINER in
         (entitlements.get("com.apple.developer.icloud-container-identifiers", []) or [])
+        and DEFAULT_ICLOUD_CONTAINER in
+        (entitlements.get("com.apple.developer.ubiquity-container-identifiers", []) or [])
         and "CloudDocuments" in
         (entitlements.get("com.apple.developer.icloud-services", []) or [])
     )
