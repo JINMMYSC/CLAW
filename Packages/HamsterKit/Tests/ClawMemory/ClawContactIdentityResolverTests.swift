@@ -112,4 +112,28 @@ final class ClawContactIdentityResolverTests: XCTestCase {
       .resolve(displayTitle: "李四", avatarFingerprint: "same-avatar", allowCreate: false)
     XCTAssertEqual(result.profile?.id, profile.id)
   }
+
+  // A resolver-created suggestion is not an explicit request to switch the
+  // keyboard from global memory into one person's private context.
+  func testAutoCreatedResolverProfilePreservesGlobalMode() {
+    let service = HeartTargetService.shared
+    let previouslySelectedID = service.selectedProfile?.id
+    service.clearSelection()
+    let title = "AutoGlobal" + UUID().uuidString.prefix(8)
+    let result = ClawContactIdentityResolver.shared.resolve(
+      displayTitle: title, allowCreate: true
+    )
+    defer {
+      if let id = result.profile?.id { service.delete(id: id) }
+      if let previouslySelectedID {
+        service.select(id: previouslySelectedID)
+      } else {
+        service.clearSelection()
+      }
+    }
+    XCTAssertTrue(result.created)
+    XCTAssertNotNil(result.profile)
+    XCTAssertNil(service.selectedProfile,
+                 "An OCR-created profile must not activate private keyboard context")
+  }
 }
