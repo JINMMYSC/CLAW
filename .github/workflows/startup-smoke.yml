@@ -239,6 +239,14 @@ jobs:
           done
           xcrun simctl ui "$SIMULATOR_UDID" appearance light
 
+      - name: Reject obscured startup and composer screenshots
+        run: |
+          set -euo pipefail
+          # The simulator can show an OS Speech Recognition dialog even when
+          # composer readiness logs are green. Verify the captured pixels.
+          xcrun swift scripts/verify_smoke_ui_alerts.swift \
+            smoke-screen-start.png smoke-screen-45s.png composer-*.png
+
       - name: Upload native assistant composer screenshots
         if: always()
         uses: actions/upload-artifact@v4
