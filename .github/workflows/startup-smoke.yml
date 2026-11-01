@@ -266,6 +266,14 @@ jobs:
             \( -name 'Hamster*.crash' -o -name 'Hamster*.ips' \) \
             -mmin -10 -exec cp {} . \; 2>/dev/null || true
 
+      - name: Reject unsolicited Speech TCC authorization
+        if: always()
+        run: |
+          set -euo pipefail
+          # A voice permission prompt without a user gesture is a privacy and
+          # screenshot-readiness failure, even if screenshot OCR misses it.
+          xcrun swift scripts/verify_smoke_speech_tcc.swift smoke-system.log
+
       - name: Upload smoke diagnostics
         if: always()
         uses: actions/upload-artifact@v4
