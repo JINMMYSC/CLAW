@@ -30,6 +30,9 @@ class SigningProfileTests(unittest.TestCase):
             "com.apple.developer.icloud-container-identifiers": [
                 "iCloud.dev.fuxiao.app.hamsterapp"
             ],
+            "com.apple.developer.ubiquity-container-identifiers": [
+                "iCloud.dev.fuxiao.app.hamsterapp"
+            ],
             "com.apple.developer.icloud-services": ["CloudDocuments", "CloudKit"],
         }
         self.assertTrue(sign_ipa.has_cloud_documents_entitlement(valid))
