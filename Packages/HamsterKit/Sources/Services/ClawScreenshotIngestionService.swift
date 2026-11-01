@@ -106,6 +106,10 @@ public final class ClawScreenshotIngestionService {
     // Also reject snapshots whose confirmation state changed after review.
     return current.updatedAt == snapshot.updatedAt &&
       current.name == snapshot.name &&
+      // Name/mtime equality is insufficient when an imported profile changes
+      // identity hints without advancing its timestamp. Require fresh review.
+      current.aliases == snapshot.aliases &&
+      current.avatarFingerprint == snapshot.avatarFingerprint &&
       current.isGroup == snapshot.isGroup &&
       current.autoCreated == snapshot.autoCreated &&
       !current.isGroup && !current.autoCreated
