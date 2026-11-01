@@ -8,10 +8,17 @@
 import UIKit
 import UserNotifications
 import HamsteriOS
+#if DEBUG
+import ObjectiveC
+import Speech
+#endif
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
   func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+    #if DEBUG
+    ClawSpeechAuthorizationSmokeTrace.installIfRequested()
+    #endif
     UNUserNotificationCenter.current().delegate = self
     // ClawTalk theme: system fonts + red/black/white appearance
     ClawTalkTheme.applyGlobalAppearance()
@@ -47,3 +54,36 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     completionHandler([.banner, .sound, .list])
   }
 }
+
+#if DEBUG
+/// Simulator-only diagnostic. Installed exclusively by Startup Smoke's launch
+/// argument; Release builds and ordinary Debug launches never swizzle Speech.
+/// This captures *all* Speech authorization requests, not only our voice wrapper.
+private enum ClawSpeechAuthorizationSmokeTrace {
+  static func installIfRequested() {
+    guard ProcessInfo.processInfo.arguments.contains("-clawSmokeTraceSpeechAuthorization") else { return }
+    guard let original = class_getClassMethod(
+      SFSpeechRecognizer.self, #selector(SFSpeechRecognizer.requestAuthorization(_:))
+    ), let traced = class_getClassMethod(
+      SFSpeechRecognizer.self, #selector(SFSpeechRecognizer.clawSmokeTracedRequestAuthorization(_:))
+    ) else {
+      FileHandle.standardError.write(Data("[clawSpeechHook] installation unavailable\n".utf8))
+      return
+    }
+    method_exchangeImplementations(original, traced)
+    FileHandle.standardError.write(Data("[clawSpeechHook] installed\n".utf8))
+  }
+}
+
+extension SFSpeechRecognizer {
+  @objc class func clawSmokeTracedRequestAuthorization(
+    _ handler: @escaping (SFSpeechRecognizerAuthorizationStatus) -> Void
+  ) {
+    // No audio, transcription, personal data or authorization callback content.
+    let stack = Thread.callStackSymbols.prefix(20).joined(separator: " | ")
+    FileHandle.standardError.write(Data("[clawSpeechHook] requestAuthorization stack=\(stack)\n".utf8))
+    // After the exchange this selector points to Apple's original implementation.
+    clawSmokeTracedRequestAuthorization(handler)
+  }
+}
+#endif
