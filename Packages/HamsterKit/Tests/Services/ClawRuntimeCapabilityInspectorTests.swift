@@ -16,4 +16,16 @@ final class ClawRuntimeCapabilityInspectorTests: XCTestCase {
     XCTAssertEqual(ClawRuntimeCapabilityInspector.sync(entitled: true, signedIn: true).status, .unknown)
     XCTAssertEqual(ClawRuntimeCapabilityInspector.sync(entitled: nil, signedIn: nil).status, .unknown)
   }
+
+  func testOnlyARealBooleanStampCanAssertSignedCloudDocumentsCapability() {
+    XCTAssertEqual(
+      ClawRuntimeCapabilityInspector.signedCloudDocumentsEntitlement(from: NSNumber(value: true)), true
+    )
+    XCTAssertEqual(
+      ClawRuntimeCapabilityInspector.signedCloudDocumentsEntitlement(from: NSNumber(value: false)), false
+    )
+    XCTAssertNil(ClawRuntimeCapabilityInspector.signedCloudDocumentsEntitlement(from: NSNumber(value: 1)))
+    XCTAssertNil(ClawRuntimeCapabilityInspector.signedCloudDocumentsEntitlement(from: "true"))
+    XCTAssertNil(ClawRuntimeCapabilityInspector.signedCloudDocumentsEntitlement(from: nil))
+  }
 }
