@@ -248,6 +248,25 @@ jobs:
             test "$(/usr/libexec/PlistBuddy -c 'Print :ClawSourceCommit' "$plist")" = "$GITHUB_SHA"
           done
 
+      - name: Verify Host Keyboard Widget Mach-O are arm64 iOS device binaries
+        run: |
+          set -euo pipefail
+          PRODUCTS=build-dd/Build/Products/Release-iphoneos
+          APP_PATH=$(find "$PRODUCTS" -maxdepth 1 -type d -name '*.app' | head -1)
+          test -n "$APP_PATH"
+          checked=0
+          for bundle in "$APP_PATH" "$APP_PATH"/PlugIns/*.appex; do
+            [ -d "$bundle" ] || continue
+            executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Info.plist")
+            binary="$bundle/$executable"
+            test -f "$binary"
+            xcrun lipo -verify_arch arm64 "$binary"
+            xcrun vtool -show-build "$binary" | grep -Eq 'platform[[:space:]]+IOS([[:space:]]|$)'
+            checked=$((checked + 1))
+            echo "Verified arm64 iOS device Mach-O: $(basename "$bundle")"
+          done
+          test "$checked" -eq 3 || { echo "::error::Expected three iOS device binaries, found $checked"; exit 1; }
+
       - name: Package .ipa (unsigned)
         run: |
           set -e
