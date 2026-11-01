@@ -122,8 +122,8 @@ final class ClawResetServiceTests: XCTestCase {
     let report = service.perform(.full)
 
     XCTAssertFalse(report.succeeded)
-    XCTAssertEqual(report.results.map(\\.step), [.stopRime])
-    XCTAssertEqual(report.results.filter { !$0.succeeded }.map(\\.step), [.stopRime])
+    XCTAssertEqual(report.results.map { $0.step }, [.stopRime])
+    XCTAssertEqual(report.results.filter { !$0.succeeded }.map { $0.step }, [.stopRime])
     XCTAssertEqual(state.events, ["stop"])
     XCTAssertEqual(state.memories, 3)
     XCTAssertEqual(state.userDictionaryEntries, 6)
