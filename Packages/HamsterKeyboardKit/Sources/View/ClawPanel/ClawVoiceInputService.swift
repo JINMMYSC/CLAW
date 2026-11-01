@@ -178,6 +178,11 @@ public final class ClawVoiceInputService: NSObject {
       completion(false)
       return
     }
+    #if DEBUG
+    // Diagnose unsolicited OS permission alerts in macOS Startup Smoke.
+    // No transcript, audio, user defaults, or other private content is logged.
+    FileHandle.standardError.write(Data(("[clawVoiceAuth] speech authorization requested; stack=\(Thread.callStackSymbols.prefix(7).joined(separator: " | "))\n").utf8))
+    #endif
     SFSpeechRecognizer.requestAuthorization { speechStatus in
       guard speechStatus == .authorized else {
         LogService.shared.log(.voiceAuthorizationFailed)
