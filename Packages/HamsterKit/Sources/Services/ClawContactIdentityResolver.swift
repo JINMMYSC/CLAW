@@ -120,7 +120,8 @@ public final class ClawContactIdentityResolver {
       lastSeenAt: Date()
     )
     let saved = service.upsert(profile)
-    service.select(id: saved.id)
+    // An automatically suggested OCR contact is not an explicit person
+    // selection. Keep the keyboard in global mode until the user chooses it.
     return ClawContactResolution(profile: saved, confidence: 0.78, created: true, reason: "auto-created")
   }
 
