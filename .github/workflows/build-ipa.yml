@@ -33,6 +33,32 @@ jobs:
           set -euo pipefail
           python3 scripts/verify_release_sha.py --frozen-sha "$FROZEN_SHA" --github-sha "$GITHUB_SHA"
 
+      - name: Require successful Startup Smoke for frozen SHA
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FROZEN_SHA: ${{ inputs.frozen_sha }}
+        run: |
+          set -euo pipefail
+          # Native Build/Test does not prove the UI is unobscured at launch.
+          # Gate signed release on the latest smoke run for this exact SHA.
+          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/startup-smoke.yml/runs?head_sha=${FROZEN_SHA}&per_page=100" |
+            python3 -c '
+          import json, os, sys
+          data = json.load(sys.stdin)
+          sha = os.environ["FROZEN_SHA"]
+          runs = [run for run in data.get("workflow_runs", [])
+                  if run.get("head_sha") == sha]
+          if not runs:
+              sys.exit("No Startup Smoke run exists for frozen SHA")
+          latest = max(runs, key=lambda run: (run.get("created_at") or "", run.get("id") or 0))
+          if latest.get("status") != "completed" or latest.get("conclusion") != "success":
+              sys.exit("Latest Startup Smoke for frozen SHA is not GREEN; run_id=" +
+                       str(latest.get("id")) + " status=" + str(latest.get("status")) +
+                       " conclusion=" + str(latest.get("conclusion")))
+          print("Startup Smoke GREEN for frozen SHA; run_id=" + str(latest["id"]))
+          '
+
       - name: Check signing prerequisites before build
         if: github.event_name == 'workflow_dispatch'
         env:
