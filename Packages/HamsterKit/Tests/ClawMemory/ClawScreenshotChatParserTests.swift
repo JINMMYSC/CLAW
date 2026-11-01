@@ -26,4 +26,18 @@ final class ClawScreenshotChatParserTests: XCTestCase {
     let result = ClawScreenshotChatParser().parse(lines: lines, contactID: nil, contactName: nil)
     XCTAssertEqual(result.messages.map(\.content), ["你好 世界"])
   }
+
+  func testMessagesBeginningWithDateWordsAreNotDiscardedAsTimestampChrome() {
+    let lines: [VisionOCRService.OCRLine] = [
+      .init(text: "今天", boundingBox: .init(x: 0.10, y: 0.76, width: 0.22, height: 0.04), confidence: 0.99),
+      .init(text: "今天去吃饭", boundingBox: .init(x: 0.10, y: 0.60, width: 0.32, height: 0.04), confidence: 0.99),
+      .init(text: "周五提交方案", boundingBox: .init(x: 0.10, y: 0.44, width: 0.32, height: 0.04), confidence: 0.99),
+      .init(text: "2026年继续努力", boundingBox: .init(x: 0.10, y: 0.28, width: 0.36, height: 0.04), confidence: 0.99),
+      .init(text: "12:30", boundingBox: .init(x: 0.10, y: 0.12, width: 0.22, height: 0.04), confidence: 0.99)
+    ]
+    let result = ClawScreenshotChatParser().parse(lines: lines, contactID: nil, contactName: nil)
+    XCTAssertEqual(result.messages.map(\.content), [
+      "今天去吃饭", "周五提交方案", "2026年继续努力"
+    ])
+  }
 }
