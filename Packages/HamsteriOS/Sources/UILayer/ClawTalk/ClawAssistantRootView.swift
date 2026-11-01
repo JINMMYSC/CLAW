@@ -632,6 +632,10 @@ private struct ClawAssistantChatView: View {
       }
 #endif
       let defaults = UserDefaults(suiteName: HamsterConstants.appGroupName)
+      #if DEBUG
+      // Smoke diagnostics: record only request-state booleans, never speech text.
+      print("[clawVoiceAuth] composer appeared; voiceFlag=\(defaults?.bool(forKey: HamsterConstants.clawVoiceInputLaunchKey) == true) pending=\(ClawVoiceDictationHandoff.shared.snapshot.state == .pending) screenshot=\(ClawComposerScreenshotFixture.state != nil)")
+      #endif
       // Fallback when iOS declines to open the containing app from the keyboard.
       if defaults?.bool(forKey: HamsterConstants.clawVoiceInputLaunchKey) == true ||
           ClawVoiceDictationHandoff.shared.snapshot.state == .pending {
