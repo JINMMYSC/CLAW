@@ -260,6 +260,11 @@ jobs:
           zip -qry GuruIM-unsigned.ipa Payload/
           ls -lh GuruIM-unsigned.ipa
 
+      - name: Verify unsigned IPA manifest, iOS 15 targets and exact source SHA
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_signed_ipa.py GuruIM-unsigned.ipa --check-unsigned-source-sha "$GITHUB_SHA"
+
       - name: Verify and collect same-build dSYM symbols
         run: |
           set -euo pipefail
