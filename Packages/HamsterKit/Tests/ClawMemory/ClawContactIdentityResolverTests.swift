@@ -119,7 +119,7 @@ final class ClawContactIdentityResolverTests: XCTestCase {
     let service = HeartTargetService.shared
     let previouslySelectedID = service.selectedProfile?.id
     service.clearSelection()
-    let title = "AutoGlobal" + UUID().uuidString.prefix(8)
+    let title = "AutoGlobal" + String(UUID().uuidString.prefix(8))
     let result = ClawContactIdentityResolver.shared.resolve(
       displayTitle: title, allowCreate: true
     )
