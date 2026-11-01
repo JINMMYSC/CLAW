@@ -16,4 +16,30 @@ final class ClawRuntimeCapabilityInspectorTests: XCTestCase {
     XCTAssertEqual(ClawRuntimeCapabilityInspector.sync(entitled: true, signedIn: true).status, .unknown)
     XCTAssertEqual(ClawRuntimeCapabilityInspector.sync(entitled: nil, signedIn: nil).status, .unknown)
   }
+
+  func testSignedCloudDocumentsRequiresAllThreeEntitlementLists() {
+    let container = "iCloud.dev.fuxiao.app.hamsterapp"
+    XCTAssertTrue(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
+      services: ["CloudDocuments", "CloudKit"],
+      containers: [container], ubiquityContainers: [container],
+      expectedContainer: container
+    ))
+    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
+      services: ["CloudKit"], containers: [container],
+      ubiquityContainers: [container], expectedContainer: container
+    ))
+    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
+      services: ["CloudDocuments"], containers: [container],
+      ubiquityContainers: nil, expectedContainer: container
+    ))
+    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
+      services: ["CloudDocuments"], containers: ["other"],
+      ubiquityContainers: [container], expectedContainer: container
+    ))
+    XCTAssertFalse(ClawRuntimeCapabilityInspector.cloudDocumentsEntitlement(
+      services: ["CloudDocuments"], containers: [container],
+      ubiquityContainers: ["other"], expectedContainer: container
+    ))
+  }
+
 }
