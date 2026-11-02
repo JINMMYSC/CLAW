@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import HamsterKit
 
@@ -66,5 +67,26 @@ final class ClawChatServiceTests: XCTestCase {
 
     XCTAssertFalse(ClawChatMessage(role: "user", content: "hello").excludeFromContext)
     XCTAssertFalse(ClawChatMessage(role: "assistant", content: "hi").excludeFromContext)
+  }
+  func testBackgroundSpeechCallbackPublishesOnMainThread() {
+    let service = ClawChatService.shared
+    let original = service.isSpeaking
+    let target = !original
+    let published = expectation(description: "Speech state is delivered on the UI thread")
+    let observation = service.$isSpeaking.dropFirst().sink { speaking in
+      guard speaking == target else { return }
+      XCTAssertTrue(Thread.isMainThread, "ObservableObject must not publish speech state off the main thread")
+      published.fulfill()
+    }
+    defer {
+      observation.cancel()
+      ClawEdgeTTSService.shared.onSpeakingChange?(original)
+    }
+
+    DispatchQueue.global(qos: .userInitiated).async {
+      // A delegate callback can arrive on a non-main queue; do not start audio or networking.
+      ClawEdgeTTSService.shared.onSpeakingChange?(target)
+    }
+    wait(for: [published], timeout: 3)
   }
 }
