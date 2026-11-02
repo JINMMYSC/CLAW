@@ -53,6 +53,26 @@ final class ClawVoiceAndCandidatePolicyTests: XCTestCase {
     XCTAssertTrue(ClawVoiceInputService.makeOneShotRequest().shouldReportPartialResults)
   }
 
+  func testStreamingStopWatchdogReportsMissingFinalTranscript() {
+    let service = ClawVoiceInputService.shared
+    let callback = expectation(description: "Streaming timeout must report missing transcript")
+    service.installPendingStreamingStopForTesting { error in
+      if let voiceError = error as? ClawVoiceError {
+        if case .noTranscriptAfterStop = voiceError {
+          // Expected: do not leave live dictation silently waiting forever.
+        } else {
+          XCTFail("Unexpected streaming stop error: \(voiceError)")
+        }
+      } else {
+        XCTFail("Expected a typed voice recognition error")
+      }
+      callback.fulfill()
+    }
+    service.stop()
+    service.firePendingCleanupForTesting()
+    wait(for: [callback], timeout: 2)
+  }
+
   func testOnlineSpeechRequiresStrictBooleanConsent() {
     XCTAssertFalse(ClawVoiceCloudConsentPolicy.permitsOnlineRecognition(nil))
     XCTAssertFalse(ClawVoiceCloudConsentPolicy.permitsOnlineRecognition(false))
