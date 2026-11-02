@@ -216,6 +216,16 @@ public final class ClawChatService: NSObject, ObservableObject {
     startRequest(selectedContactID: selectedContactID, forceSpeak: forceSpeak, regenerated: false)
   }
 
+#if DEBUG
+  /// Simulator XCTest seam: stage an inert URLSession task without any network request.
+  /// Excluded from Release builds.
+  func installPendingRequestForTesting(_ task: URLSessionDataTask) {
+    activeRequestID = UUID()
+    activeRequest = task
+    isSending = true
+  }
+#endif
+
   public func stopGenerating() {
     activeRequestID = nil
     activeRequest?.cancel()
