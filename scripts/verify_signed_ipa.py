@@ -363,7 +363,10 @@ def verify_ipa_source_sha(archive, expected_sha):
     """Verify every unsigned release bundle embeds the exact frozen commit."""
     if not re.fullmatch(r"[0-9a-f]{40}", expected_sha or ""):
         raise ValueError("expected source SHA must be a lowercase 40-character commit ID")
+    # Reject unsafe members and lost executable modes before importing signing assets.
+    reject_unsafe_archive_members(archive)
     verify_release_bundle_manifest(archive)
+    verify_ipa_executable_modes(archive)
     paths = [name for name in archive.namelist()
              if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", name)
              or re.fullmatch(r"Payload/[^/]+\.app/PlugIns/[^/]+\.appex/Info\.plist", name)]
