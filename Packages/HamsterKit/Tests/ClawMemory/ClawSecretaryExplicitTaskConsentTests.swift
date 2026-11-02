@@ -24,4 +24,25 @@ final class ClawSecretaryExplicitTaskConsentTests: XCTestCase {
     XCTAssertTrue(try store.tasks(status: .open).isEmpty,
                   "Sending a chat message must not silently create a persistent task")
   }
+
+  func testExplicitUserAuthorizationCanPersistSuggestedTask() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("claw-task-approved-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = ClawMemoryStore(databaseURL: directory.appendingPathComponent("test.sqlite"))
+    let message = ClawConversationMessage(
+      contactID: nil,
+      speaker: .me,
+      content: "明天联系客户确认订单",
+      sourceType: "claw-assistant"
+    )
+
+    ClawSecretaryExtractor().persistExtractedTasks(
+      from: message, authorizedByUser: true, store: store
+    )
+    XCTAssertEqual(try store.tasks(status: .open).count, 1,
+                   "Only the explicit confirmation path may persist a task")
+  }
+
 }
