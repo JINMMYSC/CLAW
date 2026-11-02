@@ -146,6 +146,7 @@ public final class ClawChatService: NSObject, ObservableObject {
   /// Removes global, per-contact, and legacy conversations while leaving API keys
   /// and unrelated App Group preferences intact.
   public func clearAllConversations() {
+    stopGenerating()
     stopSpeaking()
     let keys = defaults?.dictionaryRepresentation().keys.filter {
       $0 == legacyHistoryKey || $0.hasPrefix("claw_chat_history_v2_")
