@@ -42,7 +42,13 @@ public final class ClawSecretaryExtractor {
     return deduplicate(result)
   }
 
-  public func persistExtractedTasks(from message: ClawConversationMessage, store: ClawMemoryStore = .shared) {
+  public func persistExtractedTasks(
+    from message: ClawConversationMessage,
+    authorizedByUser: Bool = false,
+    store: ClawMemoryStore = .shared
+  ) {
+    // Extraction is a preview; only an explicit user action may persist tasks.
+    guard authorizedByUser else { return }
     let existing = (try? store.tasks(status: .open, limit: 500)) ?? []
     for task in extractTasks(from: message) {
       let duplicate = existing.contains {
