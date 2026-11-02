@@ -42,7 +42,10 @@ public final class ClawSecretaryExtractor {
     return deduplicate(result)
   }
 
-  public func persistExtractedTasks(from message: ClawConversationMessage, store: ClawMemoryStore = .shared) {
+  /// Task extraction is a preview until a person explicitly approves persistence.
+  /// Ordinary AI chat and imported messages must not silently create user tasks.
+  public func persistExtractedTasks(from message: ClawConversationMessage, store: ClawMemoryStore = .shared, explicitlyApproved: Bool = false) {
+    guard explicitlyApproved else { return }
     let existing = (try? store.tasks(status: .open, limit: 500)) ?? []
     for task in extractTasks(from: message) {
       let duplicate = existing.contains {
