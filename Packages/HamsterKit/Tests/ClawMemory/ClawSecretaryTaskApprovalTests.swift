@@ -17,6 +17,24 @@ final class ClawSecretaryTaskApprovalTests: XCTestCase {
     try? FileManager.default.removeItem(at: root)
   }
 
+  func testExplicitApprovalPersistsTaskOnce() throws {
+    let message = ClawConversationMessage(
+      contactID: UUID(),
+      speaker: .me,
+      content: "我明天把方案发给你",
+      sourceType: "claw-assistant"
+    )
+    ClawSecretaryExtractor.shared.persistExtractedTasks(
+      from: message, store: store, explicitlyApproved: true
+    )
+    XCTAssertEqual(try store.tasks(status: nil).count, 1)
+    ClawSecretaryExtractor.shared.persistExtractedTasks(
+      from: message, store: store, explicitlyApproved: true
+    )
+    XCTAssertEqual(try store.tasks(status: nil).count, 1,
+                   "Explicit approval must not create duplicate tasks")
+  }
+
   func testAssistantConversationDoesNotSilentlyPersistExtractedTask() throws {
     let message = ClawConversationMessage(
       contactID: UUID(),
