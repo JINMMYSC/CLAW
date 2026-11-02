@@ -2,6 +2,7 @@
 import io
 import pathlib
 import plistlib
+import stat
 import sys
 import unittest
 import zipfile
@@ -16,19 +17,20 @@ class SignedIPABundleManifestTests(unittest.TestCase):
                 widget_source_sha=None):
         buffer = io.BytesIO()
         bundles = [
-            ("Payload/Hamster.app/Info.plist", "app.lgm.7517", "15.0"),
+            ("Payload/Hamster.app/Info.plist", "app.lgm.7517", "15.0", "Hamster"),
             ("Payload/Hamster.app/PlugIns/HamsterKeyboard.appex/Info.plist",
-             keyboard_id, "15.0"),
+             keyboard_id, "15.0", "HamsterKeyboard"),
         ]
         if not omit_widget:
             bundles.append((
                 "Payload/Hamster.app/PlugIns/ClawWidgets.appex/Info.plist",
-                "app.lgm.7517.widget", widget_minimum,
+                "app.lgm.7517.widget", widget_minimum, "ClawWidgets",
             ))
         with zipfile.ZipFile(buffer, "w") as archive:
-            for name, bundle_id, minimum in bundles:
+            for name, bundle_id, minimum, executable in bundles:
                 metadata = {
                     "CFBundleIdentifier": bundle_id,
+                    "CFBundleExecutable": executable,
                     "MinimumOSVersion": minimum,
                     "ClawSourceCommit": (
                         widget_source_sha
@@ -37,6 +39,12 @@ class SignedIPABundleManifestTests(unittest.TestCase):
                     ),
                 }
                 archive.writestr(name, plistlib.dumps(metadata))
+                # The unsigned source SHA preflight checks executable ZIP modes.
+                # Include realistic bundle executables in this synthetic IPA.
+                binary = zipfile.ZipInfo(name.rsplit("/", 1)[0] + "/" + executable)
+                binary.create_system = 3
+                binary.external_attr = (stat.S_IFREG | 0o755) << 16
+                archive.writestr(binary, b"test Mach-O placeholder")
         buffer.seek(0)
         return zipfile.ZipFile(buffer)
 
