@@ -315,6 +315,19 @@ def reject_duplicate_archive_members(archive):
         seen.add(member.filename)
 
 
+def reject_unsafe_archive_members(archive):
+    """Reject ambiguous or link-backed IPA paths before extraction/codesign."""
+    reject_duplicate_archive_members(archive)
+    for member in archive.infolist():
+        name = member.filename
+        parts = name.rstrip("/").split("/")
+        if (not name or name.startswith("/") or "\\" in name
+                or re.match(r"^[A-Za-z]:", name)
+                or any(part in ("", ".", "..") for part in parts)
+                or stat.S_ISLNK(member.external_attr >> 16)):
+            raise ValueError("unsafe IPA archive member")
+
+
 def verify_release_bundle_manifest(archive):
     """Fail closed if a signed release drops a target or raises the iOS 15 floor."""
     reject_duplicate_archive_members(archive)
@@ -392,6 +405,7 @@ def verify_ipa_executable_modes(archive):
 def verify_ipa(ipa_path, require_icloud=True):
     with tempfile.TemporaryDirectory() as tmp:
         with zipfile.ZipFile(ipa_path) as archive:
+            reject_unsafe_archive_members(archive)
             verify_ipa_executable_modes(archive)
             verify_release_bundle_manifest(archive)
             archive.extractall(tmp)
