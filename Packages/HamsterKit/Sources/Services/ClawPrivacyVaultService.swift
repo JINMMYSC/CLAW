@@ -16,8 +16,19 @@ public final class ClawPrivacyVaultService {
 
   private init() {}
 
+  /// A missing index means no items are protected. Unavailable or malformed
+  /// App Group preferences are different: AI access must fail closed.
+  private var validatedProtectedMemoryIDs: Set<UUID>? {
+    guard let defaults else { return nil }
+    guard let stored = defaults.object(forKey: protectedIDsKey) else { return [] }
+    guard let rawIDs = stored as? [String] else { return nil }
+    let ids = rawIDs.compactMap(UUID.init(uuidString:))
+    guard ids.count == rawIDs.count else { return nil }
+    return Set(ids)
+  }
+
   public var protectedMemoryIDs: Set<UUID> {
-    Set((defaults?.stringArray(forKey: protectedIDsKey) ?? []).compactMap(UUID.init(uuidString:)))
+    validatedProtectedMemoryIDs ?? []
   }
 
   public var isUnlocked: Bool {
@@ -31,15 +42,18 @@ public final class ClawPrivacyVaultService {
   }
 
   public func isProtected(_ item: ClawMemoryItem) -> Bool {
-    protectedMemoryIDs.contains(item.id)
+    guard let ids = validatedProtectedMemoryIDs else { return true }
+    return ids.contains(item.id)
   }
 
   public func isVisibleToAI(_ item: ClawMemoryItem) -> Bool {
-    !isProtected(item) || isUnlocked
+    guard let ids = validatedProtectedMemoryIDs else { return false }
+    return !ids.contains(item.id) || isUnlocked
   }
 
   public func setProtected(_ itemID: UUID, protected: Bool) {
-    var ids = protectedMemoryIDs
+    // Never overwrite a corrupt protection index with an incomplete allowlist.
+    guard var ids = validatedProtectedMemoryIDs else { return }
     if protected { ids.insert(itemID) } else { ids.remove(itemID) }
     defaults?.set(ids.map(\.uuidString).sorted(), forKey: protectedIDsKey)
   }
