@@ -1,4 +1,5 @@
 import Combine
+import XCTest
 @testable import HamsterKit
 
 final class ClawChatServiceTests: XCTestCase {
