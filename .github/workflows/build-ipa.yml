@@ -260,7 +260,7 @@ jobs:
             executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Info.plist")
             binary="$bundle/$executable"
             test -f "$binary"
-            xcrun lipo -verify_arch arm64 "$binary"
+            xcrun lipo -archs "$binary" | tr " " "\n" | grep -Fxq arm64
             xcrun vtool -show-build "$binary" | grep -Eq 'platform[[:space:]]+IOS([[:space:]]|$)'
             checked=$((checked + 1))
             echo "Verified arm64 iOS device Mach-O: $(basename "$bundle")"
