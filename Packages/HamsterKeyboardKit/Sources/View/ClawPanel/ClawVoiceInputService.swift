@@ -549,12 +549,18 @@ public final class ClawVoiceInputService: NSObject {
     let cleanup = DispatchWorkItem { [weak self] in
       guard let self, self.sessionGeneration == generation else { return }
       let callback = self.oneShotCompletion
+      let streamingError = self.streamingError
       let partial = self.oneShotPartialText.trimmingCharacters(in: .whitespacesAndNewlines)
       self.finishSession(generation, cancelTask: true, clearStreamingCallbacks: true)
-      if !partial.isEmpty {
-        callback?(.success(partial))
+      if let callback {
+        if !partial.isEmpty {
+          callback(.success(partial))
+        } else {
+          callback(.failure(ClawVoiceError.noTranscriptAfterStop))
+        }
       } else {
-        callback?(.failure(ClawVoiceError.noTranscriptAfterStop))
+        // Continuous dictation must not silently stall when Speech omits isFinal.
+        streamingError?(ClawVoiceError.noTranscriptAfterStop)
       }
     }
     pendingCleanupWorkItem = cleanup
