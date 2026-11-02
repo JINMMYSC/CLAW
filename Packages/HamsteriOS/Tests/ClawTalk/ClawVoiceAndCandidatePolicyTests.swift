@@ -117,4 +117,12 @@ final class ClawVoiceAndCandidatePolicyTests: XCTestCase {
       291
     )
   }
+
+  func testRimeSchemaNotificationRejectsEmptyAndMalformedIdentifiers() {
+    XCTAssertNil(RimeContext.schemaIdentifier(from: ""))
+    XCTAssertNil(RimeContext.schemaIdentifier(from: "/"))
+    XCTAssertNil(RimeContext.schemaIdentifier(from: "/t9"))
+    XCTAssertEqual(RimeContext.schemaIdentifier(from: "t9"), "t9")
+    XCTAssertEqual(RimeContext.schemaIdentifier(from: "rime_ice/variant"), "rime_ice")
+  }
 }
