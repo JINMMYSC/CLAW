@@ -16,7 +16,7 @@ public struct ClawChatMessage: Codable, Identifiable, Equatable {
     self.role = role
     self.content = content
     self.date = date
-    self.excludeFromContext = excludeFromContext
+    self.excludeFromContext = excludeFromContext || (role != "user" && role != "assistant")
     self.trace = trace
   }
 
@@ -27,7 +27,7 @@ public struct ClawChatMessage: Codable, Identifiable, Equatable {
     role = try c.decode(String.self, forKey: .role)
     content = try c.decode(String.self, forKey: .content)
     date = try c.decode(Date.self, forKey: .date)
-    excludeFromContext = try c.decodeIfPresent(Bool.self, forKey: .excludeFromContext) ?? false
+    excludeFromContext = (try c.decodeIfPresent(Bool.self, forKey: .excludeFromContext) ?? false) || (role != "user" && role != "assistant")
     trace = try c.decodeIfPresent(ClawChatTrace.self, forKey: .trace)
   }
 }
