@@ -208,9 +208,9 @@ public final class ClawChatService: NSObject, ObservableObject {
       content: trimmed,
       sourceType: "claw-assistant"
     )
-    if (try? ClawMemoryStore.shared.appendConversation(userTimelineMessage)) == true {
-      ClawSecretaryExtractor.shared.persistExtractedTasks(from: userTimelineMessage)
-    }
+    // Keep the local conversation timeline, but never create tasks from chat
+    // without a separate, explicit review-and-approval action.
+    _ = try? ClawMemoryStore.shared.appendConversation(userTimelineMessage)
     isSending = true
     stopSpeaking()
 
