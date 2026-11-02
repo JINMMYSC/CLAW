@@ -693,6 +693,13 @@ public extension RimeContext {
 // MARK: implementation IRimeNotificationDelegate
 
 extension RimeContext: IRimeNotificationDelegate {
+  /// Ignore malformed RIME callbacks rather than indexing an empty array.
+  static func schemaIdentifier(from notification: String) -> String? {
+    guard let first = notification.split(separator: "/", omittingEmptySubsequences: false).first,
+          !first.isEmpty else { return nil }
+    return String(first)
+  }
+
   public func onDeployStart() {
     Logger.statistics.info("HamsterRimeNotification: onDeployStart")
   }
@@ -730,11 +737,14 @@ extension RimeContext: IRimeNotificationDelegate {
 
   @MainActor
   public func onLoadingSchema(_ loadSchema: String) {
+    guard let schemaID = Self.schemaIdentifier(from: loadSchema) else {
+      Logger.statistics.warning("HamsterRimeNotification: ignored empty or malformed schema notification")
+      return
+    }
     Logger.statistics.info("HamsterRimeNotification: onLoadingSchema, schema: \(loadSchema)")
     Task {
       let currentSchema = self.currentSchema
-      let schemaID = loadSchema.split(separator: "/").map { String($0) }[0]
-      guard !schemaID.isEmpty, currentSchema?.schemaId != schemaID else { return }
+      guard currentSchema?.schemaId != schemaID else { return }
       // 从当前全部方案列表中获取
       guard let changeSchema = self.schemas.first(where: { $0.schemaId == schemaID }) else { return }
       self.setCurrentSchema(changeSchema)
