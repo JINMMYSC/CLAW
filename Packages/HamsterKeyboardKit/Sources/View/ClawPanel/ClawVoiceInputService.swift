@@ -561,6 +561,20 @@ public final class ClawVoiceInputService: NSObject {
     DispatchQueue.main.asyncAfter(deadline: .now() + 6.0, execute: cleanup)
   }
 
+#if DEBUG
+  /// No microphone, Speech authorization, network or real recording in XCTest.
+  func installPendingStreamingStopForTesting(onError: @escaping (Error) -> Void) {
+    _ = resetForNewSession()
+    recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+    streamingError = onError
+    isRecording = true
+  }
+
+  func firePendingCleanupForTesting() {
+    pendingCleanupWorkItem?.perform()
+  }
+#endif
+
   /// 新会话开始前强制取消上一会话；generation 让上一 task 的迟到 callback 自动失效。
   @discardableResult
   private func resetForNewSession() -> UInt {
