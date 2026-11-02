@@ -88,7 +88,14 @@ public final class ClawChatService: NSObject, ObservableObject {
     super.init()
     // Edge TTS 播放状态同步到面板订阅（$isSpeaking）
     ClawEdgeTTSService.shared.onSpeakingChange = { [weak self] speaking in
-      self?.isSpeaking = speaking
+      // Audio delegates may call back off-main; @Published drives SwiftUI.
+      if Thread.isMainThread {
+        self?.isSpeaking = speaking
+      } else {
+        DispatchQueue.main.async { [weak self] in
+          self?.isSpeaking = speaking
+        }
+      }
     }
     activeContextID = HeartTargetService.shared.selectedProfile?.id
     loadHistory()
