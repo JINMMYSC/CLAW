@@ -104,7 +104,7 @@ public final class ClawResetService {
       var learnedURLs: [URL] = []
       for case let url as URL in enumerator {
         let name = url.lastPathComponent.lowercased()
-        if name.contains(".userdb") {
+        if name.hasSuffix(".userdb") || name.hasSuffix(".userdb.kct") {
           learnedURLs.append(url)
           enumerator.skipDescendants()
         }
@@ -134,16 +134,19 @@ public final class ClawResetService {
       ]
     }
 
-    let results = operations.map { step, operation in
+    var results: [ClawResetStepResult] = []
+    for (step, operation) in operations {
       do {
         try operation()
-        return ClawResetStepResult(step: step, succeeded: true)
+        results.append(ClawResetStepResult(step: step, succeeded: true))
       } catch {
-        return ClawResetStepResult(
+        results.append(ClawResetStepResult(
           step: step,
           succeeded: false,
           errorDescription: error.localizedDescription
-        )
+        ))
+        // Never delete user data or redeploy while RIME may still be running.
+        if step == .stopRime { break }
       }
     }
     return ClawResetReport(mode: mode, results: results)
