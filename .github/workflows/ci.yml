@@ -34,6 +34,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Swift 6 memory Sendable compiler regression gate
+        run: |
+          set -euo pipefail
+          xcrun swiftc -swift-version 6 -typecheck \
+            Packages/HamsterKit/Sources/Memory/Core/MemoryV2Models.swift \
+            Packages/HamsterKit/Sources/Memory/Storage/MemorySyncProtocol.swift \
+            tools/swift_checks/MemorySendableGate.swift
+
       - name: Download Rime frameworks (zgl v0.1.0)
         run: |
           set -euo pipefail
