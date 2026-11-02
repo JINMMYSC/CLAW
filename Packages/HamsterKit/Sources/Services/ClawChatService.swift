@@ -208,9 +208,9 @@ public final class ClawChatService: NSObject, ObservableObject {
       content: trimmed,
       sourceType: "claw-assistant"
     )
-    if (try? ClawMemoryStore.shared.appendConversation(userTimelineMessage)) == true {
-      ClawSecretaryExtractor.shared.persistExtractedTasks(from: userTimelineMessage)
-    }
+    // Conversation history may be retained, but task creation requires a separate
+    // explicit confirmation action; chat send itself is never task consent.
+    _ = try? ClawMemoryStore.shared.appendConversation(userTimelineMessage)
     isSending = true
     stopSpeaking()
 
