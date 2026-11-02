@@ -5,7 +5,7 @@ import Foundation
 /// 读写记忆，而不是各自拼装自己的字段。
 
 /// 记忆作用域：记住某件事不等于任何场景都可以拿出来用。
-public enum MemoryScope: String, Codable, CaseIterable, Equatable {
+public enum MemoryScope: String, Codable, CaseIterable, Equatable, Sendable {
   case global
   case person
   case relationship
@@ -17,7 +17,7 @@ public enum MemoryScope: String, Codable, CaseIterable, Equatable {
 }
 
 /// 记忆生命周期状态。模型猜测只能停在 candidate，不能直接进入长期记忆。
-public enum MemoryState: String, Codable, CaseIterable, Equatable {
+public enum MemoryState: String, Codable, CaseIterable, Equatable, Sendable {
   case candidate
   case active
   case confirmed
@@ -27,7 +27,7 @@ public enum MemoryState: String, Codable, CaseIterable, Equatable {
 }
 
 /// 记忆类型分类，对应交接稿中的十一类记忆。
-public enum MemoryType: String, Codable, CaseIterable, Equatable {
+public enum MemoryType: String, Codable, CaseIterable, Equatable, Sendable {
   case raw
   case working
   case episodic
@@ -42,7 +42,7 @@ public enum MemoryType: String, Codable, CaseIterable, Equatable {
 }
 
 /// 来源类型，决定这条记忆的可信上限。
-public enum MemoryOriginType: String, Codable, CaseIterable, Equatable {
+public enum MemoryOriginType: String, Codable, CaseIterable, Equatable, Sendable {
   case userExplicit
   case userCorrection
   case userBehavior
@@ -78,7 +78,7 @@ public enum MemoryOriginType: String, Codable, CaseIterable, Equatable {
 }
 
 /// 云端发送权限。所有出网请求都要先过这一层。
-public enum MemoryCloudPermission: String, Codable, CaseIterable, Equatable {
+public enum MemoryCloudPermission: String, Codable, CaseIterable, Equatable, Sendable {
   case localOnly
   case privateCloud
   case aiAllowed
@@ -87,7 +87,7 @@ public enum MemoryCloudPermission: String, Codable, CaseIterable, Equatable {
 }
 
 /// 记忆来源信息：这条记忆是怎么知道的。
-public struct MemoryProvenance: Codable, Equatable {
+public struct MemoryProvenance: Codable, Equatable, Sendable {
   public var originType: MemoryOriginType
   public var sourceApp: String?
   public var sourcePersonID: UUID?
@@ -116,7 +116,7 @@ public struct MemoryProvenance: Codable, Equatable {
 }
 
 /// 证据：这条记忆能追溯到哪条原始记录。
-public struct MemoryEvidence: Codable, Equatable, Identifiable {
+public struct MemoryEvidence: Codable, Equatable, Identifiable, Sendable {
   public var id: UUID
   public var rawEventID: UUID
   public var locator: String?
@@ -136,7 +136,7 @@ public struct MemoryEvidence: Codable, Equatable, Identifiable {
 }
 
 /// 血缘：派生记忆的来源链，用于可追溯遗忘。
-public struct MemoryLineage: Codable, Equatable {
+public struct MemoryLineage: Codable, Equatable, Sendable {
   public var parentID: UUID?
   public var rawEventIDs: [UUID]
   public var derivedFromMemoryIDs: [UUID]
@@ -185,7 +185,7 @@ public struct RawMemoryEvent: Codable, Equatable, Identifiable {
 }
 
 /// 结构化记忆的统一载体。
-public struct MemoryV2Record: Codable, Equatable, Identifiable {
+public struct MemoryV2Record: Codable, Equatable, Identifiable, Sendable {
   public var id: UUID
   public var type: MemoryType
   public var state: MemoryState
