@@ -306,7 +306,9 @@ extension SettingsViewModel {
               ).isEmpty) ?? true)
               if userDataIsEmpty {
                 try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
-                try FileManager.initSandboxBackupDirectory(override: true)
+                if FileManager.shouldInitializeBundledDirectory(at: FileManager.sandboxBackupDirectory) {
+                  try FileManager.initSandboxBackupDirectory(override: true)
+                }
               }
 
               var appConfig = HamsterConfigurationStore.shared.applicationConfiguration
