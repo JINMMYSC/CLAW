@@ -444,6 +444,25 @@ public extension FileManager {
     try fm.unzipItem(at: src, to: dst)
   }
 
+  /// Bundled RIME defaults may only be extracted into a missing or empty UserData
+  /// directory. A missing deployment flag is not permission to erase a user's
+  /// custom dictionaries, learned words, or RIME state.
+  static func shouldSeedBundledUserData(at directory: URL) throws -> Bool {
+    let fm = FileManager.default
+    var isDirectory: ObjCBool = false
+    guard fm.fileExists(atPath: directory.path, isDirectory: &isDirectory) else {
+      return true
+    }
+    guard isDirectory.boolValue else {
+      throw NSError(
+        domain: NSCocoaErrorDomain,
+        code: NSFileReadCorruptFileError,
+        userInfo: [NSFilePathErrorKey: directory.path]
+      )
+    }
+    return try fm.contentsOfDirectory(atPath: directory.path).isEmpty
+  }
+
   // 初始化 AppGroup 共享目录下 UserData 目录资源
   static func initAppGroupUserDataDirectory(override: Bool = false) throws {
     try FileManager.createDirectory(
