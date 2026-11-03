@@ -12,6 +12,22 @@ import ZIPFoundation
 
 /// FileManager 扩展
 public extension FileManager {
+  /// Initialize bundled resources only when the destination is absent or empty.
+  /// An unreadable or non-directory path must fail closed: never delete user data.
+  static func shouldInitializeBundledDirectory(at destination: URL) -> Bool {
+    let fm = FileManager.default
+    var isDirectory: ObjCBool = false
+    guard fm.fileExists(atPath: destination.path, isDirectory: &isDirectory) else {
+      return true
+    }
+    guard isDirectory.boolValue,
+          let contents = try? fm.contentsOfDirectory(atPath: destination.path)
+    else {
+      return false
+    }
+    return contents.isEmpty
+  }
+
   /// 创建文件夹
   /// override: 当目标文件夹存在时，是否覆盖
   /// dst: 目标文件夹URL
