@@ -407,9 +407,17 @@ extension SettingsViewModel {
             if !alreadyDeployed {
               // FIX-HMSTR-034: 首次启动的 SharedSupport 解压也放到后台线程，
               // 避免主线程解压词库期间启动层无法淡出（黑屏）。
-              try FileManager.initSandboxSharedSupportDirectory(override: true)
-              try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
-              try FileManager.initSandboxBackupDirectory(override: true)
+              // A failed or interrupted install can leave nonempty user dictionaries
+              // and backups while the deployed flag is false. Never delete them.
+              if FileManager.shouldInitializeBundledDirectory(at: FileManager.sandboxSharedSupportDirectory) {
+                try FileManager.initSandboxSharedSupportDirectory(override: true)
+              }
+              if FileManager.shouldInitializeBundledDirectory(at: FileManager.sandboxUserDataDirectory) {
+                try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
+              }
+              if FileManager.shouldInitializeBundledDirectory(at: FileManager.sandboxBackupDirectory) {
+                try FileManager.initSandboxBackupDirectory(override: true)
+              }
 #if DEBUG
               self.writeStartupSmokeMarker("claw-bootstrap: resource-extraction-completed")
 #endif
@@ -423,8 +431,13 @@ extension SettingsViewModel {
 #endif
             // 自检（FIX-HMSTR-026）：标记已部署但方案仍为空 = App Group 残留标记/方案缺失，强制重新解压 + 全量重部署
             if self.rimeViewModel.rimeContext.schemas.isEmpty {
-              try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
-              try FileManager.initSandboxBackupDirectory(override: true)
+              // Retry RIME compilation without erasing nonempty user data or backups.
+              if FileManager.shouldInitializeBundledDirectory(at: FileManager.sandboxUserDataDirectory) {
+                try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
+              }
+              if FileManager.shouldInitializeBundledDirectory(at: FileManager.sandboxBackupDirectory) {
+                try FileManager.initSandboxBackupDirectory(override: true)
+              }
               try self.rimeViewModel.rimeContext.deployment(configuration: &config, forceFullCheck: true)
             }
 #if DEBUG
