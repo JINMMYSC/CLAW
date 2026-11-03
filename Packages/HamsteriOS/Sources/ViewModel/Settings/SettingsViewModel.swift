@@ -289,26 +289,14 @@ extension SettingsViewModel {
             do {
               // 兼容旧版数据不完整或覆盖安装后沙盒目录缺失的场景。
               // 仅在目录缺失/为空时重新释放内置资源，绝不覆盖非空的 1.0 用户数据。
-              let fileManager = FileManager.default
-              let sharedSupportIsEmpty = !fileManager.fileExists(
-                atPath: FileManager.sandboxSharedSupportDirectory.path
-              ) || ((try? fileManager.contentsOfDirectory(
-                atPath: FileManager.sandboxSharedSupportDirectory.path
-              ).isEmpty) ?? true)
-              if sharedSupportIsEmpty {
+              if FileManager.shouldInitializeBundledDirectory(at: FileManager.sandboxSharedSupportDirectory) {
                 try FileManager.initSandboxSharedSupportDirectory(override: true)
               }
-
-              let userDataIsEmpty = !fileManager.fileExists(
-                atPath: FileManager.sandboxUserDataDirectory.path
-              ) || ((try? fileManager.contentsOfDirectory(
-                atPath: FileManager.sandboxUserDataDirectory.path
-              ).isEmpty) ?? true)
-              if userDataIsEmpty {
+              if FileManager.shouldInitializeBundledDirectory(at: FileManager.sandboxUserDataDirectory) {
                 try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
-                if FileManager.shouldInitializeBundledDirectory(at: FileManager.sandboxBackupDirectory) {
-                  try FileManager.initSandboxBackupDirectory(override: true)
-                }
+              }
+              if FileManager.shouldInitializeBundledDirectory(at: FileManager.sandboxBackupDirectory) {
+                try FileManager.initSandboxBackupDirectory(override: true)
               }
 
               var appConfig = HamsterConfigurationStore.shared.applicationConfiguration
