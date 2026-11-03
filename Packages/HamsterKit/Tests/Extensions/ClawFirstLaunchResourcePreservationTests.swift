@@ -18,6 +18,17 @@ final class ClawFirstLaunchResourcePreservationTests: XCTestCase {
     XCTAssertTrue(FileManager.shouldInitializeBundledDirectory(at: empty))
   }
 
+  func testExistingFileCannotBeTreatedAsEmptyDirectory() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("claw-first-launch-" + UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let destination = root.appendingPathComponent("not-a-directory")
+    try Data("keep".utf8).write(to: destination)
+    XCTAssertFalse(FileManager.shouldInitializeBundledDirectory(at: destination))
+    XCTAssertEqual(try Data(contentsOf: destination), Data("keep".utf8))
+  }
+
   func testNonemptyUserDataAndBackupsMustNeverBeReinitialized() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("claw-first-launch-" + UUID().uuidString, isDirectory: true)
