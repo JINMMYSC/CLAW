@@ -375,8 +375,14 @@ public extension RimeContext {
       let userDataFiles = (try? FileManager.default.contentsOfDirectory(atPath: FileManager.sandboxUserDataDirectory.path)) ?? []
       Logger.statistics.error("RIME deploy self-heal: zero schemas, userData file count = \(userDataFiles.count), head = \(userDataFiles.prefix(8))")
       do {
-        try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
-        try FileManager.initSandboxSharedSupportDirectory(override: true)
+        // Rebuild compiled RIME state without deleting nonempty user dictionaries.
+        // Re-extraction is safe only for a missing or empty destination.
+        if FileManager.shouldInitializeBundledDirectory(at: FileManager.sandboxUserDataDirectory) {
+          try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
+        }
+        if FileManager.shouldInitializeBundledDirectory(at: FileManager.sandboxSharedSupportDirectory) {
+          try FileManager.initSandboxSharedSupportDirectory(override: true)
+        }
       } catch {
         Logger.statistics.error("RIME deploy self-heal re-extract error: \(error.localizedDescription)")
       }
