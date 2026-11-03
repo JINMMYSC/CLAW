@@ -299,15 +299,13 @@ extension SettingsViewModel {
                 try FileManager.initSandboxSharedSupportDirectory(override: true)
               }
 
-              let userDataIsEmpty = !fileManager.fileExists(
-                atPath: FileManager.sandboxUserDataDirectory.path
-              ) || ((try? fileManager.contentsOfDirectory(
-                atPath: FileManager.sandboxUserDataDirectory.path
-              ).isEmpty) ?? true)
+              let userDataIsEmpty = try FileManager.shouldSeedBundledUserData(
+                at: FileManager.sandboxUserDataDirectory
+              )
               if userDataIsEmpty {
-                try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
-                try FileManager.initSandboxBackupDirectory(override: true)
+                try FileManager.initSandboxUserDataDirectory(override: false, unzip: true)
               }
+              try FileManager.initSandboxBackupDirectory()
 
               var appConfig = HamsterConfigurationStore.shared.applicationConfiguration
 
@@ -408,8 +406,14 @@ extension SettingsViewModel {
               // FIX-HMSTR-034: 首次启动的 SharedSupport 解压也放到后台线程，
               // 避免主线程解压词库期间启动层无法淡出（黑屏）。
               try FileManager.initSandboxSharedSupportDirectory(override: true)
-              try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
-              try FileManager.initSandboxBackupDirectory(override: true)
+              // A missing deployment marker must never delete learned words or
+              // user dictionaries from an existing RIME UserData directory.
+              if try FileManager.shouldSeedBundledUserData(
+                at: FileManager.sandboxUserDataDirectory
+              ) {
+                try FileManager.initSandboxUserDataDirectory(override: false, unzip: true)
+              }
+              try FileManager.initSandboxBackupDirectory()
 #if DEBUG
               self.writeStartupSmokeMarker("claw-bootstrap: resource-extraction-completed")
 #endif
@@ -423,9 +427,23 @@ extension SettingsViewModel {
 #endif
             // 自检（FIX-HMSTR-026）：标记已部署但方案仍为空 = App Group 残留标记/方案缺失，强制重新解压 + 全量重部署
             if self.rimeViewModel.rimeContext.schemas.isEmpty {
-              try FileManager.initSandboxUserDataDirectory(override: true, unzip: true)
-              try FileManager.initSandboxBackupDirectory(override: true)
+              // Retry the engine, but never erase a nonempty user dictionary
+              // merely because schema discovery failed.
+              if try FileManager.shouldSeedBundledUserData(
+                at: FileManager.sandboxUserDataDirectory
+              ) {
+                try FileManager.initSandboxUserDataDirectory(override: false, unzip: true)
+              }
+              try FileManager.initSandboxBackupDirectory()
               try self.rimeViewModel.rimeContext.deployment(configuration: &config, forceFullCheck: true)
+            }
+            guard !self.rimeViewModel.rimeContext.schemas.isEmpty else {
+              throw NSError(
+                domain: "CLAW.RimeBootstrap",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey:
+                  "RIME returned no schemas after retry; existing user data was preserved"]
+              )
             }
 #if DEBUG
             self.writeStartupSmokeMarker("claw-bootstrap: ready-to-commit")
